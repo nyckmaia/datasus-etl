@@ -72,11 +72,6 @@ config = PipelineConfig(
     conversion=ConversionConfig(
         dbc_dir=Path("./data/dbc"),
         dbf_dir=Path("./data/dbf"),
-        csv_dir=Path("./data/csv"),  # Não usado, mantido para compatibilidade
-    ),
-    processing=ProcessingConfig(
-        input_dir=Path("./data/csv"),  # Não usado
-        output_dir=Path("./data/processed"),  # Não usado
     ),
     storage=StorageConfig(
         parquet_dir=Path("./data/parquet"),
@@ -210,13 +205,13 @@ python examples/batch_processing.py
 - **`SihsusPipeline`** - Pipeline completo otimizado (4 stages)
 - **`PipelineConfig`** - Configuração com Pydantic
 
-#### Conversores (Otimizados)
+#### Conversores
 - **`DbcToDbfConverter`** - Conversão DBC→DBF com datasus-dbc (Python puro)
-- **`DbfToDuckDBConverter`** ⭐ - Streaming DBF→DuckDB (NOVO)
+- **`DbfToDuckDBConverter`** - Streaming DBF→DuckDB com estratégia adaptativa
 
 #### Transformação e Storage
-- **`SQLTransformer`** ⭐ - Transformações SQL no DuckDB (NOVO)
-- **`ParquetQueryEngine`** ⭐ - Interface SQL para Parquet (NOVO)
+- **`SQLTransformer`** - Transformações SQL no DuckDB
+- **`ParquetQueryEngine`** - Interface SQL para Parquet
 - **`DuckDBManager`** - Gerenciador de conexão DuckDB
 
 #### Download
@@ -321,10 +316,10 @@ pydatasus/
 │   ├── transform/
 │   │   └── converters/
 │   │       ├── dbc_to_dbf.py     # DBC → DBF (datasus-dbc)
-│   │       └── dbf_to_duckdb.py  # DBF → DuckDB ⭐
+│   │       └── dbf_to_duckdb.py  # DBF → DuckDB (streaming adaptativo)
 │   ├── storage/
-│   │   ├── sql_transformer.py    # SQL transformations (NOVO) ⭐
-│   │   ├── parquet_query_engine.py  # Query interface (NOVO) ⭐
+│   │   ├── sql_transformer.py    # SQL transformations
+│   │   ├── parquet_query_engine.py  # Query interface
 │   │   ├── duckdb_manager.py     # DuckDB manager
 │   │   ├── parquet_writer.py     # Parquet writer
 │   │   └── data_exporter.py      # Data exporter
@@ -361,53 +356,6 @@ pydatasus/
 - [`examples/partial_pipeline.py`](examples/partial_pipeline.py) - Stages individuais
 - [`examples/batch_processing.py`](examples/batch_processing.py) - Batch processing
 - [`examples/optimized_pipeline_usage.py`](examples/optimized_pipeline_usage.py) - Exemplo completo
-
-## 🔄 Migração de Versão Antiga
-
-Se você estava usando a versão antiga com CSV intermediário:
-
-### Antes (v1.0 - Deprecated)
-
-```python
-# ❌ Abordagem antiga (deprecated)
-from pydatasus.transform.converters import DbfToCsvConverter
-from pydatasus.transform.processors import SihsusProcessor
-
-converter = DbfToCsvConverter(config)
-converter.convert_directory()  # Gera 500GB+ de CSVs
-
-processor = SihsusProcessor(config)
-processor.process_directory()  # Carrega tudo na RAM
-```
-
-**Problemas:**
-- 500GB+ de CSVs intermediários
-- Alto uso de RAM (materializa DataFrames)
-- Múltiplas passagens pelos dados
-- Risco de OOM
-
-### Depois (v1.1+ - Recomendado)
-
-```python
-# ✅ Abordagem otimizada (nova)
-from pydatasus import SihsusPipeline
-from pydatasus.config import PipelineConfig
-
-config = PipelineConfig(...)
-pipeline = SihsusPipeline(config)
-result = pipeline.run()  # Streaming direto, sem CSVs
-
-# Consultar resultados
-from pydatasus.storage import ParquetQueryEngine
-engine = ParquetQueryEngine("data/parquet")
-df = engine.sql("SELECT * FROM sihsus WHERE ano_inter = 2023")
-```
-
-**Benefícios:**
-- ✅ Zero CSVs intermediários
-- ✅ Streaming (baixo uso de RAM)
-- ✅ Single-pass processing
-- ✅ Zero risco de OOM
 
 ## 🤝 Contribuindo
 
