@@ -6,8 +6,12 @@ to generate SQL transformations and validate data types.
 
 from pydatasus.constants.sihsus_schema import (
     SIHSUS_PARQUET_SCHEMA,
-    get_sql_cast_expression,
+    generate_column_cleaning_sql,
+    generate_type_validation_sql,
+    get_columns_by_type,
+    get_numeric_columns,
     get_polars_schema,
+    get_sql_cast_expression,
 )
 
 
@@ -187,6 +191,54 @@ def example_6_schema_subsets():
         print(f"  {col:20} : {dtype}")
 
 
+def example_7_auto_generate_sql():
+    """Example 7: Auto-generate SQL from schema."""
+    print("\n" + "=" * 60)
+    print("Example 7: Auto-Generate SQL Transformations")
+    print("=" * 60)
+
+    # Generate column cleaning SQL
+    print("\n1. Column Cleaning SQL (first 5 columns):")
+    cleaning_sql = generate_column_cleaning_sql()
+    lines = cleaning_sql.split("\n")[:5]
+    for line in lines:
+        print(f"  {line}")
+    print(f"  ... ({len(SIHSUS_PARQUET_SCHEMA) - 5} more columns)")
+
+    # Generate type validation SQL
+    print("\n2. Type Validation SQL (first 5 columns):")
+    validation_sql = generate_type_validation_sql(suffix="")
+    lines = validation_sql.split("\n")[:5]
+    for line in lines:
+        print(f"  {line}")
+    print(f"  ... ({len(SIHSUS_PARQUET_SCHEMA) - 5} more columns)")
+
+    # Get columns by type
+    print("\n3. Columns by Type:")
+    float_cols = get_columns_by_type("FLOAT")
+    print(f"  FLOAT columns ({len(float_cols)} total):")
+    for col in float_cols[:10]:
+        print(f"    - {col}")
+    if len(float_cols) > 10:
+        print(f"    ... ({len(float_cols) - 10} more)")
+
+    date_cols = get_columns_by_type("DATE")
+    print(f"\n  DATE columns ({len(date_cols)} total):")
+    for col in date_cols:
+        print(f"    - {col}")
+
+    # Get numeric columns
+    print("\n4. All Numeric Columns:")
+    numeric = get_numeric_columns()
+    print(f"  Total numeric columns: {len(numeric)}")
+    print("  Sample numeric columns:")
+    for col in numeric[:15]:
+        dtype = SIHSUS_PARQUET_SCHEMA[col]
+        print(f"    - {col:20} ({dtype})")
+    if len(numeric) > 15:
+        print(f"    ... ({len(numeric) - 15} more)")
+
+
 if __name__ == "__main__":
     # Run all examples
     example_1_inspect_schema()
@@ -195,6 +247,7 @@ if __name__ == "__main__":
     example_4_polars_schema_conversion()
     example_5_validate_custom_data()
     example_6_schema_subsets()
+    example_7_auto_generate_sql()
 
     print("\n" + "=" * 60)
     print("All examples completed!")

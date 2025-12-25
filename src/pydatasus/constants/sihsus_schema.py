@@ -256,3 +256,111 @@ def get_polars_schema() -> dict[str, str]:
         col: DUCKDB_TO_POLARS_TYPE_MAP.get(dtype, "Utf8")
         for col, dtype in SIHSUS_PARQUET_SCHEMA.items()
     }
+
+
+def generate_column_cleaning_sql() -> str:
+    """Generate SQL for cleaning all columns (TRIM + UPPER).
+
+    Generates TRIM(UPPER(CAST(col AS VARCHAR))) for all columns in schema.
+    This standardizes text data and removes whitespace.
+
+    Returns:
+        SQL column list with cleaning transformations, comma-separated
+
+    Example output:
+        TRIM(UPPER(CAST(uf_zi AS VARCHAR))) AS uf_zi,
+        TRIM(UPPER(CAST(ano_cmpt AS VARCHAR))) AS ano_cmpt,
+        ...
+    """
+    cleaned = []
+    for col in SIHSUS_PARQUET_SCHEMA.keys():
+        col_upper = col.upper()  # DBF columns are uppercase initially
+        cleaned.append(f"TRIM(UPPER(CAST({col_upper} AS VARCHAR))) AS {col_upper}")
+
+    return ",\n                ".join(cleaned)
+
+
+def generate_type_validation_sql(suffix: str = "_typed") -> str:
+    """Generate SQL for type validation and conversion of all columns.
+
+    Uses TRY_CAST to safely convert string values to target types.
+    Invalid values become NULL instead of causing errors.
+
+    Args:
+        suffix: Suffix to append to column names (e.g., "_typed", "_num", "_int")
+                If empty string, uses original column name
+
+    Returns:
+        SQL column list with type conversions, comma-separated
+
+    Example output (suffix="_typed"):
+        TRY_CAST(uf_zi AS INTEGER) AS uf_zi_typed,
+        TRY_CAST(idade AS TINYINT) AS idade_typed,
+        TRY_CAST(val_tot AS FLOAT) AS val_tot_typed,
+        ...
+
+    Example output (suffix=""):
+        TRY_CAST(uf_zi AS INTEGER) AS uf_zi,
+        TRY_CAST(idade AS TINYINT) AS idade,
+        ...
+    """
+    conversions = []
+    for col, dtype in SIHSUS_PARQUET_SCHEMA.items():
+        col_upper = col.upper()
+        target_name = f"{col_upper}{suffix}" if suffix else col_upper
+
+        # Use TRY_CAST for safe conversion (returns NULL on error)
+        if dtype == "DATE":
+            # Dates require special handling with STRPTIME
+            conversions.append(f"TRY_CAST({col_upper} AS DATE) AS {target_name}")
+        elif dtype == "BOOLEAN":
+            # Boolean conversion from 0/1
+            conversions.append(
+                f"CASE WHEN {col_upper} IN ('1', 'true', 'TRUE') THEN TRUE "
+                f"WHEN {col_upper} IN ('0', 'false', 'FALSE') THEN FALSE "
+                f"ELSE NULL END AS {target_name}"
+            )
+        else:
+            conversions.append(f"TRY_CAST({col_upper} AS {dtype}) AS {target_name}")
+
+    return ",\n                ".join(conversions)
+
+
+def get_columns_by_type(sql_type: str) -> list[str]:
+    """Get all column names of a specific SQL type.
+
+    Args:
+        sql_type: DuckDB SQL type (e.g., "INTEGER", "FLOAT", "DATE", "VARCHAR")
+
+    Returns:
+        List of column names (lowercase) with the specified type
+
+    Example:
+        >>> get_columns_by_type("FLOAT")
+        ['val_sh', 'val_sp', 'val_tot', ...]
+        >>> get_columns_by_type("DATE")
+        ['nasc', 'dt_inter', 'dt_saida', 'gestor_dt']
+    """
+    return [col for col, dtype in SIHSUS_PARQUET_SCHEMA.items() if dtype == sql_type]
+
+
+def get_numeric_columns() -> list[str]:
+    """Get all numeric column names.
+
+    Returns:
+        List of column names (lowercase) that are numeric types
+        (TINYINT, SMALLINT, INTEGER, BIGINT, FLOAT, DOUBLE)
+
+    Example:
+        >>> numeric = get_numeric_columns()
+        >>> 'idade' in numeric
+        True
+        >>> 'val_tot' in numeric
+        True
+        >>> 'sexo' in numeric
+        False
+    """
+    numeric_types = {"TINYINT", "SMALLINT", "INTEGER", "BIGINT", "FLOAT", "DOUBLE"}
+    return [
+        col for col, dtype in SIHSUS_PARQUET_SCHEMA.items() if dtype in numeric_types
+    ]
