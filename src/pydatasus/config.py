@@ -45,9 +45,9 @@ class ConversionConfig(BaseModel):
     dbc_dir: Path = Field(description="Directory with DBC files")
     dbf_dir: Path = Field(description="Directory for DBF files")
     csv_dir: Path = Field(description="Directory for CSV files")
-    tabwin_dir: Path = Field(
-        default=Path("C:/Program Files/TAB415"),
-        description="TABWIN installation directory",
+    tabwin_dir: Optional[Path] = Field(
+        default=None,
+        description="DEPRECATED: TABWIN no longer required. DBC decompression now uses datasus-dbc Python library. This field is ignored.",
     )
     override: bool = Field(default=False, description="Override existing files")
     max_workers: Optional[int] = Field(default=None, description="Parallel workers (None=auto)")

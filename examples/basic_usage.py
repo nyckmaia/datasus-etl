@@ -34,7 +34,6 @@ def main():
             dbc_dir=base_dir / "dbc",
             dbf_dir=base_dir / "dbf",
             csv_dir=base_dir / "csv",  # Not used but required by config
-            tabwin_dir=Path("C:/Program Files/TAB415"),  # Adjust path if needed
             override=False,
         ),
         processing=ProcessingConfig(

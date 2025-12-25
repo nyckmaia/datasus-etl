@@ -8,7 +8,7 @@ Pipeline profissional otimizado para download, conversão e processamento de dad
 ## ✨ Características
 
 - 🔽 **Download FTP automático** do DATASUS
-- 🔄 **Conversão DBC→DBF** com TABWIN
+- 🔄 **Conversão DBC→DBF** com Python puro (datasus-dbc)
 - ⚡ **Streaming DBF→DuckDB** (sem CSV intermediário)
 - 🧹 **Transformações SQL** otimizadas em DuckDB
 - 📊 **Enriquecimento com dados IBGE** integrado
@@ -17,6 +17,7 @@ Pipeline profissional otimizado para download, conversão e processamento de dad
 - 🚀 **Processamento paralelo** multi-threaded
 - 💪 **Gerenciamento automático de memória** (processa 500GB+ em <16GB RAM)
 - 🧪 **Testes abrangentes** (50+ testes unitários)
+- 🌍 **Cross-platform** (Windows, Linux, macOS)
 
 ## 🎯 Performance
 
@@ -42,8 +43,7 @@ pip install -e ".[dev]"
 
 **Requisitos:**
 - Python 3.11+
-- TABWIN instalado para conversão DBC→DBF
-- **Dependências:** `polars`, `duckdb`, `pyarrow`, `psutil`
+- Todas as dependências instaladas automaticamente via pip
 
 ## 🚀 Uso Rápido
 
@@ -73,7 +73,6 @@ config = PipelineConfig(
         dbc_dir=Path("./data/dbc"),
         dbf_dir=Path("./data/dbf"),
         csv_dir=Path("./data/csv"),  # Não usado, mantido para compatibilidade
-        tabwin_dir=Path("C:/Program Files/TAB415"),
     ),
     processing=ProcessingConfig(
         input_dir=Path("./data/csv"),  # Não usado
@@ -184,10 +183,10 @@ python examples/batch_processing.py
 ## 📊 Pipeline Otimizado
 
 ```
-┌─────────────┐    ┌──────────┐    ┌─────────────┐    ┌──────────────────┐
-│ FTP Download│ -> │DBC→DBF   │ -> │DBF→DuckDB   │ -> │SQL Transform +   │
-│ (DATASUS)   │    │(TABWIN)  │    │(Streaming)  │    │Parquet Export    │
-└─────────────┘    └──────────┘    └─────────────┘    └──────────────────┘
+┌─────────────┐    ┌──────────────┐    ┌─────────────┐    ┌──────────────────┐
+│ FTP Download│ -> │DBC→DBF       │ -> │DBF→DuckDB   │ -> │SQL Transform +   │
+│ (DATASUS)   │    │(datasus-dbc) │    │(Streaming)  │    │Parquet Export    │
+└─────────────┘    └──────────────┘    └─────────────┘    └──────────────────┘
                                            ↓
                                     ┌─────────────┐
                                     │ Parquet     │
@@ -212,7 +211,7 @@ python examples/batch_processing.py
 - **`PipelineConfig`** - Configuração com Pydantic
 
 #### Conversores (Otimizados)
-- **`DbcToDbfConverter`** - Conversão DBC→DBF com TABWIN
+- **`DbcToDbfConverter`** - Conversão DBC→DBF com datasus-dbc (Python puro)
 - **`DbfToDuckDBConverter`** ⭐ - Streaming DBF→DuckDB (NOVO)
 
 #### Transformação e Storage
@@ -332,7 +331,7 @@ pydatasus/
 │   │   └── ftp_downloader.py     # FTP DATASUS
 │   ├── transform/
 │   │   ├── converters/
-│   │   │   ├── dbc_to_dbf.py     # DBC → DBF (TABWIN)
+│   │   │   ├── dbc_to_dbf.py     # DBC → DBF (datasus-dbc)
 │   │   │   ├── dbf_to_duckdb.py  # DBF → DuckDB (NOVO) ⭐
 │   │   │   ├── dbf_to_csv.py     # DEPRECATED
 │   │   ├── processors/

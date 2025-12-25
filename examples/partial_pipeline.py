@@ -39,7 +39,6 @@ def main():
             dbc_dir=base_dir / "dbc",
             dbf_dir=base_dir / "dbf",
             csv_dir=base_dir / "csv",
-            tabwin_dir=Path("C:/Program Files/TAB415"),
             override=False,
         ),
         processing=ProcessingConfig(
@@ -137,7 +136,6 @@ def resume_from_stage_3():
             dbc_dir=base_dir / "dbc",
             dbf_dir=base_dir / "dbf",
             csv_dir=base_dir / "csv",
-            tabwin_dir=Path("C:/Program Files/TAB415"),
         ),
         processing=ProcessingConfig(
             input_dir=base_dir / "csv",
@@ -179,7 +177,6 @@ def run_only_transformation():
             dbc_dir=base_dir / "dbc",
             dbf_dir=base_dir / "dbf",
             csv_dir=base_dir / "csv",
-            tabwin_dir=Path("C:/Program Files/TAB415"),
         ),
         processing=ProcessingConfig(
             input_dir=base_dir / "csv",

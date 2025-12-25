@@ -1,7 +1,6 @@
-"""Converter from DBC (compressed) to DBF format using TABWIN."""
+"""Converter from DBC (compressed) to DBF format using datasus-dbc library."""
 
 import logging
-import subprocess
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional
@@ -13,10 +12,11 @@ from pydatasus.exceptions import ConversionError
 
 
 class DbcToDbfConverter:
-    """Converts DBC files to DBF using TABWIN's dbf2dbc.exe utility.
+    """Converts DBC files to DBF using datasus-dbc Python library.
 
     DBC files are compressed DBF files used by DATASUS.
-    TABWIN is required to decompress them.
+    This converter uses the pure Python datasus-dbc library, eliminating
+    the need for TABWIN (Windows-only executable).
     """
 
     def __init__(self, config: ConversionConfig) -> None:
@@ -27,7 +27,6 @@ class DbcToDbfConverter:
         """
         self.config = config
         self.logger = logging.getLogger("pydatasus.DbcToDbfConverter")
-        self._exe_path = config.tabwin_dir / "dbf2dbc.exe"
         self._converted_count = 0
         self._error_count = 0
 
@@ -44,13 +43,10 @@ class DbcToDbfConverter:
             Dictionary with conversion statistics
 
         Raises:
-            ConversionError: If TABWIN executable not found
+            ConversionError: If input directory not found
         """
         input_dir = input_dir or self.config.dbc_dir
         output_dir = output_dir or self.config.dbf_dir
-
-        if not self._exe_path.exists():
-            raise ConversionError(f"TABWIN executable not found: {self._exe_path}")
 
         if not input_dir.exists():
             raise ConversionError(f"Input directory not found: {input_dir}")
@@ -107,7 +103,7 @@ class DbcToDbfConverter:
     def _convert_file(
         self, dbc_file: Path, input_root: Path, output_root: Path
     ) -> bool:
-        """Convert a single DBC file to DBF.
+        """Convert a single DBC file to DBF using datasus-dbc.
 
         Args:
             dbc_file: Path to DBC file
@@ -118,25 +114,24 @@ class DbcToDbfConverter:
             True if successful, False otherwise
         """
         try:
+            import datasus_dbc
+
             # Calculate output path
             rel_path = dbc_file.relative_to(input_root)
             output_dir = output_root / rel_path.parent
             output_dir.mkdir(parents=True, exist_ok=True)
 
-            # Run TABWIN converter
-            cmd = f'"{self._exe_path}" "{dbc_file}" "{output_dir}"'
-            result = subprocess.run(
-                cmd, shell=True, capture_output=True, text=True, timeout=300
-            )
+            # Output DBF file (same name, different extension)
+            output_file = output_dir / (dbc_file.stem + ".dbf")
 
-            if result.returncode != 0:
-                self.logger.error(f"Conversion failed for {dbc_file.name}: {result.stderr}")
-                return False
+            # Decompress DBC to DBF using datasus-dbc library
+            datasus_dbc.decompress_file(str(dbc_file), str(output_file))
 
+            self.logger.debug(f"Converted {dbc_file.name} → {output_file.name}")
             return True
 
         except Exception as e:
-            self.logger.error(f"Error in _convert_file for {dbc_file.name}: {e}")
+            self.logger.error(f"Error converting {dbc_file.name}: {e}")
             return False
 
     def _filter_existing(

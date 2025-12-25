@@ -37,6 +37,9 @@ dependencies = [
     "tqdm>=4.66.0",
     "tenacity>=8.2.0",
     "dbfread>=2.0.7",
+    "datasus-dbc>=0.2.0",  # DBC decompression (replaces TABWIN)
+    "simpledbf>=0.2.8",    # Fast DBF reading for small files
+    "psutil>=5.9.0",       # System resource monitoring
 ]
 
 [project.optional-dependencies]

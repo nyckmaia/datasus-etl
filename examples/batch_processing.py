@@ -77,7 +77,6 @@ def main():
                 dbc_dir=uf_base / "dbc",
                 dbf_dir=uf_base / "dbf",
                 csv_dir=uf_base / "csv",
-                tabwin_dir=Path("C:/Program Files/TAB415"),
                 override=False,
             ),
             processing=ProcessingConfig(

@@ -38,7 +38,6 @@ def run_optimized_pipeline():
             dbc_dir=base_dir / "dbc",
             dbf_dir=base_dir / "dbf",
             csv_dir=base_dir / "csv",  # Not used anymore, but required by config
-            tabwin_dir=Path("C:/Program Files/TAB415"),
             override=False,
         ),
         processing=ProcessingConfig(
