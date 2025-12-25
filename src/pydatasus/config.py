@@ -81,6 +81,7 @@ class DatabaseConfig(BaseModel):
     db_path: Optional[Path] = Field(default=None, description="DuckDB file (None=memory)")
     read_only: bool = Field(default=False, description="Read-only mode")
     threads: Optional[int] = Field(default=None, description="Number of threads (None=auto)")
+    chunk_size: int = Field(default=10000, ge=1000, description="Chunk size for streaming DBF to DuckDB")
 
 
 class PipelineConfig(BaseModel):

@@ -9,11 +9,10 @@ from pydatasus.core.stage import Stage
 from pydatasus.core.context import PipelineContext
 from pydatasus.download.ftp_downloader import FTPDownloader
 from pydatasus.transform.converters.dbc_to_dbf import DbcToDbfConverter
-from pydatasus.transform.converters.dbf_to_csv import DbfToCsvConverter
-from pydatasus.transform.processors.sihsus_processor import SihsusProcessor
-from pydatasus.transform.enrichers.ibge_enricher import IbgeEnricher
-from pydatasus.storage.parquet_writer import ParquetWriter
+from pydatasus.transform.converters.dbf_to_duckdb import DbfToDuckDBConverter
+from pydatasus.storage.sql_transformer import SQLTransformer
 from pydatasus.storage.duckdb_manager import DuckDBManager
+from tqdm import tqdm
 
 
 class DownloadStage(Stage):
@@ -54,124 +53,130 @@ class DbcToDbfStage(Stage):
         return context
 
 
-class DbfToCsvStage(Stage):
-    """Stage for converting DBF to CSV files."""
+class DbfToDbStage(Stage):
+    """Stage for streaming DBF directly to DuckDB."""
 
     def __init__(self, config: PipelineConfig) -> None:
-        super().__init__("Convert DBF to CSV")
+        super().__init__("Stream DBF to DuckDB")
         self.config = config
 
     def _execute(self, context: PipelineContext) -> PipelineContext:
-        """Execute DBF to CSV conversion stage."""
-        converter = DbfToCsvConverter(self.config.conversion)
-        stats = converter.convert_directory()
+        """Stream all DBF files to DuckDB staging tables."""
+        db_manager = DuckDBManager(self.config.database)
 
-        context.set("dbf_conversion_stats", stats)
-        context.set_metadata("csv_converted_count", stats["converted"])
+        with db_manager:
+            converter = DbfToDuckDBConverter(
+                conn=db_manager._conn,
+                chunk_size=self.config.database.chunk_size
+            )
 
-        self.logger.info(f"Converted {stats['converted']} DBF files to CSV")
+            # Find all DBF files
+            dbf_files = list(self.config.conversion.dbf_dir.rglob("*.dbf"))
+            if not dbf_files:
+                self.logger.warning(f"No DBF files found in {self.config.conversion.dbf_dir}")
+                return context
+
+            total_rows = 0
+            for dbf_file in tqdm(dbf_files, desc="Streaming DBF→DuckDB"):
+                table_name = f"staging_{dbf_file.stem}"
+
+                try:
+                    rows = converter.stream_dbf_to_table(
+                        dbf_path=dbf_file,
+                        table_name=table_name,
+                        create_table=True
+                    )
+                    total_rows += rows
+                except Exception as e:
+                    self.logger.error(f"Failed to stream {dbf_file.name}: {e}")
+                    continue
+
+            context.set("staging_tables", [f"staging_{f.stem}" for f in dbf_files])
+            context.set_metadata("total_rows_loaded", total_rows)
+
+            self.logger.info(f"Streamed {total_rows:,} rows from {len(dbf_files)} DBF files")
+
         return context
 
 
-class ProcessStage(Stage):
-    """Stage for processing and cleaning CSV data."""
-
-    def __init__(self, config: PipelineConfig) -> None:
-        super().__init__("Process and Clean Data")
-        self.config = config
-
-    def _execute(self, context: PipelineContext) -> PipelineContext:
-        """Execute processing stage."""
-        processor = SihsusProcessor(self.config.processing)
-        stats = processor.process_directory()
-
-        context.set("processing_stats", stats)
-        context.set_metadata("processed_count", stats["processed"])
-
-        self.logger.info(f"Processed {stats['processed']} CSV files")
-        return context
-
-
-class EnrichStage(Stage):
-    """Stage for enriching data with IBGE information."""
+class SqlTransformStage(Stage):
+    """Stage for SQL-based data transformation and Parquet export."""
 
     def __init__(self, config: PipelineConfig, ibge_data_path: Path = None) -> None:
-        super().__init__("Enrich with IBGE Data")
+        super().__init__("Transform Data (SQL) and Export Parquet")
         self.config = config
         self.ibge_data_path = ibge_data_path
 
     def _execute(self, context: PipelineContext) -> PipelineContext:
-        """Execute enrichment stage."""
-        enricher = IbgeEnricher(ibge_data_path=self.ibge_data_path)
-
-        # Enrich from processed dir to a temp enriched dir
-        enriched_dir = self.config.processing.output_dir.parent / "enriched"
-        enriched_dir.mkdir(parents=True, exist_ok=True)
-
-        stats = enricher.enrich_directory(
-            input_dir=self.config.processing.output_dir,
-            output_dir=enriched_dir,
-        )
-
-        context.set("enrichment_stats", stats)
-        context.set("enriched_dir", enriched_dir)
-        context.set_metadata("enriched_count", stats["enriched"])
-
-        self.logger.info(f"Enriched {stats['enriched']} files with IBGE data")
-        return context
-
-
-class ParquetStage(Stage):
-    """Stage for converting data to Parquet format."""
-
-    def __init__(self, config: PipelineConfig) -> None:
-        super().__init__("Convert to Parquet")
-        self.config = config
-
-    def _execute(self, context: PipelineContext) -> PipelineContext:
-        """Execute Parquet conversion stage."""
-        writer = ParquetWriter(self.config.storage)
-
-        # Use enriched dir if available, otherwise processed dir
-        input_dir = context.get("enriched_dir", self.config.processing.output_dir)
-
-        stats = writer.convert_directory(input_dir)
-
-        context.set("parquet_stats", stats)
-        context.set_metadata("parquet_count", stats["converted"])
-
-        self.logger.info(f"Converted {stats['converted']} files to Parquet")
-        return context
-
-
-class DatabaseStage(Stage):
-    """Stage for loading data into DuckDB."""
-
-    def __init__(self, config: PipelineConfig) -> None:
-        super().__init__("Load into DuckDB")
-        self.config = config
-
-    def _execute(self, context: PipelineContext) -> PipelineContext:
-        """Execute database loading stage."""
+        """Apply all transformations using SQL and export to Parquet."""
         db_manager = DuckDBManager(self.config.database)
 
         with db_manager:
-            # Register all parquet directories as tables
-            parquet_dirs = list(self.config.storage.parquet_dir.glob("*"))
-            parquet_tables = [d for d in parquet_dirs if d.is_dir()]
+            transformer = SQLTransformer(db_manager._conn)
 
-            table_count = 0
-            for table_dir in parquet_tables:
-                table_name = table_dir.name
-                db_manager.register_parquet(table_dir, table_name)
-                table_count += 1
+            # Get list of staging tables
+            staging_tables = context.get("staging_tables", [])
+            if not staging_tables:
+                self.logger.warning("No staging tables found")
+                return context
 
-            context.set("database_tables", table_count)
-            context.set_metadata("tables_loaded", table_count)
+            # Create UNION of all staging tables
+            union_query = " UNION ALL ".join([
+                f"SELECT * FROM {table}"
+                for table in staging_tables
+            ])
 
-            self.logger.info(f"Loaded {table_count} tables into DuckDB")
+            db_manager._conn.execute(
+                f"""
+                CREATE OR REPLACE VIEW unified_staging AS
+                {union_query}
+            """
+            )
+
+            self.logger.info(f"Unified {len(staging_tables)} staging tables")
+
+            # Apply all transformations
+            transformer.transform_sihsus_data(
+                source_table="unified_staging",
+                target_view="sihsus_processed",
+                ibge_data_path=self.ibge_data_path
+            )
+
+            # Export directly to Parquet (zero-copy)
+            parquet_dir = self.config.storage.parquet_dir
+            parquet_dir.mkdir(parents=True, exist_ok=True)
+
+            # Check if we have partition columns
+            # First, let's count rows to provide feedback
+            count_result = db_manager._conn.execute(
+                "SELECT COUNT(*) as cnt FROM sihsus_processed"
+            ).fetchone()
+            total_rows = count_result[0] if count_result else 0
+
+            self.logger.info(f"Exporting {total_rows:,} rows to Parquet...")
+
+            # Export with partitioning and compression
+            export_path = parquet_dir / "data.parquet"
+            db_manager._conn.execute(
+                f"""
+                COPY (SELECT * FROM sihsus_processed)
+                TO '{export_path}' (
+                    FORMAT PARQUET,
+                    PARTITION_BY (ANO_INTER, UF_ZI),
+                    COMPRESSION '{self.config.storage.compression}',
+                    ROW_GROUP_SIZE {self.config.storage.row_group_size}
+                )
+            """
+            )
+
+            context.set("parquet_path", parquet_dir)
+            context.set_metadata("total_rows_exported", total_rows)
+
+            self.logger.info(f"Exported {total_rows:,} rows to {parquet_dir}")
 
         return context
+
+
 
 
 class SihsusPipeline(Pipeline[PipelineConfig]):
@@ -215,14 +220,25 @@ class SihsusPipeline(Pipeline[PipelineConfig]):
         self.ibge_data_path = ibge_data_path
 
     def setup_stages(self) -> None:
-        """Set up all pipeline stages."""
+        """Set up optimized pipeline stages.
+
+        Pipeline stages:
+        1. Download DBC files from DATASUS FTP
+        2. Decompress DBC → DBF (using TABWIN)
+        3. Stream DBF → DuckDB (new, replaces CSV step)
+        4. Transform in SQL and export to Parquet (new, combines processing/enrichment/export)
+
+        This replaces the old 7-stage pipeline:
+        - Removed: DbfToCsvStage (replaced by DbfToDbStage)
+        - Removed: ProcessStage (replaced by SqlTransformStage)
+        - Removed: EnrichStage (merged into SqlTransformStage)
+        - Removed: ParquetStage (merged into SqlTransformStage)
+        - Removed: DatabaseStage (no longer needed, Parquet can be queried directly)
+        """
         # Add stages in order
         self.add_stage(DownloadStage(self.config))
         self.add_stage(DbcToDbfStage(self.config))
-        self.add_stage(DbfToCsvStage(self.config))
-        self.add_stage(ProcessStage(self.config))
-        self.add_stage(EnrichStage(self.config, self.ibge_data_path))
-        self.add_stage(ParquetStage(self.config))
-        self.add_stage(DatabaseStage(self.config))
+        self.add_stage(DbfToDbStage(self.config))
+        self.add_stage(SqlTransformStage(self.config, self.ibge_data_path))
 
-        self.logger.info(f"Pipeline configured with {len(self._stages)} stages")
+        self.logger.info(f"Optimized pipeline configured with {len(self._stages)} stages")
