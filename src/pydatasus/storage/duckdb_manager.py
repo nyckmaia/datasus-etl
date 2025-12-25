@@ -1,11 +1,13 @@
 """DuckDB database manager for analytical queries."""
 
 import logging
+import tempfile
 from pathlib import Path
 from typing import Any, Optional
 
 import duckdb
 import polars as pl
+import psutil
 
 from pydatasus.config import DatabaseConfig
 from pydatasus.exceptions import PyInmetError
@@ -48,9 +50,23 @@ class DuckDBManager:
                 read_only=self.config.read_only,
             )
 
-            # Configure threads if specified
-            if self.config.threads:
-                self._conn.execute(f"SET threads TO {self.config.threads}")
+            # Configure memory limits to prevent OOM
+            available_ram_gb = psutil.virtual_memory().available / (1024**3)
+            # Use 60% of available RAM, minimum 2GB
+            memory_limit_gb = max(2, int(available_ram_gb * 0.6))
+            self._conn.execute(f"SET memory_limit = '{memory_limit_gb}GB'")
+            self.logger.info(f"DuckDB memory limit set to {memory_limit_gb}GB")
+
+            # Configure threads
+            threads = self.config.threads or psutil.cpu_count()
+            self._conn.execute(f"SET threads TO {threads}")
+            self.logger.info(f"DuckDB threads set to {threads}")
+
+            # Configure temp directory for spilling
+            temp_dir = Path(tempfile.gettempdir()) / "pydatasus_duckdb_temp"
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            self._conn.execute(f"SET temp_directory = '{temp_dir}'")
+            self.logger.info(f"DuckDB temp directory: {temp_dir}")
 
             self.logger.info("Connected to DuckDB successfully")
 

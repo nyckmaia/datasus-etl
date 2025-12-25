@@ -61,7 +61,10 @@ class DbfToDbStage(Stage):
         self.config = config
 
     def _execute(self, context: PipelineContext) -> PipelineContext:
-        """Stream all DBF files to DuckDB staging tables."""
+        """Stream all DBF files to DuckDB staging tables with parallel processing."""
+        import multiprocessing
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
         db_manager = DuckDBManager(self.config.database)
 
         with db_manager:
@@ -76,22 +79,37 @@ class DbfToDbStage(Stage):
                 self.logger.warning(f"No DBF files found in {self.config.conversion.dbf_dir}")
                 return context
 
+            # Use multi-threading for I/O-bound DBF loading (max 4 workers)
+            max_workers = min(4, multiprocessing.cpu_count())
             total_rows = 0
-            for dbf_file in tqdm(dbf_files, desc="Streaming DBF→DuckDB"):
-                table_name = f"staging_{dbf_file.stem}"
+            staging_tables = []
 
-                try:
-                    rows = converter.stream_dbf_to_table(
-                        dbf_path=dbf_file,
-                        table_name=table_name,
-                        create_table=True
-                    )
-                    total_rows += rows
-                except Exception as e:
-                    self.logger.error(f"Failed to stream {dbf_file.name}: {e}")
-                    continue
+            self.logger.info(f"Streaming {len(dbf_files)} DBF files using {max_workers} threads")
 
-            context.set("staging_tables", [f"staging_{f.stem}" for f in dbf_files])
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # Submit all tasks
+                future_to_file = {
+                    executor.submit(
+                        converter.stream_dbf_to_table,
+                        dbf_file,
+                        f"staging_{dbf_file.stem}",
+                        True
+                    ): dbf_file
+                    for dbf_file in dbf_files
+                }
+
+                # Process completed tasks with progress bar
+                for future in tqdm(as_completed(future_to_file), total=len(dbf_files), desc="Streaming DBF→DuckDB"):
+                    dbf_file = future_to_file[future]
+                    try:
+                        rows = future.result()
+                        total_rows += rows
+                        staging_tables.append(f"staging_{dbf_file.stem}")
+                    except Exception as e:
+                        self.logger.error(f"Failed to stream {dbf_file.name}: {e}")
+                        continue
+
+            context.set("staging_tables", staging_tables)
             context.set_metadata("total_rows_loaded", total_rows)
 
             self.logger.info(f"Streamed {total_rows:,} rows from {len(dbf_files)} DBF files")
@@ -146,17 +164,10 @@ class SqlTransformStage(Stage):
             parquet_dir = self.config.storage.parquet_dir
             parquet_dir.mkdir(parents=True, exist_ok=True)
 
-            # Check if we have partition columns
-            # First, let's count rows to provide feedback
-            count_result = db_manager._conn.execute(
-                "SELECT COUNT(*) as cnt FROM sihsus_processed"
-            ).fetchone()
-            total_rows = count_result[0] if count_result else 0
-
-            self.logger.info(f"Exporting {total_rows:,} rows to Parquet...")
-
             # Export with partitioning and compression
             export_path = parquet_dir / "data.parquet"
+            self.logger.info("Exporting to Parquet...")
+
             db_manager._conn.execute(
                 f"""
                 COPY (SELECT * FROM sihsus_processed)
@@ -168,6 +179,15 @@ class SqlTransformStage(Stage):
                 )
             """
             )
+
+            # Get row count AFTER export (faster - reads Parquet metadata)
+            count_result = db_manager._conn.execute(
+                f"""
+                SELECT COUNT(*) as cnt
+                FROM read_parquet('{parquet_dir}/**/*.parquet', hive_partitioning=true)
+                """
+            ).fetchone()
+            total_rows = count_result[0] if count_result else 0
 
             context.set("parquet_path", parquet_dir)
             context.set_metadata("total_rows_exported", total_rows)
