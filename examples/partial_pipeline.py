@@ -9,7 +9,6 @@ from pydatasus.config import (
     PipelineConfig,
     DownloadConfig,
     ConversionConfig,
-    ProcessingConfig,
     StorageConfig,
     DatabaseConfig,
 )
@@ -38,12 +37,6 @@ def main():
         conversion=ConversionConfig(
             dbc_dir=base_dir / "dbc",
             dbf_dir=base_dir / "dbf",
-            csv_dir=base_dir / "csv",
-            override=False,
-        ),
-        processing=ProcessingConfig(
-            input_dir=base_dir / "csv",
-            output_dir=base_dir / "processed",
             override=False,
         ),
         storage=StorageConfig(
@@ -135,11 +128,6 @@ def resume_from_stage_3():
         conversion=ConversionConfig(
             dbc_dir=base_dir / "dbc",
             dbf_dir=base_dir / "dbf",
-            csv_dir=base_dir / "csv",
-        ),
-        processing=ProcessingConfig(
-            input_dir=base_dir / "csv",
-            output_dir=base_dir / "processed",
         ),
         storage=StorageConfig(
             parquet_dir=base_dir / "parquet",
@@ -176,11 +164,6 @@ def run_only_transformation():
         conversion=ConversionConfig(
             dbc_dir=base_dir / "dbc",
             dbf_dir=base_dir / "dbf",
-            csv_dir=base_dir / "csv",
-        ),
-        processing=ProcessingConfig(
-            input_dir=base_dir / "csv",
-            output_dir=base_dir / "processed",
         ),
         storage=StorageConfig(
             parquet_dir=base_dir / "parquet_v2",  # Different output

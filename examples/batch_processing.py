@@ -15,7 +15,6 @@ from pydatasus.config import (
     PipelineConfig,
     DownloadConfig,
     ConversionConfig,
-    ProcessingConfig,
     StorageConfig,
     DatabaseConfig,
 )
@@ -76,12 +75,6 @@ def main():
             conversion=ConversionConfig(
                 dbc_dir=uf_base / "dbc",
                 dbf_dir=uf_base / "dbf",
-                csv_dir=uf_base / "csv",
-                override=False,
-            ),
-            processing=ProcessingConfig(
-                input_dir=uf_base / "csv",
-                output_dir=uf_base / "processed",
                 override=False,
             ),
             storage=StorageConfig(

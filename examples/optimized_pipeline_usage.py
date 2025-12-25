@@ -12,7 +12,6 @@ from pydatasus.config import (
     PipelineConfig,
     DownloadConfig,
     ConversionConfig,
-    ProcessingConfig,
     StorageConfig,
     DatabaseConfig,
 )
@@ -37,12 +36,6 @@ def run_optimized_pipeline():
         conversion=ConversionConfig(
             dbc_dir=base_dir / "dbc",
             dbf_dir=base_dir / "dbf",
-            csv_dir=base_dir / "csv",  # Not used anymore, but required by config
-            override=False,
-        ),
-        processing=ProcessingConfig(
-            input_dir=base_dir / "csv",  # Not used anymore
-            output_dir=base_dir / "processed",  # Not used anymore
             override=False,
         ),
         storage=StorageConfig(
