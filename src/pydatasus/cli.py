@@ -20,7 +20,6 @@ from pydatasus.config import (
 from pydatasus.download.ftp_downloader import FTPDownloader
 from pydatasus.pipeline.sihsus_pipeline import SihsusPipeline
 from pydatasus.transform.converters.dbc_to_dbf import DbcToDbfConverter
-from pydatasus.transform.converters.dbf_to_csv import DbfToCsvConverter
 
 app = typer.Typer(
     name="pydatasus",
@@ -117,29 +116,6 @@ def convert_dbc(
     )
 
     converter = DbcToDbfConverter(config)
-    stats = converter.convert_directory()
-
-    console.print(
-        f"\n[green]✓ Conversão concluída: {stats['converted']} arquivos convertidos[/green]"
-    )
-
-
-@app.command()
-def convert_dbf(
-    input_dir: Path = typer.Argument(..., help="Diretório com arquivos DBF"),
-    output_dir: Path = typer.Argument(..., help="Diretório de saída para CSV"),
-) -> None:
-    """Convert DBF files to CSV."""
-    setup_logging()
-
-    config = ConversionConfig(
-        dbc_dir=input_dir,  # Not used
-        dbf_dir=input_dir,
-        csv_dir=output_dir,
-        tabwin_dir=Path("."),  # Not used
-    )
-
-    converter = DbfToCsvConverter(config)
     stats = converter.convert_directory()
 
     console.print(

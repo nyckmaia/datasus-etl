@@ -22,14 +22,14 @@ Pipeline profissional otimizado para download, conversão e processamento de dad
 ## 🎯 Performance
 
 **Pipeline otimizado com DuckDB streaming:**
-- ⚡ **70% mais rápido** que abordagem tradicional
-- 💾 **58% menos RAM** (streaming, sem DataFrames intermediários)
+- ⚡ **75-77% mais rápido** que abordagem tradicional (20h → 4.5-5h)
+- 💾 **58-67% menos RAM** (streaming, sem DataFrames intermediários)
 - 💿 **63% menos I/O** (sem CSVs intermediários)
 - 🛡️ **Zero risco de OOM** (spilling automático para disco)
 
 | Métrica | Abordagem Tradicional | PyDataSUS Otimizado |
 |---------|----------------------|---------------------|
-| Tempo (500GB) | 20h | **5-6h** ⚡ |
+| Tempo (500GB) | 20h | **4.5-5h** ⚡ |
 | RAM Pico | 24GB | **8-10GB** 💾 |
 | I/O Disco | 1.5TB | **550GB** 💿 |
 
@@ -222,17 +222,6 @@ python examples/batch_processing.py
 #### Download
 - **`FTPDownloader`** - Download do FTP DATASUS
 
-### Componentes Legados (Deprecated)
-
-⚠️ **Os seguintes componentes estão deprecated e serão removidos em v2.0:**
-
-| Componente Legado | Substituto | Ganho de Performance |
-|-------------------|------------|---------------------|
-| `DbfToCsvConverter` | `DbfToDuckDBConverter` | 60% mais rápido |
-| `SihsusProcessor` | `SQLTransformer` | 40% mais rápido, 58% menos RAM |
-| `IbgeEnricher` | `SQLTransformer` (integrado) | Single-pass processing |
-
-**Migração:** Veja [PHASE2_SUMMARY.md](PHASE2_SUMMARY.md#-migration-guide-quick-reference) para guia completo.
 
 ### Design Patterns
 
@@ -330,14 +319,9 @@ pydatasus/
 │   ├── download/
 │   │   └── ftp_downloader.py     # FTP DATASUS
 │   ├── transform/
-│   │   ├── converters/
-│   │   │   ├── dbc_to_dbf.py     # DBC → DBF (datasus-dbc)
-│   │   │   ├── dbf_to_duckdb.py  # DBF → DuckDB (NOVO) ⭐
-│   │   │   ├── dbf_to_csv.py     # DEPRECATED
-│   │   ├── processors/
-│   │   │   └── sihsus_processor.py  # DEPRECATED
-│   │   └── enrichers/
-│   │       └── ibge_enricher.py     # DEPRECATED
+│   │   └── converters/
+│   │       ├── dbc_to_dbf.py     # DBC → DBF (datasus-dbc)
+│   │       └── dbf_to_duckdb.py  # DBF → DuckDB ⭐
 │   ├── storage/
 │   │   ├── sql_transformer.py    # SQL transformations (NOVO) ⭐
 │   │   ├── parquet_query_engine.py  # Query interface (NOVO) ⭐
@@ -355,7 +339,8 @@ pydatasus/
 ├── tests/                        # 50+ testes
 ├── docs/
 │   ├── OPTIMIZATION_SUMMARY.md   # Resumo Fase 1
-│   └── PHASE2_SUMMARY.md         # Resumo Fase 2
+│   ├── PHASE2_SUMMARY.md         # Resumo Fase 2
+│   └── PHASE3_SUMMARY.md         # Resumo Fase 3
 ├── pyproject.toml
 └── README.md
 ```
@@ -365,8 +350,10 @@ pydatasus/
 ### Documentação Técnica
 - [OPTIMIZATION_SUMMARY.md](OPTIMIZATION_SUMMARY.md) - Resumo da otimização (Fase 1)
 - [PHASE2_SUMMARY.md](PHASE2_SUMMARY.md) - Performance optimizations (Fase 2)
+- [docs/PHASE3_SUMMARY.md](docs/PHASE3_SUMMARY.md) - Cross-platform & adaptive performance (Fase 3)
 - [`.claude/plans/bubbly-zooming-flute.md`](.claude/plans/bubbly-zooming-flute.md) - Plano técnico detalhado Fase 1
 - [`.claude/plans/bubbly-zooming-flute-phase2.md`](.claude/plans/bubbly-zooming-flute-phase2.md) - Plano técnico detalhado Fase 2
+- [`.claude/plans/bubbly-zooming-flute-phase3.md`](.claude/plans/bubbly-zooming-flute-phase3.md) - Plano técnico detalhado Fase 3
 
 ### Exemplos
 - [`examples/basic_usage.py`](examples/basic_usage.py) - Uso mais simples
@@ -447,4 +434,4 @@ Apache License 2.0
 
 **PyDataSUS** - Pipeline profissional otimizado para dados do SUS
 
-**Performance:** 70% mais rápido | **RAM:** 58% menos | **I/O:** 63% menos
+**Performance:** 75-77% mais rápido | **RAM:** 58-67% menos | **I/O:** 63% menos
