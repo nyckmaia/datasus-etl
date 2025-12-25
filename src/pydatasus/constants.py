@@ -1,4 +1,8 @@
-"""Constants for PyDataSUS."""
+"""Constants for PyDataSUS.
+
+This module contains general constants for the PyDataSUS package.
+For SIHSUS Parquet schema definitions, see pydatasus.constants.sihsus_schema.
+"""
 
 # DATASUS FTP Configuration
 DATASUS_FTP_HOST = "ftp.datasus.gov.br"
