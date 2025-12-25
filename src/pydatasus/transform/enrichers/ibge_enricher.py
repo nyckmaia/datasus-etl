@@ -1,6 +1,13 @@
-"""IBGE data enricher for geographic information."""
+"""IBGE data enricher for geographic information.
+
+.. deprecated:: 1.1.0
+    This module is deprecated and will be removed in v2.0.
+    IBGE enrichment is now integrated into
+    :class:`~pydatasus.storage.sql_transformer.SQLTransformer`.
+"""
 
 import logging
+import warnings
 from pathlib import Path
 from typing import Optional
 
@@ -11,6 +18,18 @@ from pydatasus.exceptions import PyInmetError
 
 class IbgeEnricher:
     """Enrich SIHSUS data with IBGE geographic information.
+
+    .. deprecated:: 1.1.0
+        IBGE enrichment is now handled by
+        :class:`~pydatasus.storage.sql_transformer.SQLTransformer`.
+        The new approach:
+
+        - Integrated into pipeline (no separate enrichment step)
+        - SQL LEFT JOIN (more efficient than Polars join)
+        - Processed in a single pass with other transformations
+        - Better memory efficiency
+
+        This class will be removed in v2.0.
 
     Adds municipality names, state codes, and regional information
     based on IBGE municipality codes.
@@ -26,7 +45,18 @@ class IbgeEnricher:
         Args:
             ibge_data_path: Path to IBGE municipality data CSV (optional)
             override: Override existing enriched files
+
+        .. deprecated:: 1.1.0
+            Use SihsusPipeline with ibge_data_path parameter instead.
         """
+        warnings.warn(
+            "IbgeEnricher is deprecated and will be removed in v2.0. "
+            "IBGE enrichment is now integrated into the optimized SihsusPipeline. "
+            "Pass ibge_data_path to SihsusPipeline instead of using this class directly. "
+            "See examples/basic_usage.py for migration guide.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         self.ibge_data_path = ibge_data_path
         self.override = override
         self.logger = logging.getLogger(__name__)
