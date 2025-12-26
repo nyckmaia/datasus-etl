@@ -37,7 +37,7 @@ def main():
         storage=StorageConfig(
             parquet_dir=base_dir / "parquet",
             compression="zstd",  # Better compression
-            partition_cols=["ANO_INTER", "UF_ZI"],
+            partition_cols=["ANO_INTER"],
         ),
         database=DatabaseConfig(
             chunk_size=10000  # Rows per chunk (adjust based on available RAM)

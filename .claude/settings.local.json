@@ -5,7 +5,12 @@
       "Bash(findstr:*)",
       "Bash(pip show:*)",
       "Bash(git add:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(find:*)",
+      "Bash(pip install:*)",
+      "Bash(python -c:*)",
+      "Bash(ls:*)",
+      "Bash(python:*)"
     ]
   }
 }

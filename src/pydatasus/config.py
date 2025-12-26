@@ -40,11 +40,14 @@ class DownloadConfig(BaseModel):
 
 
 class ConversionConfig(BaseModel):
-    """Configuration for file conversions (DBC→DBF→CSV)."""
+    """Configuration for file conversions (DBC→DBF)."""
 
     dbc_dir: Path = Field(description="Directory with DBC files")
     dbf_dir: Path = Field(description="Directory for DBF files")
-    csv_dir: Path = Field(description="Directory for CSV files")
+    csv_dir: Optional[Path] = Field(
+        default=None,
+        description="DEPRECATED: CSV intermediate format no longer used. Data goes directly DBF→DuckDB→Parquet. This field is ignored.",
+    )
     tabwin_dir: Optional[Path] = Field(
         default=None,
         description="DEPRECATED: TABWIN no longer required. DBC decompression now uses datasus-dbc Python library. This field is ignored.",
@@ -89,7 +92,10 @@ class PipelineConfig(BaseModel):
 
     download: DownloadConfig
     conversion: ConversionConfig
-    processing: ProcessingConfig
+    processing: Optional[ProcessingConfig] = Field(
+        default=None,
+        description="DEPRECATED: Processing config no longer used. Transformations happen in DuckDB SQL. This field is ignored.",
+    )
     storage: StorageConfig
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
 

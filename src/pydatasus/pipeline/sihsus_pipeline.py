@@ -65,54 +65,58 @@ class DbfToDbStage(Stage):
         import multiprocessing
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
-        db_manager = DuckDBManager(self.config.database)
+        # Get or create DuckDB manager (shared across stages)
+        db_manager = context.get("db_manager")
+        if db_manager is None:
+            db_manager = DuckDBManager(self.config.database)
+            db_manager.__enter__()  # Open connection
+            context.set("db_manager", db_manager)
 
-        with db_manager:
-            converter = DbfToDuckDBConverter(
-                conn=db_manager._conn,
-                chunk_size=self.config.database.chunk_size
-            )
+        converter = DbfToDuckDBConverter(
+            conn=db_manager._conn,
+            chunk_size=self.config.database.chunk_size
+        )
 
-            # Find all DBF files
-            dbf_files = list(self.config.conversion.dbf_dir.rglob("*.dbf"))
-            if not dbf_files:
-                self.logger.warning(f"No DBF files found in {self.config.conversion.dbf_dir}")
-                return context
+        # Find all DBF files
+        dbf_files = list(self.config.conversion.dbf_dir.rglob("*.dbf"))
+        if not dbf_files:
+            self.logger.warning(f"No DBF files found in {self.config.conversion.dbf_dir}")
+            return context
 
-            # Use multi-threading for I/O-bound DBF loading (max 4 workers)
-            max_workers = min(4, multiprocessing.cpu_count())
-            total_rows = 0
-            staging_tables = []
+        # Use multi-threading for I/O-bound DBF loading (max 4 workers)
+        max_workers = min(4, multiprocessing.cpu_count())
+        total_rows = 0
+        staging_tables = []
 
-            self.logger.info(f"Streaming {len(dbf_files)} DBF files using {max_workers} threads")
+        self.logger.info(f"Streaming {len(dbf_files)} DBF files using {max_workers} threads")
 
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                # Submit all tasks
-                future_to_file = {
-                    executor.submit(
-                        converter.stream_dbf_to_table,
-                        dbf_file,
-                        f"staging_{dbf_file.stem}",
-                        True
-                    ): dbf_file
-                    for dbf_file in dbf_files
-                }
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all tasks
+            future_to_file = {
+                executor.submit(
+                    converter.stream_dbf_to_table,
+                    dbf_file,
+                    f"staging_{dbf_file.stem}",
+                    True
+                ): dbf_file
+                for dbf_file in dbf_files
+            }
 
-                # Process completed tasks with progress bar
-                for future in tqdm(as_completed(future_to_file), total=len(dbf_files), desc="Streaming DBF→DuckDB"):
-                    dbf_file = future_to_file[future]
-                    try:
-                        rows = future.result()
-                        total_rows += rows
-                        staging_tables.append(f"staging_{dbf_file.stem}")
-                    except Exception as e:
-                        self.logger.error(f"Failed to stream {dbf_file.name}: {e}")
-                        continue
+            # Process completed tasks with progress bar
+            for future in tqdm(as_completed(future_to_file), total=len(dbf_files), desc="Streaming DBF→DuckDB"):
+                dbf_file = future_to_file[future]
+                try:
+                    rows = future.result()
+                    total_rows += rows
+                    staging_tables.append(f"staging_{dbf_file.stem}")
+                except Exception as e:
+                    self.logger.error(f"Failed to stream {dbf_file.name}: {e}")
+                    continue
 
-            context.set("staging_tables", staging_tables)
-            context.set_metadata("total_rows_loaded", total_rows)
+        context.set("staging_tables", staging_tables)
+        context.set_metadata("total_rows_loaded", total_rows)
 
-            self.logger.info(f"Streamed {total_rows:,} rows from {len(dbf_files)} DBF files")
+        self.logger.info(f"Streamed {total_rows:,} rows from {len(dbf_files)} DBF files")
 
         return context
 
@@ -127,72 +131,85 @@ class SqlTransformStage(Stage):
 
     def _execute(self, context: PipelineContext) -> PipelineContext:
         """Apply all transformations using SQL and export to Parquet."""
-        db_manager = DuckDBManager(self.config.database)
+        # Get shared DuckDB manager from context
+        db_manager = context.get("db_manager")
+        if db_manager is None:
+            raise ValueError("DuckDB manager not found in context. DBF stage must run first.")
 
-        with db_manager:
-            transformer = SQLTransformer(db_manager._conn)
+        transformer = SQLTransformer(db_manager._conn)
 
-            # Get list of staging tables
-            staging_tables = context.get("staging_tables", [])
-            if not staging_tables:
-                self.logger.warning("No staging tables found")
-                return context
+        # Get list of staging tables
+        staging_tables = context.get("staging_tables", [])
+        if not staging_tables:
+            self.logger.warning("No staging tables found")
+            return context
 
-            # Create UNION of all staging tables
-            union_query = " UNION ALL ".join([
-                f"SELECT * FROM {table}"
-                for table in staging_tables
-            ])
+        # Create UNION of all staging tables
+        union_query = " UNION ALL ".join([
+            f"SELECT * FROM {table}"
+            for table in staging_tables
+        ])
 
-            db_manager._conn.execute(
-                f"""
-                CREATE OR REPLACE VIEW unified_staging AS
-                {union_query}
+        db_manager._conn.execute(
+            f"""
+            CREATE OR REPLACE VIEW unified_staging AS
+            {union_query}
+        """
+        )
+
+        self.logger.info(f"Unified {len(staging_tables)} staging tables")
+
+        # Apply all transformations
+        transformer.transform_sihsus_data(
+            source_table="unified_staging",
+            target_view="sihsus_processed",
+            ibge_data_path=self.ibge_data_path
+        )
+
+        # Export directly to Parquet (zero-copy)
+        parquet_dir = self.config.storage.parquet_dir
+        parquet_dir.mkdir(parents=True, exist_ok=True)
+
+        # Export with partitioning and compression
+        export_path = parquet_dir / "data.parquet"
+        self.logger.info("Exporting to Parquet...")
+
+        # Build partition columns from config (respect user's choice)
+        partition_cols = self.config.storage.partition_cols
+        # Filter only columns that exist in transformed view
+        valid_partition_cols = [
+            col.lower() for col in partition_cols
+            if col.upper() in ['ANO_INTER', 'MES_INTER', 'UF_ZI', 'MUNIC_RES']
+        ]
+        partition_cols_sql = ', '.join(valid_partition_cols) if valid_partition_cols else 'ano_inter'
+        self.logger.info(f"Partitioning Parquet by: {partition_cols_sql}")
+
+        db_manager._conn.execute(
+            f"""
+            COPY (SELECT * FROM sihsus_processed)
+            TO '{export_path}' (
+                FORMAT PARQUET,
+                PARTITION_BY ({partition_cols_sql}),
+                COMPRESSION '{self.config.storage.compression}',
+                ROW_GROUP_SIZE {self.config.storage.row_group_size},
+                OVERWRITE_OR_IGNORE true
+            )
+        """
+        )
+
+        # Get row count AFTER export (faster - reads Parquet metadata)
+        count_result = db_manager._conn.execute(
+            f"""
+            SELECT COUNT(*) as cnt
+            FROM read_parquet('{parquet_dir}/**/*.parquet', hive_partitioning=true)
             """
-            )
+        ).fetchone()
+        total_rows = count_result[0] if count_result else 0
 
-            self.logger.info(f"Unified {len(staging_tables)} staging tables")
+        context.set("parquet_path", parquet_dir)
+        context.set_metadata("total_rows_exported", total_rows)
 
-            # Apply all transformations
-            transformer.transform_sihsus_data(
-                source_table="unified_staging",
-                target_view="sihsus_processed",
-                ibge_data_path=self.ibge_data_path
-            )
-
-            # Export directly to Parquet (zero-copy)
-            parquet_dir = self.config.storage.parquet_dir
-            parquet_dir.mkdir(parents=True, exist_ok=True)
-
-            # Export with partitioning and compression
-            export_path = parquet_dir / "data.parquet"
-            self.logger.info("Exporting to Parquet...")
-
-            db_manager._conn.execute(
-                f"""
-                COPY (SELECT * FROM sihsus_processed)
-                TO '{export_path}' (
-                    FORMAT PARQUET,
-                    PARTITION_BY (ANO_INTER, UF_ZI),
-                    COMPRESSION '{self.config.storage.compression}',
-                    ROW_GROUP_SIZE {self.config.storage.row_group_size}
-                )
-            """
-            )
-
-            # Get row count AFTER export (faster - reads Parquet metadata)
-            count_result = db_manager._conn.execute(
-                f"""
-                SELECT COUNT(*) as cnt
-                FROM read_parquet('{parquet_dir}/**/*.parquet', hive_partitioning=true)
-                """
-            ).fetchone()
-            total_rows = count_result[0] if count_result else 0
-
-            context.set("parquet_path", parquet_dir)
-            context.set_metadata("total_rows_exported", total_rows)
-
-            self.logger.info(f"Exported {total_rows:,} rows to {parquet_dir}")
+        self.logger.info(f"Exported {total_rows:,} rows to {parquet_dir}")
 
         return context
 
@@ -262,3 +279,26 @@ class SihsusPipeline(Pipeline[PipelineConfig]):
         self.add_stage(SqlTransformStage(self.config, self.ibge_data_path))
 
         self.logger.info(f"Optimized pipeline configured with {len(self._stages)} stages")
+
+    def run(self) -> "PipelineContext":
+        """Run the pipeline and cleanup resources.
+
+        Returns:
+            Pipeline context with results
+
+        Raises:
+            PyInmetError: If pipeline execution fails
+        """
+        try:
+            # Run parent implementation
+            result = super().run()
+            return result
+        finally:
+            # Always cleanup DuckDB connection
+            db_manager = self.context.get("db_manager")
+            if db_manager is not None:
+                try:
+                    db_manager.__exit__(None, None, None)
+                    self.logger.debug("DuckDB connection closed")
+                except Exception as e:
+                    self.logger.warning(f"Error closing DuckDB connection: {e}")

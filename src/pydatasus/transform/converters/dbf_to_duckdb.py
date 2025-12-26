@@ -262,10 +262,10 @@ class DbfToDuckDBConverter:
             # Map DBF types to DuckDB types
             type_map = {
                 "C": "VARCHAR",  # Character
-                "N": "DOUBLE",  # Numeric (use DOUBLE to handle decimals)
+                "N": "FLOAT",  # Numeric (FLOAT is sufficient for DATASUS values)
                 "L": "BOOLEAN",  # Logical
                 "D": "VARCHAR",  # Date (parse later in SQL transformations)
-                "F": "DOUBLE",  # Float
+                "F": "FLOAT",  # Float (consistent with SIHSUS schema)
                 "M": "VARCHAR",  # Memo
             }
 

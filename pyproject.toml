@@ -35,8 +35,8 @@ dependencies = [
     "rich>=13.0.0",
     "tqdm>=4.66.0",
     "dbfread>=2.0.7",
-    "datasus-dbc>=0.2.0",  # DBC decompression (replaces TABWIN)
-    "simpledbf>=0.2.8",    # Fast DBF reading for small files
+    "datasus-dbc>=0.1.3",
+    "simpledbf>=0.2.6",    # Fast DBF reading for small files
     "psutil>=5.9.0",       # System resource monitoring
 ]
 

@@ -259,23 +259,38 @@ def get_polars_schema() -> dict[str, str]:
 
 
 def generate_column_cleaning_sql() -> str:
-    """Generate SQL for cleaning all columns (TRIM + UPPER).
+    """Generate SQL for cleaning all columns (TRIM + UPPER + remove invisible chars).
 
-    Generates TRIM(UPPER(CAST(col AS VARCHAR))) for all columns in schema.
-    This standardizes text data and removes whitespace.
+    Generates comprehensive cleaning for all columns:
+    - Removes tabs, newlines, carriage returns, null bytes, form feeds
+    - Trims leading/trailing whitespace
+    - Converts to uppercase
 
     Returns:
         SQL column list with cleaning transformations, comma-separated
 
     Example output:
-        TRIM(UPPER(CAST(uf_zi AS VARCHAR))) AS uf_zi,
-        TRIM(UPPER(CAST(ano_cmpt AS VARCHAR))) AS ano_cmpt,
+        TRIM(UPPER(REPLACE(...CAST(uf_zi AS VARCHAR)...))) AS UF_ZI,
+        TRIM(UPPER(REPLACE(...CAST(ano_cmpt AS VARCHAR)...))) AS ANO_CMPT,
         ...
     """
     cleaned = []
     for col in SIHSUS_PARQUET_SCHEMA.keys():
         col_upper = col.upper()  # DBF columns are uppercase initially
-        cleaned.append(f"TRIM(UPPER(CAST({col_upper} AS VARCHAR))) AS {col_upper}")
+
+        # Build nested REPLACE operations for invisible character removal
+        clean_expr = f"""TRIM(UPPER(
+            REPLACE(
+                REPLACE(
+                    REPLACE(
+                        REPLACE(
+                            REPLACE(CAST({col_upper} AS VARCHAR), CHR(9), ' '),
+                            CHR(10), ' '),
+                        CHR(13), ' '),
+                    CHR(0), ''),
+                CHR(12), '')
+        ))"""
+        cleaned.append(f"{clean_expr} AS {col_upper}")
 
     return ",\n                ".join(cleaned)
 

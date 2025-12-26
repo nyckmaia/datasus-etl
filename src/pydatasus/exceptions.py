@@ -53,3 +53,7 @@ class EnrichmentError(PyDataSUSError):
     """Raised when data enrichment fails."""
 
     pass
+
+
+# Legacy alias for backward compatibility
+PyInmetError = PyDataSUSError

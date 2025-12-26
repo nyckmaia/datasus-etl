@@ -125,7 +125,7 @@ class DbcToDbfConverter:
             output_file = output_dir / (dbc_file.stem + ".dbf")
 
             # Decompress DBC to DBF using datasus-dbc library
-            datasus_dbc.decompress_file(str(dbc_file), str(output_file))
+            datasus_dbc.decompress(str(dbc_file), str(output_file))
 
             self.logger.debug(f"Converted {dbc_file.name} → {output_file.name}")
             return True

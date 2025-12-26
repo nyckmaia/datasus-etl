@@ -11,6 +11,7 @@ from typing import Optional
 
 import duckdb
 
+from pydatasus.constants.sihsus_schema import SIHSUS_PARQUET_SCHEMA
 from pydatasus.exceptions import PyInmetError
 
 
@@ -57,6 +58,32 @@ class SQLTransformer:
         Creates a DuckDB VIEW with all transformations applied. The VIEW is
         lazy and won't materialize data until queried.
 
+        Transformations applied:
+        1. Column cleaning:
+           - Remove invisible characters (tabs, newlines, carriage returns, null bytes, form feeds)
+           - Trim leading/trailing whitespace
+           - Convert to uppercase
+
+        2. Type validation:
+           - Safe conversion using TRY_CAST (NULL on failure)
+           - Integer conversions: IDADE, QT_DIARIAS, DIAS_PERM
+           - Float conversions: VAL_SH, VAL_SP, VAL_TOT, VAL_UTI
+
+        3. Date parsing:
+           - Multi-format fallback (YYYYMMDD, DDMMYYYY, YYYY-MM-DD)
+           - TRY_CAST with COALESCE for safety
+
+        4. Categorical mappings:
+           - SEXO: 0→I, 1→M, 3→F
+           - RACA_COR: 01→Branca, 02→Preta, 03→Parda, etc.
+
+        5. Computed columns:
+           - ANO_INTER, MES_INTER (extracted from DT_INTER)
+           - DIAS_INTERNACAO (difference between DT_SAIDA and DT_INTER)
+
+        6. IBGE enrichment (optional):
+           - Adds nome_municipio, uf, regiao via LEFT JOIN
+
         This replaces:
         - SihsusProcessor._clean_dataframe()
         - SihsusProcessor._validate_dataframe()
@@ -72,6 +99,12 @@ class SQLTransformer:
             PyInmetError: If transformation query fails
         """
         try:
+            # Get actual columns from source table (columns vary across files)
+            actual_columns = self.conn.execute(
+                f"SELECT column_name FROM information_schema.columns WHERE table_name = '{source_table}' ORDER BY ordinal_position"
+            ).fetchall()
+            actual_columns = [col[0] for col in actual_columns]
+            self.logger.info(f"Source table has {len(actual_columns)} columns")
             # Load IBGE data if provided
             if ibge_data_path and ibge_data_path.exists():
                 self.logger.info(f"Loading IBGE data from {ibge_data_path}")
@@ -83,52 +116,60 @@ class SQLTransformer:
                 )
 
             # Build complete transformation query
+            # Structure: Single query with all transformations (cleaning, parsing, validation, computed columns)
+            # Note: Only clean columns that actually exist in the source table (columns vary across files)
+
+            # Build additional SELECT columns (type conversions, categorical, computed, enrichment)
+            additional_selects = []
+
+            # Type conversions
+            validated_sql = self._get_validated_columns_sql(actual_columns)
+            if validated_sql:
+                additional_selects.append(validated_sql)
+
+            # Categorical mappings are now applied directly in _apply_schema_types_sql()
+            # No need for separate sexo_descr and raca_cor_descr columns
+
+            # Computed date columns
+            if 'DT_INTER' in actual_columns:
+                additional_selects.append("EXTRACT(YEAR FROM typed.dt_inter) AS ano_inter")
+
+            # IBGE enrichment
+            if ibge_data_path and 'MUNIC_RES' in actual_columns:
+                additional_selects.append(self._get_ibge_enrichment_sql())
+
+            # Combine all additional selects
+            additional_sql = ",\n                ".join(additional_selects) if additional_selects else ""
+
             transform_sql = f"""
             CREATE OR REPLACE VIEW {target_view} AS
-            SELECT
-                -- Original columns (cleaned)
-                {self._get_cleaned_columns_sql()},
-
-                -- Type conversions (validated)
-                {self._get_validated_columns_sql()},
-
-                -- Categorical mappings
-                CASE CAST(SEXO AS VARCHAR)
-                    WHEN '0' THEN 'I'
-                    WHEN '1' THEN 'M'
-                    WHEN '3' THEN 'F'
-                    ELSE NULL
-                END AS SEXO_DESCR,
-
-                CASE CAST(RACA_COR AS VARCHAR)
-                    WHEN '01' THEN 'Branca'
-                    WHEN '02' THEN 'Preta'
-                    WHEN '03' THEN 'Parda'
-                    WHEN '04' THEN 'Amarela'
-                    WHEN '05' THEN 'Indígena'
-                    ELSE 'Ignorado'
-                END AS RACA_COR_DESCR,
-
-                -- Computed columns from dates
-                EXTRACT(YEAR FROM dt_inter_parsed) AS ANO_INTER,
-                EXTRACT(MONTH FROM dt_inter_parsed) AS MES_INTER,
-                DATE_DIFF('day', dt_inter_parsed, dt_saida_parsed) AS DIAS_INTERNACAO,
-
-                -- IBGE enrichment (if available)
-                {self._get_ibge_enrichment_sql() if ibge_data_path else 'NULL AS municipio_nome, NULL AS uf_ibge, NULL AS regiao'}
-
-            FROM (
+            WITH cleaned AS (
                 SELECT
-                    *,
-                    -- Parse dates with fallback to multiple formats
-                    {self._get_date_parsing_sql('DT_INTER')} AS dt_inter_parsed,
-                    {self._get_date_parsing_sql('DT_SAIDA')} AS dt_saida_parsed
+                    -- Original columns (cleaned) - only columns that exist
+                    {self._get_cleaned_columns_sql(actual_columns)},
+
+                    -- Parse dates with fallback to multiple formats (if columns exist)
+                    {self._get_date_parsing_sql('DT_INTER') if 'DT_INTER' in actual_columns else 'NULL'} AS dt_inter_parsed,
+                    {self._get_date_parsing_sql('DT_SAIDA') if 'DT_SAIDA' in actual_columns else 'NULL'} AS dt_saida_parsed,
+                    {self._get_date_parsing_sql('NASC') if 'NASC' in actual_columns else 'NULL'} AS nasc_parsed,
+                    {self._get_date_parsing_sql('GESTOR_DT') if 'GESTOR_DT' in actual_columns else 'NULL'} AS gestor_dt_parsed
                 FROM {source_table}
-            ) AS parsed
-            {self._get_ibge_join_sql() if ibge_data_path else ''}
-            WHERE
-                -- Remove completely empty rows (at least one date must be valid)
-                NOT (dt_inter_parsed IS NULL AND dt_saida_parsed IS NULL)
+            ),
+            typed AS (
+                SELECT
+                    -- Apply schema-based type conversions
+                    {self._apply_schema_types_sql(actual_columns)}
+                FROM cleaned
+                WHERE
+                    -- Remove completely empty rows (at least one date must be valid)
+                    NOT (cleaned.dt_inter_parsed IS NULL AND cleaned.dt_saida_parsed IS NULL)
+            )
+            SELECT
+                typed.*{', ' if additional_sql else ''}
+                {additional_sql}
+
+            FROM typed
+            {self._get_ibge_join_sql(actual_columns) if ibge_data_path and 'MUNIC_RES' in actual_columns else ''}
             """
 
             self.logger.info(f"Creating transformed view: {target_view}")
@@ -166,159 +207,165 @@ class SQLTransformer:
         """
         return f"""
         COALESCE(
-            TRY_CAST(STRPTIME({column}, '%Y%m%d') AS DATE),
-            TRY_CAST(STRPTIME({column}, '%d%m%Y') AS DATE),
-            TRY_CAST(STRPTIME({column}, '%Y-%m-%d') AS DATE),
-            TRY_CAST({column} AS DATE)
+            TRY_CAST(STRPTIME(NULLIF({column}, ''), '%Y%m%d') AS DATE),
+            TRY_CAST(STRPTIME(NULLIF({column}, ''), '%d%m%Y') AS DATE),
+            TRY_CAST(STRPTIME(NULLIF({column}, ''), '%Y-%m-%d') AS DATE),
+            TRY_CAST(NULLIF({column}, '') AS DATE)
         )
         """
 
-    def _get_cleaned_columns_sql(self) -> str:
-        """Generate SQL for column cleaning (trim, uppercase).
+    def _build_clean_expression(self, col: str) -> str:
+        """Build SQL expression to clean column value.
 
-        Applies TRIM and UPPER to all string columns. This standardizes
-        data and removes leading/trailing whitespace.
+        Removes invisible characters:
+        - Tabs (CHR(9)) → replaced with space
+        - Line feeds (CHR(10)) → replaced with space
+        - Carriage returns (CHR(13)) → replaced with space
+        - Null bytes (CHR(0)) → removed completely
+        - Form feeds (CHR(12)) → removed completely
+        - Then applies TRIM (remove outer whitespace)
+
+        Args:
+            col: Column name to clean
+
+        Returns:
+            SQL expression for cleaned column value
+
+        Example:
+            >>> self._build_clean_expression("SEXO")
+            'TRIM(REPLACE(...CAST(SEXO AS VARCHAR)...)))'
+        """
+        return f"""TRIM(
+            REPLACE(
+                REPLACE(
+                    REPLACE(
+                        REPLACE(
+                            REPLACE(CAST({col} AS VARCHAR), CHR(9), ' '),
+                            CHR(10), ' '),
+                        CHR(13), ' '),
+                    CHR(0), ''),
+                CHR(12), '')
+        )"""
+
+    def _get_cleaned_columns_sql(self, actual_columns: list[str]) -> str:
+        """Generate SQL for column cleaning.
+
+        Applies comprehensive cleaning to all string columns:
+        - Removes invisible characters (tabs, newlines, carriage returns, null bytes, form feeds)
+        - Trims leading/trailing whitespace
+        - Converts column names to lowercase
+
+        Args:
+            actual_columns: List of column names that actually exist in the source table
 
         Returns:
             SQL column list with cleaning transformations
 
         Note:
-            Column list is based on SIHSUS RD (Internações) schema.
-            Adjust if processing different DATASUS datasets.
+            Column list is dynamically generated based on actual_columns since
+            different DATASUS files have different column sets.
         """
-        # SIHSUS RD schema columns (internações hospitalares)
-        columns = [
-            "UF_ZI",
-            "ANO_CMPT",
-            "MES_CMPT",
-            "ESPEC",
-            "CGC_HOSP",
-            "N_AIH",
-            "IDENT",
-            "CEP",
-            "MUNIC_RES",
-            "NASC",
-            "SEXO",
-            "UTI_MES_IN",
-            "UTI_MES_AN",
-            "UTI_MES_AL",
-            "UTI_MES_TO",
-            "MARCA_UTI",
-            "UTI_INT_IN",
-            "UTI_INT_AN",
-            "UTI_INT_AL",
-            "UTI_INT_TO",
-            "DIAR_ACOM",
-            "QT_DIARIAS",
-            "PROC_SOLIC",
-            "PROC_REA",
-            "VAL_SH",
-            "VAL_SP",
-            "VAL_SADT",
-            "VAL_RN",
-            "VAL_ACOMP",
-            "VAL_ORTP",
-            "VAL_SANGUE",
-            "VAL_SADTSR",
-            "VAL_TRANSP",
-            "VAL_OBSANG",
-            "VAL_PED1AC",
-            "VAL_TOT",
-            "VAL_UTI",
-            "US_TOT",
-            "DT_INTER",
-            "DT_SAIDA",
-            "DIAG_PRINC",
-            "DIAG_SECUN",
-            "COBRANCA",
-            "NATUREZA",
-            "NAT_JUR",
-            "GESTAO",
-            "RUBRICA",
-            "IND_VDRL",
-            "MUNIC_MOV",
-            "COD_IDADE",
-            "IDADE",
-            "DIAS_PERM",
-            "MORTE",
-            "NACIONAL",
-            "NUM_PROC",
-            "CAR_INT",
-            "TOT_PT_SP",
-            "CPF_AUT",
-            "HOMONIMO",
-            "NUM_FILHOS",
-            "INSTRU",
-            "CID_NOTIF",
-            "CONTRACEP1",
-            "CONTRACEP2",
-            "GESTRISCO",
-            "INSC_PN",
-            "SEQ_AIH5",
-            "CBOR",
-            "CNAES",
-            "VINCPREV",
-            "GESTOR_COD",
-            "GESTOR_TP",
-            "GESTOR_CPF",
-            "GESTOR_DT",
-            "CNES",
-            "CNPJ_MANT",
-            "INFEHOSP",
-            "CID_ASSO",
-            "CID_MORTE",
-            "COMPLEX",
-            "FINANC",
-            "FAEC_TP",
-            "REGCT",
-            "RACA_COR",
-            "ETNIA",
-            "SEQUENCIA",
-            "REMESSA",
-            "AUD_JUST",
-            "SIS_JUST",
-            "VAL_SH_FED",
-            "VAL_SP_FED",
-            "VAL_SH_GES",
-            "VAL_SP_GES",
-            "VAL_UCI",
-            "MARCA_UCI",
-            "DIAGSEC1",
-            "DIAGSEC2",
-            "DIAGSEC3",
-            "DIAGSEC4",
-            "DIAGSEC5",
-            "DIAGSEC6",
-            "DIAGSEC7",
-            "DIAGSEC8",
-            "DIAGSEC9",
-        ]
-
-        # Generate TRIM(UPPER(col)) AS col for each
+        # Generate cleaned expression for each column that exists
         cleaned = []
-        for col in columns:
-            cleaned.append(f"TRIM(UPPER(CAST({col} AS VARCHAR))) AS {col}")
+        for col in actual_columns:
+            cleaned.append(f"{self._build_clean_expression(col)} AS {col.lower()}")
 
         return ",\n                ".join(cleaned)
 
-    def _get_validated_columns_sql(self) -> str:
+    def _apply_schema_types_sql(self, actual_columns: list[str]) -> str:
+        """Apply type conversions based on SIHSUS_PARQUET_SCHEMA.
+
+        Converts cleaned VARCHAR columns to their target types defined in the schema.
+        Uses TRY_CAST for safe conversion (NULL on failure).
+
+        Args:
+            actual_columns: List of column names that actually exist in the source table
+
+        Returns:
+            SQL column list with type conversions applied
+
+        Note:
+            Only converts columns that exist in both actual_columns and SIHSUS_PARQUET_SCHEMA.
+            Columns not in schema remain as VARCHAR.
+            DATE columns use parsed versions from cleaned CTE.
+        """
+        typed_columns = []
+
+        # Map of date columns to their parsed versions in cleaned CTE
+        date_column_mapping = {
+            'dt_inter': 'dt_inter_parsed',
+            'dt_saida': 'dt_saida_parsed',
+            'nasc': 'nasc_parsed',
+            'gestor_dt': 'gestor_dt_parsed'
+        }
+
+        for col in actual_columns:
+            col_lower = col.lower()
+
+            # Check if column is in schema
+            if col_lower in SIHSUS_PARQUET_SCHEMA:
+                target_type = SIHSUS_PARQUET_SCHEMA[col_lower]
+
+                # Special handling for different types
+                if target_type == "DATE":
+                    # Use parsed version with original column name (no suffix)
+                    parsed_col = date_column_mapping.get(col_lower, f"{col_lower}_parsed")
+                    typed_columns.append(f"cleaned.{parsed_col} AS {col_lower}")
+                elif target_type == "BOOLEAN":
+                    # Convert 0/1 to boolean
+                    typed_columns.append(
+                        f"CASE WHEN cleaned.{col_lower} IN ('1', 'true', 'TRUE') THEN TRUE "
+                        f"WHEN cleaned.{col_lower} IN ('0', 'false', 'FALSE') THEN FALSE "
+                        f"ELSE NULL END AS {col_lower}"
+                    )
+                elif col_lower == "sexo":
+                    # Apply categorical mapping for SEXO (0→I, 1→M, 3→F)
+                    typed_columns.append(
+                        f"CASE cleaned.{col_lower} "
+                        f"WHEN '0' THEN 'I' "
+                        f"WHEN '1' THEN 'M' "
+                        f"WHEN '3' THEN 'F' "
+                        f"ELSE NULL END AS {col_lower}"
+                    )
+                elif col_lower == "raca_cor":
+                    # Apply categorical mapping for RACA_COR
+                    typed_columns.append(
+                        f"CASE cleaned.{col_lower} "
+                        f"WHEN '01' THEN 'Branca' "
+                        f"WHEN '02' THEN 'Preta' "
+                        f"WHEN '03' THEN 'Parda' "
+                        f"WHEN '04' THEN 'Amarela' "
+                        f"WHEN '05' THEN 'Indígena' "
+                        f"ELSE 'Ignorado' END AS {col_lower}"
+                    )
+                elif target_type == "VARCHAR":
+                    # Already VARCHAR, no conversion needed
+                    typed_columns.append(f"cleaned.{col_lower}")
+                else:
+                    # Numeric types: TRY_CAST for safe conversion
+                    typed_columns.append(f"TRY_CAST(cleaned.{col_lower} AS {target_type}) AS {col_lower}")
+            else:
+                # Column not in schema, keep as VARCHAR
+                typed_columns.append(f"cleaned.{col_lower}")
+
+        return ",\n                ".join(typed_columns)
+
+    def _get_validated_columns_sql(self, actual_columns: list[str]) -> str:
         """Generate SQL for type validation and conversion.
 
         Uses TRY_CAST to safely convert string values to numeric types.
         Invalid values become NULL instead of causing errors.
 
+        Args:
+            actual_columns: List of column names that actually exist in the source table
+
         Returns:
-            SQL column list with type conversions
+            SQL column list with type conversions (only for columns that exist)
         """
-        return """
-            TRY_CAST(IDADE AS INTEGER) AS IDADE_INT,
-            TRY_CAST(QT_DIARIAS AS INTEGER) AS QT_DIARIAS_INT,
-            TRY_CAST(VAL_SH AS DOUBLE) AS VAL_SH_NUM,
-            TRY_CAST(VAL_SP AS DOUBLE) AS VAL_SP_NUM,
-            TRY_CAST(VAL_TOT AS DOUBLE) AS VAL_TOT_NUM,
-            TRY_CAST(VAL_UTI AS DOUBLE) AS VAL_UTI_NUM,
-            TRY_CAST(DIAS_PERM AS INTEGER) AS DIAS_PERM_INT
-        """
+        # NOTE: This method is now deprecated since type conversions are handled by _apply_schema_types_sql()
+        # Keeping it for backward compatibility but returning empty string
+        # All type conversions now use the schema-based approach
+        return ""
 
     def _get_ibge_enrichment_sql(self) -> str:
         """Generate SQL for IBGE data enrichment columns.
@@ -332,16 +379,22 @@ class SQLTransformer:
             ibge.regiao
         """
 
-    def _get_ibge_join_sql(self) -> str:
+    def _get_ibge_join_sql(self, actual_columns: list[str]) -> str:
         """Generate SQL for IBGE LEFT JOIN.
 
         Joins on municipality code (MUNIC_RES = codigo_municipio).
         Uses LEFT JOIN so rows without IBGE match are kept.
 
+        Args:
+            actual_columns: List of column names that actually exist in the source table
+
         Returns:
-            SQL JOIN clause
+            SQL JOIN clause (empty if MUNIC_RES doesn't exist)
         """
+        if 'MUNIC_RES' not in actual_columns:
+            return ""
+
         return """
         LEFT JOIN ibge_data AS ibge
-            ON CAST(parsed.MUNIC_RES AS VARCHAR) = CAST(ibge.codigo_municipio AS VARCHAR)
+            ON CAST(typed.munic_res AS VARCHAR) = CAST(ibge.codigo_municipio AS VARCHAR)
         """
