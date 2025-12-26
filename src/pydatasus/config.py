@@ -70,12 +70,34 @@ class StorageConfig(BaseModel):
 
     parquet_dir: Path = Field(description="Directory for Parquet files")
     partition_cols: list[str] = Field(
-        default=["uf", "year", "month"], description="Partition columns"
+        default=["uf"], description="Partition columns (default: by UF state)"
     )
     compression: Literal["snappy", "gzip", "brotli", "zstd"] = Field(
         default="snappy", description="Compression codec"
     )
-    row_group_size: int = Field(default=100_000, ge=1000, description="Row group size")
+    row_group_size: int = Field(
+        default=128_000_000,
+        ge=1000,
+        description="Row group size in bytes (default: 128MB)"
+    )
+    max_file_size: int = Field(
+        default=512_000_000,
+        ge=1_000_000,
+        description="Maximum file size in bytes (default: 512MB)"
+    )
+    # CSV export options
+    export_raw_csv: bool = Field(
+        default=False,
+        description="Export raw DBF data to CSV (before transformations)"
+    )
+    export_cleaned_csv: bool = Field(
+        default=False,
+        description="Export cleaned data to CSV (after transformations)"
+    )
+    csv_dir: Optional[Path] = Field(
+        default=None,
+        description="Directory for CSV exports (defaults to parquet_dir/../csv)"
+    )
 
 
 class DatabaseConfig(BaseModel):
@@ -85,6 +107,12 @@ class DatabaseConfig(BaseModel):
     read_only: bool = Field(default=False, description="Read-only mode")
     threads: Optional[int] = Field(default=None, description="Number of threads (None=auto)")
     chunk_size: int = Field(default=10000, ge=1000, description="Chunk size for streaming DBF to DuckDB")
+    dataframe_threshold_mb: int = Field(
+        default=250,
+        ge=10,
+        le=2000,
+        description="File size threshold (MB) for using full DataFrame vs chunked streaming (default: 250MB)"
+    )
 
 
 class PipelineConfig(BaseModel):

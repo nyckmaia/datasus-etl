@@ -10,7 +10,12 @@
       "Bash(pip install:*)",
       "Bash(python -c:*)",
       "Bash(ls:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(echo:*)",
+      "Bash(timeout 180 python:*)",
+      "Bash(tee:*)",
+      "Bash(timeout 300 python:*)",
+      "Bash(dir:*)"
     ]
   }
 }

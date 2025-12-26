@@ -36,7 +36,7 @@ Pipeline profissional otimizado para download, conversão e processamento de dad
 ## 📦 Instalação
 
 ```bash
-git clone https://github.com/user/pydatasus.git
+git clone https://github.com/nyckmaia/pydatasus.git
 cd pydatasus
 pip install -e ".[dev]"
 ```

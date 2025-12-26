@@ -122,66 +122,96 @@ class SQLTransformer:
             # Build additional SELECT columns (type conversions, categorical, computed, enrichment)
             additional_selects = []
 
-            # Type conversions
-            validated_sql = self._get_validated_columns_sql(actual_columns)
-            if validated_sql:
-                additional_selects.append(validated_sql)
-
-            # Categorical mappings are now applied directly in _apply_schema_types_sql()
-            # No need for separate sexo_descr and raca_cor_descr columns
-
-            # Computed date columns
-            if 'DT_INTER' in actual_columns:
+            # Computed date columns (NOTE: column names are now lowercase due to DBF column cleaning)
+            if 'dt_inter' in actual_columns:
                 additional_selects.append("EXTRACT(YEAR FROM typed.dt_inter) AS ano_inter")
 
             # IBGE enrichment
-            if ibge_data_path and 'MUNIC_RES' in actual_columns:
+            if ibge_data_path and 'munic_res' in actual_columns:
                 additional_selects.append(self._get_ibge_enrichment_sql())
 
-            # Combine all additional selects
-            additional_sql = ",\n                ".join(additional_selects) if additional_selects else ""
+            # Build final SELECT clause
+            if additional_selects:
+                additional_sql = f",\n    {',\n    '.join(additional_selects)}"
+            else:
+                additional_sql = ""
+
+            # Build IBGE JOIN clause if needed
+            ibge_join_clause = ""
+            if ibge_data_path and 'munic_res' in actual_columns:
+                ibge_join_clause = self._get_ibge_join_sql(actual_columns)
 
             transform_sql = f"""
-            CREATE OR REPLACE VIEW {target_view} AS
-            WITH cleaned AS (
-                SELECT
-                    -- Original columns (cleaned) - only columns that exist
-                    {self._get_cleaned_columns_sql(actual_columns)},
+CREATE OR REPLACE VIEW {target_view} AS
+WITH cleaned AS (
+    SELECT
+        -- Original columns (cleaned) - only columns that exist
+        {self._get_cleaned_columns_sql(actual_columns)},
 
-                    -- Parse dates with fallback to multiple formats (if columns exist)
-                    {self._get_date_parsing_sql('DT_INTER') if 'DT_INTER' in actual_columns else 'NULL'} AS dt_inter_parsed,
-                    {self._get_date_parsing_sql('DT_SAIDA') if 'DT_SAIDA' in actual_columns else 'NULL'} AS dt_saida_parsed,
-                    {self._get_date_parsing_sql('NASC') if 'NASC' in actual_columns else 'NULL'} AS nasc_parsed,
-                    {self._get_date_parsing_sql('GESTOR_DT') if 'GESTOR_DT' in actual_columns else 'NULL'} AS gestor_dt_parsed
-                FROM {source_table}
-            ),
-            typed AS (
-                SELECT
-                    -- Apply schema-based type conversions
-                    {self._apply_schema_types_sql(actual_columns)}
-                FROM cleaned
-                WHERE
-                    -- Remove completely empty rows (at least one date must be valid)
-                    NOT (cleaned.dt_inter_parsed IS NULL AND cleaned.dt_saida_parsed IS NULL)
-            )
-            SELECT
-                typed.*{', ' if additional_sql else ''}
-                {additional_sql}
+        -- Parse dates with fallback to multiple formats and future date validation (if columns exist)
+        {self._get_date_parsing_sql('dt_inter', allow_future=False) if 'dt_inter' in actual_columns else 'NULL'} AS dt_inter_parsed,
+        {self._get_date_parsing_sql('dt_saida', allow_future=False) if 'dt_saida' in actual_columns else 'NULL'} AS dt_saida_parsed,
+        {self._get_date_parsing_sql('nasc', allow_future=False) if 'nasc' in actual_columns else 'NULL'} AS nasc_parsed,
+        {self._get_date_parsing_sql('gestor_dt', allow_future=False) if 'gestor_dt' in actual_columns else 'NULL'} AS gestor_dt_parsed
+    FROM {source_table}
+),
+typed AS (
+    SELECT
+        -- Apply schema-based type conversions
+        {self._apply_schema_types_sql(actual_columns)}
+    FROM cleaned
+    WHERE
+        -- Remove completely empty rows (at least one date must be valid)
+        NOT (cleaned.dt_inter_parsed IS NULL AND cleaned.dt_saida_parsed IS NULL)
+)
+SELECT
+    typed.*{additional_sql}
+FROM typed{ibge_join_clause}
+"""
 
-            FROM typed
-            {self._get_ibge_join_sql(actual_columns) if ibge_data_path and 'MUNIC_RES' in actual_columns else ''}
-            """
-
+            from tqdm import tqdm
+            tqdm.write(f"[TRANSFORM] Applying SQL transformations to create view: {target_view}...")
             self.logger.info(f"Creating transformed view: {target_view}")
-            self.conn.execute(transform_sql)
+
+            # Debug: Log the SQL query for troubleshooting
+            self.logger.debug(f"Transform SQL:\n{transform_sql}")
+            self.logger.debug(f"SQL length: {len(transform_sql)} characters")
+            self.logger.debug(f"SQL first 200 chars: {transform_sql[:200]}")
+            self.logger.debug(f"SQL last 200 chars: {transform_sql[-200:]}")
+
+            try:
+                self.conn.execute(transform_sql)
+                tqdm.write(f"[TRANSFORM] View {target_view} created successfully\n")
+            except Exception as sql_error:
+                # Enhanced error logging with SQL details
+                self.logger.error(f"Failed SQL query (length={len(transform_sql)}):\n{transform_sql}")
+                self.logger.error(f"First 300 chars:\n{transform_sql[:300]}")
+                self.logger.error(f"Last 300 chars:\n{transform_sql[-300:]}")
+                self.logger.error(f"SQL ends with: {repr(transform_sql[-50:])}")
+
+                # Save SQL to file for debugging
+                import tempfile
+                sql_file = tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', delete=False, suffix='.sql')
+                sql_file.write(transform_sql)
+                sql_file.close()
+                self.logger.error(f"Full SQL saved to: {sql_file.name}")
+
+                # Check for "val_uci ci" pattern
+                if 'val_uci ci' in transform_sql:
+                    idx = transform_sql.find('val_uci ci')
+                    self.logger.error(f"Found 'val_uci ci' at index {idx}")
+                    self.logger.error(f"Context: {repr(transform_sql[max(0,idx-50):idx+50])}")
+
+                raise
+
             self.logger.info(f"View {target_view} created successfully")
 
         except Exception as e:
             self.logger.error(f"Transformation failed: {e}")
             raise PyInmetError(f"SQL transformation failed: {e}") from e
 
-    def _get_date_parsing_sql(self, column: str) -> str:
-        """Generate SQL for parsing dates with multiple format fallback.
+    def _get_date_parsing_sql(self, column: str, allow_future: bool = False) -> str:
+        """Generate SQL for parsing dates with multiple format fallback and future date validation.
 
         DuckDB's TRY_CAST doesn't fail on errors, it returns NULL instead.
         We use COALESCE to try multiple formats in order.
@@ -192,59 +222,110 @@ class SQLTransformer:
         3. YYYY-MM-DD (e.g., "2020-01-31")
         4. Direct cast (fallback)
 
+        When allow_future=False, validates that parsed dates are not in the future.
+        This prevents ambiguous dates like "20260115" from being parsed as 2026-01-15
+        when they might actually be 2015-01-26 (DDMMYYYY format).
+
         Args:
             column: Column name to parse
+            allow_future: Whether to allow dates in the future (default: False)
 
         Returns:
-            SQL expression for date parsing
+            SQL expression for date parsing with optional validation
 
-        Example SQL output:
+        Example SQL output (allow_future=False):
             COALESCE(
-                TRY_CAST(STRPTIME(DT_INTER, '%Y%m%d') AS DATE),
-                TRY_CAST(STRPTIME(DT_INTER, '%d%m%Y') AS DATE),
+                CASE WHEN TRY_CAST(...) <= CURRENT_DATE THEN TRY_CAST(...) ELSE NULL END,
                 ...
             )
         """
-        return f"""
-        COALESCE(
-            TRY_CAST(STRPTIME(NULLIF({column}, ''), '%Y%m%d') AS DATE),
-            TRY_CAST(STRPTIME(NULLIF({column}, ''), '%d%m%Y') AS DATE),
-            TRY_CAST(STRPTIME(NULLIF({column}, ''), '%Y-%m-%d') AS DATE),
-            TRY_CAST(NULLIF({column}, '') AS DATE)
-        )
-        """
+        if allow_future:
+            # Original logic without future date validation
+            return f"""
+            COALESCE(
+                TRY_CAST(STRPTIME(NULLIF({column}, ''), '%Y%m%d') AS DATE),
+                TRY_CAST(STRPTIME(NULLIF({column}, ''), '%d%m%Y') AS DATE),
+                TRY_CAST(STRPTIME(NULLIF({column}, ''), '%Y-%m-%d') AS DATE),
+                TRY_CAST(NULLIF({column}, '') AS DATE)
+            )
+            """
+        else:
+            # Enhanced logic with future date rejection
+            return f"""
+            COALESCE(
+                -- Try format 1: YYYYMMDD with date validation
+                CASE
+                    WHEN TRY_CAST(STRPTIME(NULLIF({column}, ''), '%Y%m%d') AS DATE) IS NOT NULL
+                         AND TRY_CAST(STRPTIME(NULLIF({column}, ''), '%Y%m%d') AS DATE) <= CURRENT_DATE
+                    THEN TRY_CAST(STRPTIME(NULLIF({column}, ''), '%Y%m%d') AS DATE)
+                    ELSE NULL
+                END,
+                -- Try format 2: DDMMYYYY with date validation
+                CASE
+                    WHEN TRY_CAST(STRPTIME(NULLIF({column}, ''), '%d%m%Y') AS DATE) IS NOT NULL
+                         AND TRY_CAST(STRPTIME(NULLIF({column}, ''), '%d%m%Y') AS DATE) <= CURRENT_DATE
+                    THEN TRY_CAST(STRPTIME(NULLIF({column}, ''), '%d%m%Y') AS DATE)
+                    ELSE NULL
+                END,
+                -- Try format 3: YYYY-MM-DD with date validation
+                CASE
+                    WHEN TRY_CAST(STRPTIME(NULLIF({column}, ''), '%Y-%m-%d') AS DATE) IS NOT NULL
+                         AND TRY_CAST(STRPTIME(NULLIF({column}, ''), '%Y-%m-%d') AS DATE) <= CURRENT_DATE
+                    THEN TRY_CAST(STRPTIME(NULLIF({column}, ''), '%Y-%m-%d') AS DATE)
+                    ELSE NULL
+                END,
+                -- Fallback: direct cast with validation
+                CASE
+                    WHEN TRY_CAST(NULLIF({column}, '') AS DATE) IS NOT NULL
+                         AND TRY_CAST(NULLIF({column}, '') AS DATE) <= CURRENT_DATE
+                    THEN TRY_CAST(NULLIF({column}, '') AS DATE)
+                    ELSE NULL
+                END
+            )
+            """
 
     def _build_clean_expression(self, col: str) -> str:
         """Build SQL expression to clean column value.
 
+        Cleaning steps:
+        1. CAST to VARCHAR
+        2. Remove invisible characters (\0, \t, \n, \r, form feeds)
+        3. TRIM whitespace (left and right)
+        4. Convert empty strings to NULL using NULLIF
+
         Removes invisible characters:
-        - Tabs (CHR(9)) → replaced with space
-        - Line feeds (CHR(10)) → replaced with space
-        - Carriage returns (CHR(13)) → replaced with space
+        - Tabs (CHR(9)) → removed completely
+        - Line feeds (CHR(10)) → removed completely
+        - Carriage returns (CHR(13)) → removed completely
         - Null bytes (CHR(0)) → removed completely
         - Form feeds (CHR(12)) → removed completely
         - Then applies TRIM (remove outer whitespace)
+        - Finally converts empty strings to NULL
 
         Args:
             col: Column name to clean
 
         Returns:
-            SQL expression for cleaned column value
+            SQL expression that returns cleaned VARCHAR or NULL
 
         Example:
-            >>> self._build_clean_expression("SEXO")
-            'TRIM(REPLACE(...CAST(SEXO AS VARCHAR)...)))'
+            Input: '  \t  \n  '  → Output: NULL
+            Input: '  data  '    → Output: 'data'
+            Input: ''            → Output: NULL
         """
-        return f"""TRIM(
-            REPLACE(
+        return f"""NULLIF(
+            TRIM(
                 REPLACE(
                     REPLACE(
                         REPLACE(
-                            REPLACE(CAST({col} AS VARCHAR), CHR(9), ' '),
-                            CHR(10), ' '),
-                        CHR(13), ' '),
-                    CHR(0), ''),
-                CHR(12), '')
+                            REPLACE(
+                                REPLACE(CAST({col} AS VARCHAR), CHR(9), ''),
+                                CHR(10), ''),
+                            CHR(13), ''),
+                        CHR(0), ''),
+                    CHR(12), '')
+            ),
+            ''
         )"""
 
     def _get_cleaned_columns_sql(self, actual_columns: list[str]) -> str:
@@ -270,7 +351,7 @@ class SQLTransformer:
         for col in actual_columns:
             cleaned.append(f"{self._build_clean_expression(col)} AS {col.lower()}")
 
-        return ",\n                ".join(cleaned)
+        return ",\n        ".join(cleaned)
 
     def _apply_schema_types_sql(self, actual_columns: list[str]) -> str:
         """Apply type conversions based on SIHSUS_PARQUET_SCHEMA.
@@ -343,12 +424,16 @@ class SQLTransformer:
                     typed_columns.append(f"cleaned.{col_lower}")
                 else:
                     # Numeric types: TRY_CAST for safe conversion
-                    typed_columns.append(f"TRY_CAST(cleaned.{col_lower} AS {target_type}) AS {col_lower}")
+                    sql_fragment = f"TRY_CAST(cleaned.{col_lower} AS {target_type}) AS {col_lower}"
+                    typed_columns.append(sql_fragment)
+                    # Debug specific column
+                    if col_lower == 'val_uci':
+                        self.logger.debug(f"val_uci SQL fragment: {repr(sql_fragment)}")
             else:
                 # Column not in schema, keep as VARCHAR
                 typed_columns.append(f"cleaned.{col_lower}")
 
-        return ",\n                ".join(typed_columns)
+        return ",\n        ".join(typed_columns)
 
     def _get_validated_columns_sql(self, actual_columns: list[str]) -> str:
         """Generate SQL for type validation and conversion.
@@ -373,11 +458,7 @@ class SQLTransformer:
         Returns:
             SQL column list for IBGE data (from JOIN)
         """
-        return """
-            ibge.nome_municipio,
-            ibge.uf AS uf_ibge,
-            ibge.regiao
-        """
+        return "ibge.nome_municipio,\n    ibge.uf AS uf_ibge,\n    ibge.regiao"
 
     def _get_ibge_join_sql(self, actual_columns: list[str]) -> str:
         """Generate SQL for IBGE LEFT JOIN.
@@ -389,12 +470,9 @@ class SQLTransformer:
             actual_columns: List of column names that actually exist in the source table
 
         Returns:
-            SQL JOIN clause (empty if MUNIC_RES doesn't exist)
+            SQL JOIN clause (empty if munic_res doesn't exist)
         """
-        if 'MUNIC_RES' not in actual_columns:
+        if 'munic_res' not in actual_columns:
             return ""
 
-        return """
-        LEFT JOIN ibge_data AS ibge
-            ON CAST(typed.munic_res AS VARCHAR) = CAST(ibge.codigo_municipio AS VARCHAR)
-        """
+        return "\nLEFT JOIN ibge_data AS ibge\n    ON CAST(typed.munic_res AS VARCHAR) = CAST(ibge.codigo_municipio AS VARCHAR)"

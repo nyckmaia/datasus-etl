@@ -17,177 +17,178 @@ Important Notes:
 # Maps column name (lowercase) -> DuckDB SQL type
 SIHSUS_PARQUET_SCHEMA: dict[str, str] = {
     # ========================================================================
-    # Identificação geográfica e temporal
+    # Geographic and temporal identification
     # ========================================================================
-    "uf_zi": "INTEGER",  # UF de localização (alguns registros têm 6 dígitos: 130000)
-    "ano_cmpt": "SMALLINT",  # Ano de competência
-    "mes_cmpt": "TINYINT",  # Mês de competência (1-12)
-    "espec": "SMALLINT",  # Especialidade
-    "cgc_hosp": "BIGINT",  # CNPJ do hospital
-    "n_aih": "VARCHAR",  # Número da AIH (autorização de internação hospitalar)
-    "ident": "TINYINT",  # Identificação
-    "cep": "VARCHAR",  # CEP
-    "munic_res": "INTEGER",  # Código do município de residência (IBGE)
-    "municipio_res": "VARCHAR",  # Nome do município de residência
-    "uf_res": "VARCHAR",  # UF de residência (sigla)
-    "rg_imediata_res": "VARCHAR",  # Região imediata de residência
-    "rg_intermediaria_res": "VARCHAR",  # Região intermediária de residência
+    "uf": "VARCHAR",  # UF state code extracted from filename (e.g., "SP", "RJ")
+    "uf_zi": "INTEGER",  # UF location code (some records have 6 digits: 130000)
+    "ano_cmpt": "SMALLINT",  # Competency year
+    "mes_cmpt": "TINYINT",  # Competency month (1-12)
+    "espec": "SMALLINT",  # Medical specialty
+    "cgc_hosp": "BIGINT",  # Hospital CNPJ (tax ID)
+    "n_aih": "VARCHAR",  # AIH number (hospital admission authorization)
+    "ident": "TINYINT",  # Identification
+    "cep": "VARCHAR",  # ZIP code
+    "munic_res": "INTEGER",  # Residence municipality code (IBGE)
+    "municipio_res": "VARCHAR",  # Residence municipality name
+    "uf_res": "VARCHAR",  # Residence state (abbreviation)
+    "rg_imediata_res": "VARCHAR",  # Immediate residence region
+    "rg_intermediaria_res": "VARCHAR",  # Intermediate residence region
     # ========================================================================
-    # Dados pessoais
+    # Personal data
     # ========================================================================
-    "nasc": "DATE",  # Data de nascimento
-    "sexo": "VARCHAR",  # Sexo (M/F/I - masculino/feminino/ignorado)
+    "nasc": "DATE",  # Date of birth
+    "sexo": "VARCHAR",  # Sex (M/F/I - male/female/unknown)
     # ========================================================================
-    # UTI - Meses (tempo em meses de UTI)
+    # ICU - Months (time in months in ICU)
     # ========================================================================
-    "uti_mes_in": "TINYINT",  # Meses de UTI - tipo IN
-    "uti_mes_an": "TINYINT",  # Meses de UTI - tipo AN
-    "uti_mes_al": "TINYINT",  # Meses de UTI - tipo AL
-    "uti_mes_to": "TINYINT",  # Meses de UTI - total
-    "marca_uti": "TINYINT",  # Marcador de UTI
+    "uti_mes_in": "TINYINT",  # ICU months - type IN
+    "uti_mes_an": "TINYINT",  # ICU months - type AN
+    "uti_mes_al": "TINYINT",  # ICU months - type AL
+    "uti_mes_to": "TINYINT",  # ICU months - total
+    "marca_uti": "TINYINT",  # ICU marker
     # ========================================================================
-    # UTI - Internações (número de internações em UTI)
+    # ICU - Admissions (number of ICU admissions)
     # ========================================================================
-    "uti_int_in": "TINYINT",  # Internações UTI - tipo IN
-    "uti_int_an": "TINYINT",  # Internações UTI - tipo AN
-    "uti_int_al": "TINYINT",  # Internações UTI - tipo AL
-    "uti_int_to": "TINYINT",  # Internações UTI - total
+    "uti_int_in": "TINYINT",  # ICU admissions - type IN
+    "uti_int_an": "TINYINT",  # ICU admissions - type AN
+    "uti_int_al": "TINYINT",  # ICU admissions - type AL
+    "uti_int_to": "TINYINT",  # ICU admissions - total
     # ========================================================================
-    # Procedimento e valores
+    # Procedure and costs
     # ========================================================================
-    "proc_rea": "VARCHAR",  # Procedimento realizado (código)
-    "val_sh": "FLOAT",  # Valor serviços hospitalares
-    "val_sp": "FLOAT",  # Valor serviços profissionais
-    "val_sadt": "FLOAT",  # Valor SADT (apoio diagnóstico e terapêutico)
-    "val_rn": "FLOAT",  # Valor recém-nascido
-    "val_ortp": "FLOAT",  # Valor órteses e próteses
-    "val_sangue": "FLOAT",  # Valor sangue
-    "val_sadtsr": "FLOAT",  # Valor SADT sem registro
-    "val_transp": "FLOAT",  # Valor transporte
-    "val_obsang": "FLOAT",  # Valor observação sangue
-    "val_ped1ac": "FLOAT",  # Valor pediatria 1o ano complemento
-    "val_tot": "FLOAT",  # Valor total
-    "val_uti": "FLOAT",  # Valor UTI
-    "us_tot": "FLOAT",  # US total
+    "proc_rea": "VARCHAR",  # Procedure performed (code)
+    "val_sh": "FLOAT",  # Hospital services cost
+    "val_sp": "FLOAT",  # Professional services cost
+    "val_sadt": "FLOAT",  # SADT cost (diagnostic and therapeutic support)
+    "val_rn": "FLOAT",  # Newborn cost
+    "val_ortp": "FLOAT",  # Orthoses and prostheses cost
+    "val_sangue": "FLOAT",  # Blood cost
+    "val_sadtsr": "FLOAT",  # SADT cost without registration
+    "val_transp": "FLOAT",  # Transportation cost
+    "val_obsang": "FLOAT",  # Blood observation cost
+    "val_ped1ac": "FLOAT",  # Pediatrics 1st year complement cost
+    "val_tot": "FLOAT",  # Total cost
+    "val_uti": "FLOAT",  # ICU cost
+    "us_tot": "FLOAT",  # Total US
     # ========================================================================
-    # Datas
+    # Dates
     # ========================================================================
-    "dt_inter": "DATE",  # Data de internação
-    "dt_saida": "DATE",  # Data de saída
+    "dt_inter": "DATE",  # Admission date
+    "dt_saida": "DATE",  # Discharge date
     # ========================================================================
-    # Diagnósticos
+    # Diagnoses
     # ========================================================================
-    "diag_princ": "VARCHAR",  # Diagnóstico principal (CID-10)
-    "diag_secun": "VARCHAR",  # Diagnóstico secundário (CID-10)
+    "diag_princ": "VARCHAR",  # Primary diagnosis (ICD-10)
+    "diag_secun": "VARCHAR",  # Secondary diagnosis (ICD-10)
     # ========================================================================
-    # Gestão administrativa
+    # Administrative management
     # ========================================================================
-    "cobranca": "TINYINT",  # Tipo de cobrança
-    "natureza": "TINYINT",  # Natureza da unidade
-    "gestao": "TINYINT",  # Gestão (sem til)
-    "gestão": "TINYINT",  # Gestão (com til) - coluna duplicada em alguns arquivos
-    "munic_mov": "INTEGER",  # Município de movimentação
+    "cobranca": "TINYINT",  # Billing type
+    "natureza": "TINYINT",  # Unit nature
+    "gestao": "TINYINT",  # Management (without tilde)
+    "gestão": "TINYINT",  # Management (with tilde) - duplicate column in some files
+    "munic_mov": "INTEGER",  # Movement municipality
     # ========================================================================
-    # Idade
+    # Age
     # ========================================================================
-    "cod_idade": "TINYINT",  # Código da unidade de idade (1=anos, 2=meses, 3=dias)
-    "idade": "TINYINT",  # Idade
-    "dias_perm": "SMALLINT",  # Dias de permanência
+    "cod_idade": "TINYINT",  # Age unit code (1=years, 2=months, 3=days)
+    "idade": "TINYINT",  # Age
+    "dias_perm": "SMALLINT",  # Days of stay
     # ========================================================================
-    # Desfecho
+    # Outcome
     # ========================================================================
-    "morte": "BOOLEAN",  # Óbito (true/false)
+    "morte": "BOOLEAN",  # Death (true/false)
     # ========================================================================
-    # Arquivo
+    # File
     # ========================================================================
-    "cod_arq": "TINYINT",  # Código do arquivo
-    "cont": "TINYINT",  # Continuação
-    "nacional": "SMALLINT",  # Nacional
+    "cod_arq": "TINYINT",  # File code
+    "cont": "TINYINT",  # Continuation
+    "nacional": "SMALLINT",  # National
     # ========================================================================
-    # Procedimentos
+    # Procedures
     # ========================================================================
-    "num_proc": "SMALLINT",  # Número de procedimentos
-    "car_int": "TINYINT",  # Caráter de internação
-    "tot_pt_sp": "SMALLINT",  # Total de pontos SP
+    "num_proc": "SMALLINT",  # Number of procedures
+    "car_int": "TINYINT",  # Admission character
+    "tot_pt_sp": "SMALLINT",  # Total SP points
     # ========================================================================
-    # Identificação extra
+    # Extra identification
     # ========================================================================
-    "cpf_aut": "VARCHAR",  # CPF autorizador
-    "homonimo": "TINYINT",  # Homônimo
-    "num_filhos": "TINYINT",  # Número de filhos
-    "instru": "TINYINT",  # Instrução
-    "cid_notif": "VARCHAR",  # CID de notificação
-    "contracep1": "TINYINT",  # Contraceptivo 1
-    "contracep2": "TINYINT",  # Contraceptivo 2
-    "gestrisco": "BOOLEAN",  # Gestação de risco
+    "cpf_aut": "VARCHAR",  # Authorizer CPF (tax ID)
+    "homonimo": "TINYINT",  # Homonym
+    "num_filhos": "TINYINT",  # Number of children
+    "instru": "TINYINT",  # Education level
+    "cid_notif": "VARCHAR",  # Notification ICD
+    "contracep1": "TINYINT",  # Contraceptive 1
+    "contracep2": "TINYINT",  # Contraceptive 2
+    "gestrisco": "BOOLEAN",  # High-risk pregnancy
     # ========================================================================
-    # Valores federais/gestão
+    # Federal/management costs
     # ========================================================================
-    "val_sh_fed": "FLOAT",  # Valor SH federal
-    "val_sp_fed": "FLOAT",  # Valor SP federal
-    "val_sh_ges": "FLOAT",  # Valor SH gestão
-    "val_sp_ges": "FLOAT",  # Valor SP gestão
-    "val_uci": "FLOAT",  # Valor UCI
+    "val_sh_fed": "FLOAT",  # Federal SH cost
+    "val_sp_fed": "FLOAT",  # Federal SP cost
+    "val_sh_ges": "FLOAT",  # Management SH cost
+    "val_sp_ges": "FLOAT",  # Management SP cost
+    "val_uci": "FLOAT",  # ICU cost
     # ========================================================================
-    # Diárias
+    # Daily rates
     # ========================================================================
-    "diar_acom": "SMALLINT",  # Diárias de acompanhante
-    "qt_diarias": "SMALLINT",  # Quantidade de diárias
+    "diar_acom": "SMALLINT",  # Companion daily rates
+    "qt_diarias": "SMALLINT",  # Number of daily rates
     # ========================================================================
-    # Classificação médica
+    # Medical classification
     # ========================================================================
-    "cbor": "SMALLINT",  # CBO (Classificação Brasileira de Ocupações)
+    "cbor": "SMALLINT",  # CBO (Brazilian Occupation Classification)
     "cnaer": "SMALLINT",  # CNAE
-    "etnia": "SMALLINT",  # Etnia
-    "raca_cor": "VARCHAR",  # Raça/cor
+    "etnia": "SMALLINT",  # Ethnicity
+    "raca_cor": "VARCHAR",  # Race/color
     # ========================================================================
-    # CIDs complementares
+    # Complementary ICDs
     # ========================================================================
-    "cid_asso": "VARCHAR",  # CID associado
-    "cid_morte": "VARCHAR",  # CID de morte
-    "diagsec1": "VARCHAR",  # Diagnóstico secundário 1
-    "diagsec2": "VARCHAR",  # Diagnóstico secundário 2
-    "diagsec3": "VARCHAR",  # Diagnóstico secundário 3
-    "diagsec4": "VARCHAR",  # Diagnóstico secundário 4
-    "diagsec5": "VARCHAR",  # Diagnóstico secundário 5
-    "diagsec6": "VARCHAR",  # Diagnóstico secundário 6
-    "diagsec7": "VARCHAR",  # Diagnóstico secundário 7
-    "diagsec8": "VARCHAR",  # Diagnóstico secundário 8
-    "diagsec9": "VARCHAR",  # Diagnóstico secundário 9
+    "cid_asso": "VARCHAR",  # Associated ICD
+    "cid_morte": "VARCHAR",  # Death ICD
+    "diagsec1": "VARCHAR",  # Secondary diagnosis 1
+    "diagsec2": "VARCHAR",  # Secondary diagnosis 2
+    "diagsec3": "VARCHAR",  # Secondary diagnosis 3
+    "diagsec4": "VARCHAR",  # Secondary diagnosis 4
+    "diagsec5": "VARCHAR",  # Secondary diagnosis 5
+    "diagsec6": "VARCHAR",  # Secondary diagnosis 6
+    "diagsec7": "VARCHAR",  # Secondary diagnosis 7
+    "diagsec8": "VARCHAR",  # Secondary diagnosis 8
+    "diagsec9": "VARCHAR",  # Secondary diagnosis 9
     # ========================================================================
-    # Tipos de diagnósticos secundários
+    # Secondary diagnosis types
     # ========================================================================
-    "tpdisec1": "TINYINT",  # Tipo diagnóstico secundário 1
-    "tpdisec2": "TINYINT",  # Tipo diagnóstico secundário 2
-    "tpdisec3": "TINYINT",  # Tipo diagnóstico secundário 3
-    "tpdisec4": "TINYINT",  # Tipo diagnóstico secundário 4
-    "tpdisec5": "TINYINT",  # Tipo diagnóstico secundário 5
-    "tpdisec6": "TINYINT",  # Tipo diagnóstico secundário 6
-    "tpdisec7": "TINYINT",  # Tipo diagnóstico secundário 7
-    "tpdisec8": "TINYINT",  # Tipo diagnóstico secundário 8
-    "tpdisec9": "TINYINT",  # Tipo diagnóstico secundário 9
+    "tpdisec1": "TINYINT",  # Secondary diagnosis type 1
+    "tpdisec2": "TINYINT",  # Secondary diagnosis type 2
+    "tpdisec3": "TINYINT",  # Secondary diagnosis type 3
+    "tpdisec4": "TINYINT",  # Secondary diagnosis type 4
+    "tpdisec5": "TINYINT",  # Secondary diagnosis type 5
+    "tpdisec6": "TINYINT",  # Secondary diagnosis type 6
+    "tpdisec7": "TINYINT",  # Secondary diagnosis type 7
+    "tpdisec8": "TINYINT",  # Secondary diagnosis type 8
+    "tpdisec9": "TINYINT",  # Secondary diagnosis type 9
     # ========================================================================
-    # Colunas extras (presentes apenas em alguns arquivos)
+    # Extra columns (present only in some files)
     # ========================================================================
-    "insc_pn": "BIGINT",  # Inscrição PN
-    "seq_aih5": "SMALLINT",  # Sequência AIH 5
-    "vincprev": "TINYINT",  # Vínculo previdenciário
-    "gestor_cod": "SMALLINT",  # Código do gestor
-    "gestor_cpf": "BIGINT",  # CPF do gestor
-    "gestor_dt": "DATE",  # Data do gestor
-    "cnes": "INTEGER",  # CNES (Cadastro Nacional de Estabelecimentos de Saúde)
-    "cgc_mant": "BIGINT",  # CNPJ mantenedora
-    "complex": "TINYINT",  # Complexidade
-    "faec_tp": "INTEGER",  # Tipo FAEC
-    "financ": "TINYINT",  # Financiamento
-    "gestor_tp": "TINYINT",  # Tipo de gestor
-    "regct": "SMALLINT",  # Registro CT
-    "remessa": "VARCHAR",  # Remessa
-    "sequencia": "SMALLINT",  # Sequência
-    "aud_just": "VARCHAR",  # Auditoria justificativa
-    "nat_jur": "SMALLINT",  # Natureza jurídica
-    "sis_just": "VARCHAR",  # Sistema justificativa
-    "marca_uci": "SMALLINT",  # Marcador UCI
+    "insc_pn": "BIGINT",  # PN registration
+    "seq_aih5": "SMALLINT",  # AIH sequence 5
+    "vincprev": "TINYINT",  # Social security link
+    "gestor_cod": "SMALLINT",  # Manager code
+    "gestor_cpf": "BIGINT",  # Manager CPF (tax ID)
+    "gestor_dt": "DATE",  # Manager date
+    "cnes": "INTEGER",  # CNES (National Registry of Health Establishments)
+    "cgc_mant": "BIGINT",  # Maintainer CNPJ (tax ID)
+    "complex": "TINYINT",  # Complexity
+    "faec_tp": "INTEGER",  # FAEC type
+    "financ": "TINYINT",  # Financing
+    "gestor_tp": "TINYINT",  # Manager type
+    "regct": "SMALLINT",  # CT registry
+    "remessa": "VARCHAR",  # Remittance
+    "sequencia": "SMALLINT",  # Sequence
+    "aud_just": "VARCHAR",  # Audit justification
+    "nat_jur": "SMALLINT",  # Legal nature
+    "sis_just": "VARCHAR",  # System justification
+    "marca_uci": "SMALLINT",  # UCI marker
 }
 
 

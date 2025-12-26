@@ -2,6 +2,7 @@
 
 import logging
 from pathlib import Path
+from datetime import datetime
 
 from pydatasus.config import PipelineConfig
 from pydatasus.core.pipeline import Pipeline
@@ -13,6 +14,11 @@ from pydatasus.transform.converters.dbf_to_duckdb import DbfToDuckDBConverter
 from pydatasus.storage.sql_transformer import SQLTransformer
 from pydatasus.storage.duckdb_manager import DuckDBManager
 from tqdm import tqdm
+
+try:
+    import humanize
+except ImportError:
+    humanize = None
 
 
 class DownloadStage(Stage):
@@ -74,7 +80,8 @@ class DbfToDbStage(Stage):
 
         converter = DbfToDuckDBConverter(
             conn=db_manager._conn,
-            chunk_size=self.config.database.chunk_size
+            chunk_size=self.config.database.chunk_size,
+            dataframe_threshold_mb=self.config.database.dataframe_threshold_mb
         )
 
         # Find all DBF files
@@ -83,12 +90,24 @@ class DbfToDbStage(Stage):
             self.logger.warning(f"No DBF files found in {self.config.conversion.dbf_dir}")
             return context
 
-        # Use multi-threading for I/O-bound DBF loading (max 4 workers)
-        max_workers = min(4, multiprocessing.cpu_count())
+        # Import tqdm for terminal-visible logging
+        from tqdm import tqdm
+
+        # Use single worker to avoid DuckDB connection contention
+        # ThreadPoolExecutor with multiple workers causes race conditions
+        # when all threads try to INSERT into the same DuckDB connection
+        max_workers = 1
         total_rows = 0
         staging_tables = []
 
         self.logger.info(f"Streaming {len(dbf_files)} DBF files using {max_workers} threads")
+
+        # Log all files to be processed (use tqdm.write for terminal visibility)
+        tqdm.write(f"\nStreaming {len(dbf_files)} DBF files using {max_workers} threads:")
+        for dbf_file in dbf_files:
+            file_size_mb = dbf_file.stat().st_size / (1024 * 1024)
+            tqdm.write(f"  - {dbf_file.name} ({file_size_mb:.1f}MB)")
+        tqdm.write("")  # Empty line before progress bar
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             # Submit all tasks
@@ -109,6 +128,8 @@ class DbfToDbStage(Stage):
                     rows = future.result()
                     total_rows += rows
                     staging_tables.append(f"staging_{dbf_file.stem}")
+                    # Log completion with row count
+                    tqdm.write(f"[OK] Completed {dbf_file.name}: {rows:,} rows")
                 except Exception as e:
                     self.logger.error(f"Failed to stream {dbf_file.name}: {e}")
                     continue
@@ -116,7 +137,7 @@ class DbfToDbStage(Stage):
         context.set("staging_tables", staging_tables)
         context.set_metadata("total_rows_loaded", total_rows)
 
-        self.logger.info(f"Streamed {total_rows:,} rows from {len(dbf_files)} DBF files")
+        tqdm.write(f"\n[DONE] Streamed {total_rows:,} rows from {len(dbf_files)} DBF files\n")
 
         return context
 
@@ -130,7 +151,13 @@ class SqlTransformStage(Stage):
         self.ibge_data_path = ibge_data_path
 
     def _execute(self, context: PipelineContext) -> PipelineContext:
-        """Apply all transformations using SQL and export to Parquet."""
+        """Transform staging tables using SQL and export to Parquet.
+
+        Applies full SQL transformations with clean column names to each staging table
+        individually, then exports to Parquet files.
+        """
+        from tqdm import tqdm
+
         # Get shared DuckDB manager from context
         db_manager = context.get("db_manager")
         if db_manager is None:
@@ -144,76 +171,158 @@ class SqlTransformStage(Stage):
             self.logger.warning("No staging tables found")
             return context
 
-        # Create UNION of all staging tables
-        union_query = " UNION ALL ".join([
-            f"SELECT * FROM {table}"
-            for table in staging_tables
-        ])
+        tqdm.write(f"\n[TRANSFORM] Transforming {len(staging_tables)} tables with SQL...")
 
-        db_manager._conn.execute(
-            f"""
-            CREATE OR REPLACE VIEW unified_staging AS
-            {union_query}
-        """
-        )
-
-        self.logger.info(f"Unified {len(staging_tables)} staging tables")
-
-        # Apply all transformations
-        transformer.transform_sihsus_data(
-            source_table="unified_staging",
-            target_view="sihsus_processed",
-            ibge_data_path=self.ibge_data_path
-        )
-
-        # Export directly to Parquet (zero-copy)
+        # Ensure output directory exists
         parquet_dir = self.config.storage.parquet_dir
         parquet_dir.mkdir(parents=True, exist_ok=True)
 
-        # Export with partitioning and compression
-        export_path = parquet_dir / "data.parquet"
-        self.logger.info("Exporting to Parquet...")
+        total_rows_exported = 0
+        exported_files = []
 
-        # Build partition columns from config (respect user's choice)
-        partition_cols = self.config.storage.partition_cols
-        # Filter only columns that exist in transformed view
-        valid_partition_cols = [
-            col.lower() for col in partition_cols
-            if col.upper() in ['ANO_INTER', 'MES_INTER', 'UF_ZI', 'MUNIC_RES']
-        ]
-        partition_cols_sql = ', '.join(valid_partition_cols) if valid_partition_cols else 'ano_inter'
-        self.logger.info(f"Partitioning Parquet by: {partition_cols_sql}")
+        # Process each staging table individually
+        for i, staging_table in enumerate(staging_tables, 1):
+            # Extract original filename from staging table name (staging_RDSP2301 → RDSP2301)
+            original_name = staging_table.replace("staging_", "")
 
-        db_manager._conn.execute(
-            f"""
-            COPY (SELECT * FROM sihsus_processed)
-            TO '{export_path}' (
-                FORMAT PARQUET,
-                PARTITION_BY ({partition_cols_sql}),
-                COMPRESSION '{self.config.storage.compression}',
-                ROW_GROUP_SIZE {self.config.storage.row_group_size},
-                OVERWRITE_OR_IGNORE true
-            )
-        """
-        )
+            tqdm.write(f"\n[{i}/{len(staging_tables)}] Transforming {original_name}...")
 
-        # Get row count AFTER export (faster - reads Parquet metadata)
-        count_result = db_manager._conn.execute(
-            f"""
-            SELECT COUNT(*) as cnt
-            FROM read_parquet('{parquet_dir}/**/*.parquet', hive_partitioning=true)
-            """
-        ).fetchone()
-        total_rows = count_result[0] if count_result else 0
+            try:
+                # Transform staging table (clean column names already applied at DBF load)
+                view_name = f"transformed_{original_name}"
+                transformer.transform_sihsus_data(
+                    source_table=staging_table,
+                    target_view=view_name
+                )
 
-        context.set("parquet_path", parquet_dir)
-        context.set_metadata("total_rows_exported", total_rows)
+                # Export transformed view to Parquet
+                parquet_file = parquet_dir / f"{original_name}.parquet"
 
-        self.logger.info(f"Exported {total_rows:,} rows to {parquet_dir}")
+                # Check if dt_inter exists for sorting (now lowercase due to column cleaning)
+                columns = db_manager._conn.execute(
+                    f"SELECT column_name FROM information_schema.columns WHERE table_name = '{view_name}'"
+                ).fetchall()
+                column_names = [col[0] for col in columns]
+
+                # Build ORDER BY clause if dt_inter exists (lowercase)
+                order_by = "ORDER BY dt_inter ASC NULLS LAST" if 'dt_inter' in column_names else ""
+
+                # Export with transformations applied
+                db_manager._conn.execute(
+                    f"""
+                    COPY (
+                        SELECT * FROM {view_name}
+                        {order_by}
+                    )
+                    TO '{parquet_file}' (
+                        FORMAT PARQUET,
+                        COMPRESSION '{self.config.storage.compression}',
+                        ROW_GROUP_SIZE {self.config.storage.row_group_size}
+                    )
+                """
+                )
+
+                # Get row count
+                row_count = db_manager._conn.execute(f"SELECT COUNT(*) FROM {view_name}").fetchone()[0]
+                total_rows_exported += row_count
+
+                file_size_mb = parquet_file.stat().st_size / (1024 * 1024)
+                tqdm.write(f"[OK] Exported {original_name}.parquet: {row_count:,} rows ({file_size_mb:.1f}MB)")
+
+                exported_files.append(str(parquet_file))
+
+            except Exception as e:
+                tqdm.write(f"[ERROR] Failed to transform/export {original_name}: {e}")
+                self.logger.error(f"Failed to transform/export {staging_table}: {e}")
+                raise  # Stop on first error to see the issue
+
+        context.set_metadata("total_rows_exported", total_rows_exported)
+        context.set("exported_parquet_files", exported_files)
+
+        tqdm.write(f"\n[DONE] Exported {len(exported_files)} Parquet files ({total_rows_exported:,} total rows)\n")
 
         return context
 
 
+class RawCsvExportStage(Stage):
+    """Optional stage: Export raw DBF data to CSV before transformations."""
+
+    def __init__(self, config: PipelineConfig) -> None:
+        super().__init__("Export Raw CSV")
+        self.config = config
+
+    def _execute(self, context: PipelineContext) -> PipelineContext:
+        """Export all staging tables to CSV files."""
+        if not self.config.storage.export_raw_csv:
+            self.logger.info("Raw CSV export disabled, skipping...")
+            return context
+
+        # Get output directory
+        csv_dir = self.config.storage.csv_dir or (
+            self.config.storage.parquet_dir.parent / "csv_raw"
+        )
+        csv_dir.mkdir(parents=True, exist_ok=True)
+
+        # Get DuckDB connection from context
+        db_manager: DuckDBManager = context.get("db_manager")
+        staging_tables: list[str] = context.get("staging_tables", [])
+
+        self.logger.info(f"Exporting {len(staging_tables)} tables to CSV (raw)")
+
+        # Export each staging table
+        for table in staging_tables:
+            output_file = csv_dir / f"{table}.csv"
+
+            db_manager._conn.execute(f"""
+                COPY (SELECT * FROM {table})
+                TO '{output_file}'
+                (HEADER true, DELIMITER ';', ENCODING 'UTF-8')
+            """)
+
+            self.logger.info(f"Exported {table} → {output_file.name}")
+
+        context.set("raw_csv_files", list(csv_dir.glob("*.csv")))
+        self.logger.info(f"Raw CSV export complete: {csv_dir}")
+        return context
+
+
+class CleanedCsvExportStage(Stage):
+    """Optional stage: Export cleaned/transformed data to CSV."""
+
+    def __init__(self, config: PipelineConfig) -> None:
+        super().__init__("Export Cleaned CSV")
+        self.config = config
+
+    def _execute(self, context: PipelineContext) -> PipelineContext:
+        """Export transformed view to CSV."""
+        if not self.config.storage.export_cleaned_csv:
+            self.logger.info("Cleaned CSV export disabled, skipping...")
+            return context
+
+        # Get output directory
+        csv_dir = self.config.storage.csv_dir or (
+            self.config.storage.parquet_dir.parent / "csv_cleaned"
+        )
+        csv_dir.mkdir(parents=True, exist_ok=True)
+
+        # Get DuckDB connection
+        db_manager: DuckDBManager = context.get("db_manager")
+
+        # Export cleaned data
+        output_file = csv_dir / "sihsus_cleaned.csv"
+
+        self.logger.info(f"Exporting cleaned data to CSV...")
+
+        db_manager._conn.execute(f"""
+            COPY (SELECT * FROM sihsus_processed ORDER BY dt_inter ASC NULLS LAST)
+            TO '{output_file}'
+            (HEADER true, DELIMITER ';', ENCODING 'UTF-8')
+        """)
+
+        self.logger.info(f"Exported → {output_file}")
+
+        context.set("cleaned_csv_file", output_file)
+        return context
 
 
 class SihsusPipeline(Pipeline[PipelineConfig]):
@@ -263,7 +372,9 @@ class SihsusPipeline(Pipeline[PipelineConfig]):
         1. Download DBC files from DATASUS FTP
         2. Decompress DBC → DBF (using TABWIN)
         3. Stream DBF → DuckDB (new, replaces CSV step)
-        4. Transform in SQL and export to Parquet (new, combines processing/enrichment/export)
+        4. [Optional] Export raw CSV (if configured)
+        5. Transform in SQL and export to Parquet (new, combines processing/enrichment/export)
+        6. [Optional] Export cleaned CSV (if configured)
 
         This replaces the old 7-stage pipeline:
         - Removed: DbfToCsvStage (replaced by DbfToDbStage)
@@ -276,9 +387,115 @@ class SihsusPipeline(Pipeline[PipelineConfig]):
         self.add_stage(DownloadStage(self.config))
         self.add_stage(DbcToDbfStage(self.config))
         self.add_stage(DbfToDbStage(self.config))
+
+        # Optional: Export raw CSV (before transformations)
+        self.add_stage(RawCsvExportStage(self.config))
+
         self.add_stage(SqlTransformStage(self.config, self.ibge_data_path))
 
+        # Optional: Export cleaned CSV (after transformations)
+        self.add_stage(CleanedCsvExportStage(self.config))
+
         self.logger.info(f"Optimized pipeline configured with {len(self._stages)} stages")
+
+    def _generate_completion_report(self, context: PipelineContext) -> None:
+        """Generate and log pipeline completion statistics.
+
+        Args:
+            context: Pipeline context with metadata
+        """
+        self.logger.info("=" * 70)
+        self.logger.info("PIPELINE COMPLETION REPORT")
+        self.logger.info("=" * 70)
+
+        # 1. Files processed
+        staging_tables = context.get("staging_tables", [])
+        dbf_files = context.get("dbf_files", [])
+        num_files = len(dbf_files) or len(staging_tables)
+
+        self.logger.info(f"📄 Files Processed: {num_files} DBC → Parquet")
+
+        # 2. Date range (query from DuckDB)
+        db_manager: DuckDBManager = context.get("db_manager")
+        if db_manager and db_manager._conn:
+            try:
+                date_stats = db_manager._conn.execute("""
+                    SELECT
+                        MIN(dt_inter) as min_date,
+                        MAX(dt_inter) as max_date,
+                        COUNT(*) as total_rows
+                    FROM sihsus_processed
+                    WHERE dt_inter IS NOT NULL
+                """).fetchone()
+
+                if date_stats:
+                    min_date, max_date, total_rows = date_stats
+                    self.logger.info(f"📅 Date Range: {min_date} to {max_date}")
+                    self.logger.info(f"📊 Total Rows: {total_rows:,}")
+            except Exception as e:
+                self.logger.warning(f"Could not retrieve date statistics: {e}")
+
+        # 3. Output directory and size
+        parquet_dir = self.config.storage.parquet_dir
+
+        if parquet_dir.exists():
+            # Calculate total size of Parquet files
+            total_size = sum(
+                f.stat().st_size
+                for f in parquet_dir.rglob("*.parquet")
+            )
+
+            if humanize:
+                size_human = humanize.naturalsize(total_size, binary=True)
+            else:
+                size_human = f"{total_size / (1024**3):.2f} GB"
+
+            self.logger.info(f"📁 Output Directory: {parquet_dir}")
+            self.logger.info(f"💾 Parquet Database Size: {size_human}")
+
+            # Count partition directories
+            partition_dirs = [
+                d for d in parquet_dir.rglob("*")
+                if d.is_dir() and "=" in d.name
+            ]
+            if partition_dirs:
+                self.logger.info(f"📂 Partitions: {len(partition_dirs)} directories")
+
+        # 4. Processing duration
+        start_time = context.get_metadata("start_time")
+        end_time = datetime.now()
+
+        if start_time:
+            duration = end_time - start_time
+            if humanize:
+                duration_human = humanize.naturaldelta(duration)
+            else:
+                duration_human = str(duration).split('.')[0]  # Remove microseconds
+            self.logger.info(f"⏱️  Duration: {duration_human}")
+
+        # 5. CSV exports (if enabled)
+        if self.config.storage.export_raw_csv:
+            raw_csv_files = context.get("raw_csv_files", [])
+            if raw_csv_files:
+                self.logger.info(f"📝 Raw CSV Files: {len(raw_csv_files)} exported")
+
+        if self.config.storage.export_cleaned_csv:
+            cleaned_csv = context.get("cleaned_csv_file")
+            if cleaned_csv and cleaned_csv.exists():
+                csv_size_bytes = cleaned_csv.stat().st_size
+                if humanize:
+                    csv_size = humanize.naturalsize(csv_size_bytes, binary=True)
+                else:
+                    csv_size = f"{csv_size_bytes / (1024**3):.2f} GB"
+                self.logger.info(f"📝 Cleaned CSV: {csv_size}")
+
+        # 6. Errors (if any)
+        if context.has_errors:
+            self.logger.warning(f"⚠️  Errors: {len(context.errors)} encountered")
+            for error in context.errors[:5]:  # Show first 5 errors
+                self.logger.warning(f"   - {error}")
+
+        self.logger.info("=" * 70)
 
     def run(self) -> "PipelineContext":
         """Run the pipeline and cleanup resources.
@@ -289,10 +506,21 @@ class SihsusPipeline(Pipeline[PipelineConfig]):
         Raises:
             PyInmetError: If pipeline execution fails
         """
+        # Track start time
+        start_time = datetime.now()
+        self.context.set_metadata("start_time", start_time)
+
         try:
             # Run parent implementation
             result = super().run()
+
+            # Generate completion report
+            self._generate_completion_report(result)
+
             return result
+        except Exception as e:
+            self.logger.error(f"Pipeline failed: {e}")
+            raise
         finally:
             # Always cleanup DuckDB connection
             db_manager = self.context.get("db_manager")

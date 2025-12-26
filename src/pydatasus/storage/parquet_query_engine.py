@@ -48,13 +48,19 @@ class ParquetQueryEngine:
     """
 
     def __init__(
-        self, parquet_dir: Union[str, Path], view_name: str = "sihsus"
+        self,
+        parquet_dir: Union[str, Path],
+        view_name: str = "sihsus",
+        union_by_name: bool = True,
+        include_filename: bool = False,
     ) -> None:
         """Initialize query engine.
 
         Args:
             parquet_dir: Path to directory with partitioned Parquet files
             view_name: Name for the DuckDB view (default: "sihsus")
+            union_by_name: Combine files with different schemas by column name (default: True)
+            include_filename: Add 'filename' column with source file path (default: False)
 
         Raises:
             ValueError: If parquet_dir doesn't exist
@@ -63,6 +69,8 @@ class ParquetQueryEngine:
         self.parquet_dir = Path(parquet_dir)
         self._conn: Optional[duckdb.DuckDBPyConnection] = None
         self._view_name = view_name
+        self._union_by_name = union_by_name
+        self._include_filename = include_filename
         self.logger = logging.getLogger(__name__)
 
         if not self.parquet_dir.exists():
@@ -76,12 +84,15 @@ class ParquetQueryEngine:
         self._register_parquet_view()
 
     def _register_parquet_view(self) -> None:
-        """Register Parquet files as DuckDB VIEW.
+        """Register Parquet files as DuckDB VIEW with schema handling.
 
         Creates a VIEW that reads all Parquet files in the directory tree.
         The VIEW is lazy and won't load data until queried.
 
-        Uses hive_partitioning=true to leverage partition columns for pruning.
+        Uses:
+        - hive_partitioning=true to leverage partition columns for pruning
+        - union_by_name to handle files with different column sets
+        - filename to track data provenance (optional)
 
         Raises:
             PyInmetError: If VIEW creation fails
@@ -90,18 +101,23 @@ class ParquetQueryEngine:
             # Pattern to match all parquet files recursively
             parquet_pattern = str(self.parquet_dir / "**/*.parquet")
 
-            # Create VIEW with hive partitioning support
+            # Create VIEW with hive partitioning and schema handling
             self._conn.execute(
                 f"""
                 CREATE OR REPLACE VIEW {self._view_name} AS
                 SELECT * FROM read_parquet(
                     '{parquet_pattern}',
-                    hive_partitioning=true
+                    hive_partitioning=true,
+                    union_by_name={str(self._union_by_name).lower()},
+                    filename={str(self._include_filename).lower()}
                 )
             """
             )
 
-            self.logger.info(f"Registered view '{self._view_name}' for {parquet_pattern}")
+            self.logger.info(
+                f"Registered view '{self._view_name}' for {parquet_pattern} "
+                f"(union_by_name={self._union_by_name}, filename={self._include_filename})"
+            )
 
         except Exception as e:
             self.logger.error(f"Failed to register Parquet view: {e}")
