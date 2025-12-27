@@ -132,7 +132,8 @@ class SQLTransformer:
 
             # Build final SELECT clause
             if additional_selects:
-                additional_sql = f",\n    {',\n    '.join(additional_selects)}"
+                joined_selects = ",\n    ".join(additional_selects)
+                additional_sql = f",\n    {joined_selects}"
             else:
                 additional_sql = ""
 
@@ -476,3 +477,172 @@ FROM typed{ibge_join_clause}
             return ""
 
         return "\nLEFT JOIN ibge_data AS ibge\n    ON CAST(typed.munic_res AS VARCHAR) = CAST(ibge.codigo_municipio AS VARCHAR)"
+
+    def _generate_canonical_column_sql(self, actual_columns: list[str]) -> str:
+        """Generate SQL SELECT with ALL columns from SIHSUS_PARQUET_SCHEMA.
+
+        This ensures a consistent schema across all Parquet files, regardless of
+        which columns exist in the source DBF. Missing columns are filled with
+        NULL cast to the appropriate type.
+
+        Args:
+            actual_columns: List of column names that actually exist in the source table
+
+        Returns:
+            SQL column list with all canonical columns, properly typed
+
+        Example:
+            If DBF has columns [uf, n_aih, dt_inter] but schema has 100 columns,
+            this generates:
+                typed.uf,
+                typed.n_aih,
+                typed.dt_inter,
+                NULL::INTEGER AS uf_zi,  -- missing column with correct type
+                NULL::SMALLINT AS ano_cmpt,  -- missing column with correct type
+                ...
+        """
+        actual_columns_lower = {col.lower() for col in actual_columns}
+        canonical_columns = []
+
+        # Map of date columns to their parsed versions
+        date_column_mapping = {
+            'dt_inter': 'dt_inter_parsed',
+            'dt_saida': 'dt_saida_parsed',
+            'nasc': 'nasc_parsed',
+            'gestor_dt': 'gestor_dt_parsed'
+        }
+
+        for col_name, col_type in SIHSUS_PARQUET_SCHEMA.items():
+            if col_name in actual_columns_lower:
+                # Column exists in source - use typed version
+                if col_type == "DATE" and col_name in date_column_mapping:
+                    # Date columns use parsed version
+                    canonical_columns.append(f"typed.{col_name}")
+                else:
+                    canonical_columns.append(f"typed.{col_name}")
+            else:
+                # Column doesn't exist - generate NULL with correct type
+                canonical_columns.append(f"NULL::{col_type} AS {col_name}")
+
+        return ",\n        ".join(canonical_columns)
+
+    def transform_to_canonical_view(
+        self,
+        source_table: str,
+        target_view: str,
+        ibge_data_path: Optional[Path] = None,
+    ) -> None:
+        """Apply SIHSUS transformations and normalize to canonical schema.
+
+        Similar to transform_sihsus_data() but ensures the output view has
+        ALL columns from SIHSUS_PARQUET_SCHEMA, with missing columns as NULL.
+        This enables consistent schema across all Parquet files when using
+        partitioned writes with APPEND.
+
+        Args:
+            source_table: Name of source table/view in DuckDB
+            target_view: Name for the transformed view to create
+            ibge_data_path: Optional path to IBGE CSV file for geographic enrichment
+
+        Raises:
+            PyInmetError: If transformation query fails
+        """
+        try:
+            # Get actual columns from source table
+            actual_columns = self.conn.execute(
+                f"SELECT column_name FROM information_schema.columns WHERE table_name = '{source_table}' ORDER BY ordinal_position"
+            ).fetchall()
+            actual_columns = [col[0] for col in actual_columns]
+            self.logger.info(f"Source table has {len(actual_columns)} columns, normalizing to {len(SIHSUS_PARQUET_SCHEMA)} canonical columns")
+
+            # Load IBGE data if provided
+            if ibge_data_path and ibge_data_path.exists():
+                self.logger.info(f"Loading IBGE data from {ibge_data_path}")
+                self.conn.execute(
+                    f"""
+                    CREATE OR REPLACE TEMP VIEW ibge_data AS
+                    SELECT * FROM read_csv('{ibge_data_path}', delim=';', header=true)
+                """
+                )
+
+            # Build additional computed columns
+            additional_selects = []
+            actual_columns_lower = {col.lower() for col in actual_columns}
+
+            # Computed date columns
+            if 'dt_inter' in actual_columns_lower:
+                additional_selects.append("EXTRACT(YEAR FROM typed.dt_inter) AS ano_inter")
+                additional_selects.append("EXTRACT(MONTH FROM typed.dt_inter) AS mes_inter")
+
+            # IBGE enrichment
+            if ibge_data_path and 'munic_res' in actual_columns_lower:
+                additional_selects.append(self._get_ibge_enrichment_sql())
+
+            # Build final SELECT clause
+            additional_sql = ""
+            if additional_selects:
+                joined_selects = ",\n        ".join(additional_selects)
+                additional_sql = f",\n        {joined_selects}"
+
+            # Build IBGE JOIN clause if needed
+            ibge_join_clause = ""
+            if ibge_data_path and 'munic_res' in actual_columns_lower:
+                ibge_join_clause = self._get_ibge_join_sql(actual_columns)
+
+            # Generate canonical schema SELECT
+            canonical_select = self._generate_canonical_column_sql(actual_columns)
+
+            transform_sql = f"""
+CREATE OR REPLACE VIEW {target_view} AS
+WITH cleaned AS (
+    SELECT
+        -- Original columns (cleaned) - only columns that exist
+        {self._get_cleaned_columns_sql(actual_columns)},
+
+        -- Parse dates with fallback to multiple formats and future date validation
+        {self._get_date_parsing_sql('dt_inter', allow_future=False) if 'dt_inter' in actual_columns_lower else 'NULL'} AS dt_inter_parsed,
+        {self._get_date_parsing_sql('dt_saida', allow_future=False) if 'dt_saida' in actual_columns_lower else 'NULL'} AS dt_saida_parsed,
+        {self._get_date_parsing_sql('nasc', allow_future=False) if 'nasc' in actual_columns_lower else 'NULL'} AS nasc_parsed,
+        {self._get_date_parsing_sql('gestor_dt', allow_future=False) if 'gestor_dt' in actual_columns_lower else 'NULL'} AS gestor_dt_parsed
+    FROM {source_table}
+),
+typed AS (
+    SELECT
+        -- Apply schema-based type conversions
+        {self._apply_schema_types_sql(actual_columns)}
+    FROM cleaned
+    WHERE
+        -- Remove completely empty rows (at least one date must be valid)
+        NOT (cleaned.dt_inter_parsed IS NULL AND cleaned.dt_saida_parsed IS NULL)
+),
+canonical AS (
+    SELECT
+        -- All columns from canonical schema (missing columns as NULL with correct type)
+        {canonical_select}{additional_sql}
+    FROM typed{ibge_join_clause}
+)
+SELECT * FROM canonical
+"""
+
+            from tqdm import tqdm
+            tqdm.write(f"[TRANSFORM] Applying SQL transformations with canonical schema to create view: {target_view}...")
+            self.logger.info(f"Creating canonical transformed view: {target_view}")
+            self.logger.debug(f"Transform SQL length: {len(transform_sql)} characters")
+
+            try:
+                self.conn.execute(transform_sql)
+                tqdm.write(f"[TRANSFORM] Canonical view {target_view} created successfully\n")
+            except Exception as sql_error:
+                self.logger.error(f"Failed SQL query (length={len(transform_sql)}):\n{transform_sql}")
+                import tempfile
+                sql_file = tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', delete=False, suffix='.sql')
+                sql_file.write(transform_sql)
+                sql_file.close()
+                self.logger.error(f"Full SQL saved to: {sql_file.name}")
+                raise
+
+            self.logger.info(f"Canonical view {target_view} created successfully")
+
+        except Exception as e:
+            self.logger.error(f"Canonical transformation failed: {e}")
+            raise PyInmetError(f"SQL canonical transformation failed: {e}") from e

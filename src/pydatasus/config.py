@@ -83,7 +83,18 @@ class StorageConfig(BaseModel):
     max_file_size: int = Field(
         default=512_000_000,
         ge=1_000_000,
-        description="Maximum file size in bytes (default: 512MB)"
+        description="Maximum file size in bytes for partitioned export (default: 512MB)"
+    )
+    use_partitioned_export: bool = Field(
+        default=True,
+        description="Use Hive-partitioned export with canonical schema (default: True). "
+                    "When True: exports to uf=XX/ directory structure with FILE_SIZE_BYTES control. "
+                    "When False: legacy mode with one Parquet file per DBF."
+    )
+    use_canonical_schema: bool = Field(
+        default=True,
+        description="Normalize all exports to canonical SIHSUS schema (default: True). "
+                    "Ensures consistent columns across all Parquet files."
     )
     # CSV export options
     export_raw_csv: bool = Field(

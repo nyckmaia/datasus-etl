@@ -143,19 +143,45 @@ class DbfToDbStage(Stage):
 
 
 class SqlTransformStage(Stage):
-    """Stage for SQL-based data transformation and Parquet export."""
+    """Stage for SQL-based data transformation and Parquet export.
+
+    Supports two export modes:
+    1. Individual files (legacy): One Parquet file per DBF
+    2. Partitioned (default): Hive-partitioned directory with file size control
+
+    Partitioned mode uses:
+    - PARTITION_BY (uf): Creates uf=SP/, uf=RJ/ structure
+    - FILE_SIZE_BYTES: Controls max file size (default 512MB)
+    - APPEND: Accumulates data from multiple DBFs
+    - Canonical schema: All columns from SIHSUS_PARQUET_SCHEMA
+    """
 
     def __init__(self, config: PipelineConfig, ibge_data_path: Path = None) -> None:
         super().__init__("Transform Data (SQL) and Export Parquet")
         self.config = config
         self.ibge_data_path = ibge_data_path
+        # Use config option, defaults to True (partitioned export)
+        self.use_partitioned_export = config.storage.use_partitioned_export
 
     def _execute(self, context: PipelineContext) -> PipelineContext:
         """Transform staging tables using SQL and export to Parquet.
 
-        Applies full SQL transformations with clean column names to each staging table
-        individually, then exports to Parquet files.
+        When use_partitioned_export=True (default):
+        - Uses canonical schema (all columns from SIHSUS_PARQUET_SCHEMA)
+        - Exports to Hive-partitioned directory structure
+        - Uses APPEND to accumulate data from multiple DBFs
+        - Controls file size with FILE_SIZE_BYTES
+
+        When use_partitioned_export=False:
+        - Legacy mode: one Parquet file per DBF
         """
+        if self.use_partitioned_export:
+            return self._execute_partitioned(context)
+        else:
+            return self._execute_individual(context)
+
+    def _execute_partitioned(self, context: PipelineContext) -> PipelineContext:
+        """Transform and export to Hive-partitioned Parquet with canonical schema."""
         from tqdm import tqdm
 
         # Get shared DuckDB manager from context
@@ -171,7 +197,116 @@ class SqlTransformStage(Stage):
             self.logger.warning("No staging tables found")
             return context
 
-        tqdm.write(f"\n[TRANSFORM] Transforming {len(staging_tables)} tables with SQL...")
+        tqdm.write(f"\n[TRANSFORM] Transforming {len(staging_tables)} tables with canonical schema...")
+        tqdm.write(f"[PARTITION] Exporting to Hive-partitioned Parquet (partition_by={self.config.storage.partition_cols})")
+
+        # Ensure output directory exists
+        parquet_dir = self.config.storage.parquet_dir
+        parquet_dir.mkdir(parents=True, exist_ok=True)
+
+        # Build partition columns string
+        partition_cols = ", ".join(self.config.storage.partition_cols)
+
+        # Get file size limit from config (in bytes, convert to human-readable)
+        max_file_size_bytes = self.config.storage.max_file_size
+        max_file_size_mb = max_file_size_bytes // (1024 * 1024)
+
+        total_rows_exported = 0
+        is_first_export = True
+
+        # Process each staging table
+        for i, staging_table in enumerate(staging_tables, 1):
+            original_name = staging_table.replace("staging_", "")
+            tqdm.write(f"\n[{i}/{len(staging_tables)}] Transforming {original_name} with canonical schema...")
+
+            try:
+                # Transform using canonical schema (all SIHSUS columns)
+                view_name = f"canonical_{original_name}"
+                transformer.transform_to_canonical_view(
+                    source_table=staging_table,
+                    target_view=view_name,
+                    ibge_data_path=self.ibge_data_path
+                )
+
+                # Get row count before export
+                row_count = db_manager._conn.execute(f"SELECT COUNT(*) FROM {view_name}").fetchone()[0]
+
+                # Determine if we should use APPEND or OVERWRITE
+                # First export: use OVERWRITE_OR_IGNORE to clean any existing data
+                # Subsequent exports: use APPEND to add to existing partitions
+                if is_first_export:
+                    append_mode = "OVERWRITE_OR_IGNORE"
+                    is_first_export = False
+                else:
+                    append_mode = "APPEND"
+
+                # Export with partitioning and file size control
+                export_sql = f"""
+                    COPY (
+                        SELECT * FROM {view_name}
+                        ORDER BY dt_inter ASC NULLS LAST
+                    )
+                    TO '{parquet_dir}' (
+                        FORMAT PARQUET,
+                        PARTITION_BY ({partition_cols}),
+                        {append_mode},
+                        FILE_SIZE_BYTES '{max_file_size_mb}MB',
+                        COMPRESSION '{self.config.storage.compression}',
+                        ROW_GROUP_SIZE {self.config.storage.row_group_size}
+                    )
+                """
+                db_manager._conn.execute(export_sql)
+
+                total_rows_exported += row_count
+                tqdm.write(f"[OK] Exported {original_name}: {row_count:,} rows (partitioned by {partition_cols})")
+
+                # Cleanup: drop the view to free memory
+                db_manager._conn.execute(f"DROP VIEW IF EXISTS {view_name}")
+
+            except Exception as e:
+                tqdm.write(f"[ERROR] Failed to transform/export {original_name}: {e}")
+                self.logger.error(f"Failed to transform/export {staging_table}: {e}")
+                raise
+
+        # Calculate total size of all Parquet files
+        total_size_bytes = sum(f.stat().st_size for f in parquet_dir.rglob("*.parquet"))
+        total_size_mb = total_size_bytes / (1024 * 1024)
+
+        # Count partition directories and files
+        partition_dirs = list(parquet_dir.glob("uf=*"))
+        parquet_files = list(parquet_dir.rglob("*.parquet"))
+
+        context.set_metadata("total_rows_exported", total_rows_exported)
+        context.set("parquet_dir", str(parquet_dir))
+        context.set("partition_count", len(partition_dirs))
+        context.set("file_count", len(parquet_files))
+
+        tqdm.write(f"\n[DONE] Partitioned export complete:")
+        tqdm.write(f"  - Total rows: {total_rows_exported:,}")
+        tqdm.write(f"  - Partitions: {len(partition_dirs)} (by {partition_cols})")
+        tqdm.write(f"  - Files: {len(parquet_files)} ({total_size_mb:.1f}MB total)")
+        tqdm.write(f"  - Max file size: {max_file_size_mb}MB\n")
+
+        return context
+
+    def _execute_individual(self, context: PipelineContext) -> PipelineContext:
+        """Legacy mode: Transform and export one Parquet file per DBF."""
+        from tqdm import tqdm
+
+        # Get shared DuckDB manager from context
+        db_manager = context.get("db_manager")
+        if db_manager is None:
+            raise ValueError("DuckDB manager not found in context. DBF stage must run first.")
+
+        transformer = SQLTransformer(db_manager._conn)
+
+        # Get list of staging tables
+        staging_tables = context.get("staging_tables", [])
+        if not staging_tables:
+            self.logger.warning("No staging tables found")
+            return context
+
+        tqdm.write(f"\n[TRANSFORM] Transforming {len(staging_tables)} tables with SQL (individual files)...")
 
         # Ensure output directory exists
         parquet_dir = self.config.storage.parquet_dir
