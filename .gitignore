@@ -9,6 +9,8 @@ __pycache__/
 # DBC, DBF and Parquet files
 data/
 
+TODO.md
+
 # Distribution / packaging
 .Python
 build/
