@@ -67,13 +67,6 @@ def main():
     print(f"Total rows exported: {total_rows:,}")
     print(f"Parquet files generated: {len(exported_files)}")
     print(f"Output directory: {config.storage.parquet_dir}")
-
-    if exported_files:
-        print("\nGenerated files:")
-        for file_path in exported_files:
-            file_name = Path(file_path).name
-            print(f"  - {file_name}")
-
     print("="*60)
 
 

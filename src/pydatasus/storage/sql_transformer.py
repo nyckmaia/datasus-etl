@@ -569,11 +569,6 @@ FROM typed{ibge_join_clause}
             additional_selects = []
             actual_columns_lower = {col.lower() for col in actual_columns}
 
-            # Computed date columns
-            if 'dt_inter' in actual_columns_lower:
-                additional_selects.append("EXTRACT(YEAR FROM typed.dt_inter) AS ano_inter")
-                additional_selects.append("EXTRACT(MONTH FROM typed.dt_inter) AS mes_inter")
-
             # IBGE enrichment
             if ibge_data_path and 'munic_res' in actual_columns_lower:
                 additional_selects.append(self._get_ibge_enrichment_sql())

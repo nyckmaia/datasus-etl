@@ -240,7 +240,7 @@ class SqlTransformStage(Stage):
                 else:
                     append_mode = "APPEND"
 
-                # Export with partitioning and file size control
+                # Export with partitioning (FILE_SIZE_BYTES not compatible with PARTITION_BY in DuckDB)
                 export_sql = f"""
                     COPY (
                         SELECT * FROM {view_name}
@@ -250,7 +250,6 @@ class SqlTransformStage(Stage):
                         FORMAT PARQUET,
                         PARTITION_BY ({partition_cols}),
                         {append_mode},
-                        FILE_SIZE_BYTES '{max_file_size_mb}MB',
                         COMPRESSION '{self.config.storage.compression}',
                         ROW_GROUP_SIZE {self.config.storage.row_group_size}
                     )
@@ -280,12 +279,12 @@ class SqlTransformStage(Stage):
         context.set("parquet_dir", str(parquet_dir))
         context.set("partition_count", len(partition_dirs))
         context.set("file_count", len(parquet_files))
+        context.set("exported_parquet_files", [str(f) for f in parquet_files])
 
         tqdm.write(f"\n[DONE] Partitioned export complete:")
         tqdm.write(f"  - Total rows: {total_rows_exported:,}")
         tqdm.write(f"  - Partitions: {len(partition_dirs)} (by {partition_cols})")
-        tqdm.write(f"  - Files: {len(parquet_files)} ({total_size_mb:.1f}MB total)")
-        tqdm.write(f"  - Max file size: {max_file_size_mb}MB\n")
+        tqdm.write(f"  - Files: {len(parquet_files)} ({total_size_mb:.1f}MB total)\n")
 
         return context
 
@@ -550,25 +549,10 @@ class SihsusPipeline(Pipeline[PipelineConfig]):
 
         self.logger.info(f"📄 Files Processed: {num_files} DBC → Parquet")
 
-        # 2. Date range (query from DuckDB)
-        db_manager: DuckDBManager = context.get("db_manager")
-        if db_manager and db_manager._conn:
-            try:
-                date_stats = db_manager._conn.execute("""
-                    SELECT
-                        MIN(dt_inter) as min_date,
-                        MAX(dt_inter) as max_date,
-                        COUNT(*) as total_rows
-                    FROM sihsus_processed
-                    WHERE dt_inter IS NOT NULL
-                """).fetchone()
-
-                if date_stats:
-                    min_date, max_date, total_rows = date_stats
-                    self.logger.info(f"📅 Date Range: {min_date} to {max_date}")
-                    self.logger.info(f"📊 Total Rows: {total_rows:,}")
-            except Exception as e:
-                self.logger.warning(f"Could not retrieve date statistics: {e}")
+        # 2. Total rows (from context metadata)
+        total_rows = context.get_metadata("total_rows_exported", 0)
+        if total_rows:
+            self.logger.info(f"📊 Total Rows: {total_rows:,}")
 
         # 3. Output directory and size
         parquet_dir = self.config.storage.parquet_dir
