@@ -1,4 +1,11 @@
-"""Constants and schema definitions for PyDataSUS."""
+"""Constants and schema definitions for PyDataSUS.
+
+This module provides backward-compatible access to constants and schemas.
+For new code, prefer using the pydatasus.datasets module directly:
+
+    from pydatasus.datasets import SIHSUSConfig, SIMConfig
+    schema = SIHSUSConfig.get_parquet_schema()
+"""
 
 # Import general constants
 from pydatasus.constants.general import (
@@ -13,6 +20,7 @@ from pydatasus.constants.general import (
     RACA_COR_MAP,
     SEXO_MAP,
     SIHSUS_DIRS,
+    SIM_DIRS,
 )
 
 from pydatasus.constants.sihsus_schema import (
@@ -43,6 +51,7 @@ __all__ = [
     "DATASUS_FTP_USER",
     "DATASUS_FTP_PASS",
     "SIHSUS_DIRS",
+    "SIM_DIRS",
     "DBC_FILE_PATTERN",
     "SEXO_MAP",
     "RACA_COR_MAP",

@@ -9,7 +9,7 @@ DATASUS_FTP_HOST = "ftp.datasus.gov.br"
 DATASUS_FTP_USER = ""  # Anonymous
 DATASUS_FTP_PASS = ""  # Anonymous
 
-# SIHSUS FTP Directories (historical data)
+# SIHSUS FTP Directories (hospital admission data)
 SIHSUS_DIRS = [
     {
         "path": "/dissemin/publicos/SIHSUS/199201_200712/Dados/",
@@ -19,6 +19,21 @@ SIHSUS_DIRS = [
     {
         "path": "/dissemin/publicos/SIHSUS/200801_/Dados/",
         "start_year": 2008,
+        "end_year": 9999,  # No upper limit
+    },
+]
+
+# SIM FTP Directories (mortality data)
+# Uses different directories for CID-9 (before 1996) and CID-10 (1996+)
+SIM_DIRS = [
+    {
+        "path": "/dissemin/publicos/SIM/CID9/DORES/",
+        "start_year": 1979,
+        "end_year": 1995,
+    },
+    {
+        "path": "/dissemin/publicos/SIM/CID10/DORES/",
+        "start_year": 1996,
         "end_year": 9999,  # No upper limit
     },
 ]
