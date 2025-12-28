@@ -23,6 +23,11 @@ class DownloadConfig(BaseModel):
     override: bool = Field(default=False, description="Override existing files")
     timeout: int = Field(default=60, ge=10, description="FTP timeout in seconds")
     max_retries: int = Field(default=3, ge=1, description="Maximum retry attempts")
+    incremental_files: Optional[set[str]] = Field(
+        default=None,
+        description="Set of specific files to download (for incremental updates). "
+                    "When set, only files in this set will be downloaded."
+    )
 
     @field_validator("output_dir")
     @classmethod

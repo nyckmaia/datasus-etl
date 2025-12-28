@@ -270,3 +270,77 @@ class ParquetQueryEngine:
     def __del__(self) -> None:
         """Cleanup connection on deletion."""
         self.close()
+
+    def get_processed_source_files(self) -> set[str]:
+        """Get set of source files already processed in this Parquet dataset.
+
+        This method queries the 'source_file' column to find which DBC files
+        have already been processed. Useful for incremental updates.
+
+        Returns:
+            Set of source file names (e.g., {"RDSP2301.dbc", "RDRJ2301.dbc"})
+
+        Raises:
+            PyInmetError: If query fails or source_file column doesn't exist
+        """
+        if not self._conn:
+            raise PyInmetError("DuckDB connection not initialized")
+
+        try:
+            # Check if source_file column exists
+            schema_df = self.schema()
+            column_names = schema_df["column_name"].to_list()
+
+            if "source_file" not in column_names:
+                self.logger.warning(
+                    "Column 'source_file' not found in Parquet schema. "
+                    "Incremental update not available for this dataset."
+                )
+                return set()
+
+            # Query distinct source files
+            result = self.sql(
+                f"SELECT DISTINCT source_file FROM {self._view_name} WHERE source_file IS NOT NULL"
+            )
+
+            if result is None or len(result) == 0:
+                return set()
+
+            return set(result["source_file"].to_list())
+
+        except Exception as e:
+            self.logger.error(f"Failed to get processed source files: {e}")
+            raise PyInmetError(f"Failed to query source files: {e}") from e
+
+    def get_file_row_counts(self) -> dict[str, int]:
+        """Get row count per source file.
+
+        Returns:
+            Dictionary mapping source_file -> row count
+
+        Example:
+            >>> engine.get_file_row_counts()
+            {'RDSP2301.dbc': 12345, 'RDRJ2301.dbc': 67890}
+        """
+        if not self._conn:
+            raise PyInmetError("DuckDB connection not initialized")
+
+        try:
+            result = self.sql(
+                f"""
+                SELECT source_file, COUNT(*) as row_count
+                FROM {self._view_name}
+                WHERE source_file IS NOT NULL
+                GROUP BY source_file
+                ORDER BY source_file
+                """
+            )
+
+            if result is None or len(result) == 0:
+                return {}
+
+            return dict(zip(result["source_file"].to_list(), result["row_count"].to_list()))
+
+        except Exception as e:
+            self.logger.error(f"Failed to get file row counts: {e}")
+            return {}

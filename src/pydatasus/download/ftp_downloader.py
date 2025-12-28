@@ -150,6 +150,11 @@ class FTPDownloader:
                     if uf not in uf_list:
                         continue
 
+                    # Check incremental filter (if set, only download specified files)
+                    if self.config.incremental_files is not None:
+                        if filename.upper() not in {f.upper() for f in self.config.incremental_files}:
+                            continue
+
                     # Get file size
                     try:
                         size = ftp.size(filename) or 0
