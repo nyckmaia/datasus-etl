@@ -17,9 +17,13 @@ Important Notes:
 # Maps column name (lowercase) -> DuckDB SQL type
 SIHSUS_PARQUET_SCHEMA: dict[str, str] = {
     # ========================================================================
-    # Geographic and temporal identification
+    # Source identification
     # ========================================================================
     "uf": "VARCHAR",  # UF state code extracted from filename (e.g., "SP", "RJ")
+    "source_file": "VARCHAR",  # Original DBC filename (e.g., "RDSP2301.dbc")
+    # ========================================================================
+    # Geographic and temporal identification
+    # ========================================================================
     "uf_zi": "INTEGER",  # UF location code (some records have 6 digits: 130000)
     "ano_cmpt": "SMALLINT",  # Competency year
     "mes_cmpt": "TINYINT",  # Competency month (1-12)

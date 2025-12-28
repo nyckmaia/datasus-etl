@@ -16,7 +16,8 @@
       "Bash(tee:*)",
       "Bash(timeout 300 python:*)",
       "Bash(dir:*)",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat: Add subsystem folder structure \\(Melhoria 01\\)\n\n- Add `subsystem` field to PipelineConfig \\(default: \"sihsus\"\\)\n- Add PipelineConfig.create\\(\\) factory method for automatic path configuration\n- Creates standardized directory structure: base_dir/{subsystem}/dbc|dbf|parquet/\n- Update basic_usage.py to use new factory method\n\nThis allows organizing data by DataSUS subsystem \\(SIHSUS, SIM, SIASUS, etc\\)\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
     ]
   }
 }

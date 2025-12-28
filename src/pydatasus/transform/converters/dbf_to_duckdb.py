@@ -105,12 +105,14 @@ class DbfToDuckDBConverter:
         try:
             tqdm.write(f"\n[DEBUG] ========== STARTING {dbf_path.name} ==========")
 
-            # Extract UF code from filename (e.g., RDSP2401.dbf → "SP")
+            # Extract UF code and source_file from filename (e.g., RDSP2401.dbf → "SP", "RDSP2401.dbc")
             filename = dbf_path.stem.upper()  # "RDSP2401"
             uf_code = filename[2:4] if len(filename) >= 4 else None  # "SP"
+            source_file = f"{filename}.dbc"  # Original DBC filename (e.g., "RDSP2401.dbc")
 
             if uf_code:
                 self.logger.debug(f"Extracted UF code from filename: {uf_code}")
+                self.logger.debug(f"Source file: {source_file}")
 
             # Determine file size and available RAM
             file_size_mb = dbf_path.stat().st_size / (1024 * 1024)
@@ -126,7 +128,7 @@ class DbfToDuckDBConverter:
                 #     f"Strategy: Full DataFrame insertion for {dbf_path.name} "
                 #     f"({file_size_mb:.1f}MB, threshold={threshold_mb:.1f}MB)"
                 # )
-                result = self._insert_full_dataframe(dbf_path, table_name, create_table, uf_code)
+                result = self._insert_full_dataframe(dbf_path, table_name, create_table, uf_code, source_file)
                 # tqdm.write(f"[DEBUG] ========== COMPLETED {dbf_path.name} ({result:,} rows) ==========\n")
                 return result
             else:
@@ -134,7 +136,7 @@ class DbfToDuckDBConverter:
                     f"Strategy: Chunked streaming for {dbf_path.name} "
                     f"({file_size_mb:.1f}MB, threshold={threshold_mb:.1f}MB, {self.chunk_size:,} rows/chunk)"
                 )
-                result = self._stream_chunks(dbf_path, table_name, create_table, uf_code)
+                result = self._stream_chunks(dbf_path, table_name, create_table, uf_code, source_file)
                 # tqdm.write(f"[DEBUG] ========== COMPLETED {dbf_path.name} ({result:,} rows) ==========\n")
                 return result
 
@@ -145,7 +147,7 @@ class DbfToDuckDBConverter:
             ) from e
 
     def _insert_full_dataframe(
-        self, dbf_path: Path, table_name: str, create_table: bool, uf_code: str = None
+        self, dbf_path: Path, table_name: str, create_table: bool, uf_code: str = None, source_file: str = None
     ) -> int:
         """Insert entire DBF as DataFrame (fast for small files).
 
@@ -158,6 +160,7 @@ class DbfToDuckDBConverter:
             table_name: Target table name
             create_table: If True, create table from DataFrame schema
             uf_code: UF state code to add as column
+            source_file: Original DBC filename to add as column
 
         Returns:
             Number of rows inserted
@@ -182,6 +185,10 @@ class DbfToDuckDBConverter:
                 # tqdm.write(f"[DEBUG] Adding UF column: {uf_code}")
                 df.insert(0, 'uf', uf_code)  # lowercase 'uf' to match cleaning convention
 
+            # Add source_file column after UF
+            if source_file:
+                df.insert(1, 'source_file', source_file)  # Original DBC filename
+
             if create_table:
                 # Create table with explicit VARCHAR types to match chunked path
                 # This avoids DuckDB auto-inferring numeric types from Pandas
@@ -194,7 +201,7 @@ class DbfToDuckDBConverter:
                     encoding="latin-1",
                     ignore_missing_memofile=True,
                 )
-                self._create_table_from_dbf_schema(dbf, table_name, uf_code)
+                self._create_table_from_dbf_schema(dbf, table_name, uf_code, source_file)
                 # tqdm.write(f"[DEBUG] Table {table_name} created")
 
             # Register DataFrame and insert
@@ -220,7 +227,7 @@ class DbfToDuckDBConverter:
             return self._stream_chunks(dbf_path, table_name, create_table, uf_code)
 
     def _stream_chunks(
-        self, dbf_path: Path, table_name: str, create_table: bool, uf_code: str = None
+        self, dbf_path: Path, table_name: str, create_table: bool, uf_code: str = None, source_file: str = None
     ) -> int:
         """Stream DBF in chunks (safe for large files).
 
@@ -232,6 +239,7 @@ class DbfToDuckDBConverter:
             table_name: Target table name
             create_table: If True, create table based on DBF schema
             uf_code: UF state code to add as column
+            source_file: Original DBC filename to add as column
 
         Returns:
             Total number of rows inserted
@@ -251,7 +259,7 @@ class DbfToDuckDBConverter:
         # Create table if requested
         if create_table:
             tqdm.write(f"[DEBUG] Creating table {table_name} from DBF schema...")
-            self._create_table_from_dbf_schema(dbf, table_name, uf_code)
+            self._create_table_from_dbf_schema(dbf, table_name, uf_code, source_file)
             tqdm.write(f"[DEBUG] Table {table_name} created")
 
         # Stream records in chunks
@@ -270,7 +278,7 @@ class DbfToDuckDBConverter:
             # Insert chunk when it reaches target size
             if len(chunk) >= self.chunk_size:
                 tqdm.write(f"[DEBUG] Chunk ready ({len(chunk):,} rows), inserting into {table_name}...")
-                self._insert_chunk(chunk, table_name, uf_code)
+                self._insert_chunk(chunk, table_name, uf_code, source_file)
                 total_rows += len(chunk)
 
                 # Log progress every 5 chunks (50K rows with default chunk_size)
@@ -282,7 +290,7 @@ class DbfToDuckDBConverter:
         # Insert remaining records
         if chunk:
             tqdm.write(f"[DEBUG] Inserting final chunk ({len(chunk):,} rows)...")
-            self._insert_chunk(chunk, table_name, uf_code)
+            self._insert_chunk(chunk, table_name, uf_code, source_file)
             total_rows += len(chunk)
             self.logger.info(f"  Inserted final {len(chunk):,} rows")
 
@@ -290,7 +298,7 @@ class DbfToDuckDBConverter:
         tqdm.write(f"[DEBUG] Chunked streaming complete for {dbf_path.name}")
         return total_rows
 
-    def _insert_chunk(self, chunk: list[dict], table_name: str, uf_code: str = None) -> None:
+    def _insert_chunk(self, chunk: list[dict], table_name: str, uf_code: str = None, source_file: str = None) -> None:
         """Insert chunk of records into DuckDB table.
 
         Uses PyArrow for zero-copy transfer of data from Python to DuckDB.
@@ -300,6 +308,7 @@ class DbfToDuckDBConverter:
             chunk: List of record dictionaries
             table_name: Target table name
             uf_code: UF state code to add to all records
+            source_file: Original DBC filename to add to all records
         """
         from tqdm import tqdm
         try:
@@ -308,6 +317,11 @@ class DbfToDuckDBConverter:
                 tqdm.write(f"[DEBUG] Adding uf={uf_code} to {len(chunk):,} records...")
                 for record in chunk:
                     record['uf'] = uf_code  # lowercase 'uf' for consistency
+
+            # Add source_file column to each record
+            if source_file:
+                for record in chunk:
+                    record['source_file'] = source_file
 
             # Convert chunk to Arrow Table (zero-copy when possible)
             tqdm.write(f"[DEBUG] Converting {len(chunk):,} records to Arrow Table...")
@@ -378,7 +392,7 @@ class DbfToDuckDBConverter:
             return None if encoded.strip() == "" else encoded
         return value
 
-    def _create_table_from_dbf_schema(self, dbf: DBF, table_name: str, uf_code: str = None) -> None:
+    def _create_table_from_dbf_schema(self, dbf: DBF, table_name: str, uf_code: str = None, source_file: str = None) -> None:
         """Create DuckDB table based on DBF file schema.
 
         Maps DBF field types to appropriate DuckDB types. Note that dates
@@ -388,6 +402,7 @@ class DbfToDuckDBConverter:
             dbf: DBF file object (with fields metadata)
             table_name: Name for the new table
             uf_code: UF state code to add as column
+            source_file: Original DBC filename to add as column
 
         Raises:
             ConversionError: If table creation fails
@@ -411,6 +426,10 @@ class DbfToDuckDBConverter:
             # Add UF column at the beginning if provided
             if uf_code:
                 columns.append("uf VARCHAR")  # lowercase 'uf' for consistency
+
+            # Add source_file column after UF
+            if source_file:
+                columns.append("source_file VARCHAR")  # Original DBC filename
 
             for field in dbf.fields:
                 field_type = type_map.get(field.type, "VARCHAR")
