@@ -55,7 +55,8 @@ docs = [
 ]
 
 [project.scripts]
-pydatasus = "pydatasus.cli:app"
+datasus = "pydatasus.cli:app"
+pydatasus = "pydatasus.cli:app"  # Alias for backward compatibility
 
 [project.urls]
 Homepage = "https://github.com/user/pydatasus"
