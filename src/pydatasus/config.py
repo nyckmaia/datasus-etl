@@ -137,9 +137,73 @@ class PipelineConfig(BaseModel):
     )
     storage: StorageConfig
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
+    subsystem: str = Field(
+        default="sihsus",
+        description="DataSUS subsystem name (sihsus, sim, siasus, etc). Used to organize output directories."
+    )
 
     model_config = {"arbitrary_types_allowed": True}
 
     @classmethod
     def from_dict(cls, config_dict: dict) -> "PipelineConfig":
         return cls(**config_dict)
+
+    @classmethod
+    def create(
+        cls,
+        base_dir: Path,
+        subsystem: str = "sihsus",
+        start_date: str = "2023-01-01",
+        end_date: Optional[str] = None,
+        uf_list: Optional[list[str]] = None,
+        compression: Literal["snappy", "gzip", "brotli", "zstd"] = "zstd",
+        override: bool = False,
+        chunk_size: int = 10000,
+    ) -> "PipelineConfig":
+        """Factory method to create PipelineConfig with automatic path configuration.
+
+        Creates a standardized directory structure:
+            base_dir/
+            └── {subsystem}/
+                ├── dbc/      (downloaded files)
+                ├── dbf/      (converted files)
+                └── parquet/  (final output)
+
+        Args:
+            base_dir: Base directory for all data (e.g., ./data/datasus)
+            subsystem: DataSUS subsystem name (sihsus, sim, siasus, etc)
+            start_date: Start date in YYYY-MM-DD format
+            end_date: End date in YYYY-MM-DD format (None = today)
+            uf_list: List of UF codes (None = all states)
+            compression: Parquet compression codec
+            override: Override existing files
+            chunk_size: Rows per chunk for DBF streaming
+
+        Returns:
+            Configured PipelineConfig instance
+        """
+        base_dir = Path(base_dir)
+        subsystem_dir = base_dir / subsystem
+
+        return cls(
+            download=DownloadConfig(
+                output_dir=subsystem_dir / "dbc",
+                start_date=start_date,
+                end_date=end_date,
+                uf_list=uf_list,
+                override=override,
+            ),
+            conversion=ConversionConfig(
+                dbc_dir=subsystem_dir / "dbc",
+                dbf_dir=subsystem_dir / "dbf",
+                override=override,
+            ),
+            storage=StorageConfig(
+                parquet_dir=subsystem_dir / "parquet",
+                compression=compression,
+            ),
+            database=DatabaseConfig(
+                chunk_size=chunk_size,
+            ),
+            subsystem=subsystem,
+        )

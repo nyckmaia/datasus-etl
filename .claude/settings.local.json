@@ -15,7 +15,8 @@
       "Bash(timeout 180 python:*)",
       "Bash(tee:*)",
       "Bash(timeout 300 python:*)",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Bash(wc:*)"
     ]
   }
 }
