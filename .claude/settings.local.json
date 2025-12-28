@@ -17,7 +17,11 @@
       "Bash(timeout 300 python:*)",
       "Bash(dir:*)",
       "Bash(wc:*)",
-      "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat: Add subsystem folder structure \\(Melhoria 01\\)\n\n- Add `subsystem` field to PipelineConfig \\(default: \"sihsus\"\\)\n- Add PipelineConfig.create\\(\\) factory method for automatic path configuration\n- Creates standardized directory structure: base_dir/{subsystem}/dbc|dbf|parquet/\n- Update basic_usage.py to use new factory method\n\nThis allows organizing data by DataSUS subsystem \\(SIHSUS, SIM, SIASUS, etc\\)\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat: Add subsystem folder structure \\(Melhoria 01\\)\n\n- Add `subsystem` field to PipelineConfig \\(default: \"sihsus\"\\)\n- Add PipelineConfig.create\\(\\) factory method for automatic path configuration\n- Creates standardized directory structure: base_dir/{subsystem}/dbc|dbf|parquet/\n- Update basic_usage.py to use new factory method\n\nThis allows organizing data by DataSUS subsystem \\(SIHSUS, SIM, SIASUS, etc\\)\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat: Add source_file column to track origin DBC file \\(Melhoria 02\\)\n\n- Extract original DBC filename \\(e.g., RDSP2301.dbc\\) alongside UF code\n- Add source_file column to staging tables during DBF→DuckDB streaming\n- Add source_file to SIHSUS_PARQUET_SCHEMA definition\n- Column is propagated through both DataFrame and chunked paths\n\nThis enables incremental updates by tracking which files are already processed.\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(datasus --help:*)",
+      "Bash(git commit:*)",
+      "Bash(datasus status:*)"
     ]
   }
 }

@@ -496,6 +496,44 @@ def convert(
     console.print(f"\n[green]✓ Conversão concluída: {stats['converted']} arquivos convertidos[/green]")
 
 
+@app.command()
+def ui(
+    port: int = typer.Option(
+        8501,
+        "--port",
+        "-p",
+        help="Porta do servidor web",
+    ),
+) -> None:
+    """Open the web interface (Streamlit).
+
+    [bold]Example:[/bold]
+        datasus ui
+        datasus ui --port 8080
+    """
+    import subprocess
+    import sys
+
+    # Get path to app.py
+    app_path = Path(__file__).parent / "web" / "app.py"
+
+    if not app_path.exists():
+        console.print(f"[red]Erro: arquivo nao encontrado: {app_path}[/red]")
+        raise typer.Exit(1)
+
+    console.print("\n[bold cyan]DataSUS - Interface Web[/bold cyan]")
+    console.print(f"Abrindo em http://localhost:{port}")
+    console.print("[dim]Pressione Ctrl+C para encerrar[/dim]\n")
+
+    # Run streamlit
+    subprocess.run([
+        sys.executable, "-m", "streamlit", "run",
+        str(app_path),
+        "--server.port", str(port),
+        "--server.headless", "false",
+    ])
+
+
 # Legacy alias for backward compatibility
 @app.command(hidden=True)
 def pipeline(

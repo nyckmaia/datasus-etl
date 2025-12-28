@@ -38,6 +38,8 @@ dependencies = [
     "datasus-dbc>=0.1.3",
     "simpledbf>=0.2.6",    # Fast DBF reading for small files
     "psutil>=5.9.0",       # System resource monitoring
+    "streamlit>=1.30.0",   # Web interface
+    "openpyxl>=3.1.0",     # Excel export
 ]
 
 [project.optional-dependencies]
@@ -52,10 +54,6 @@ docs = [
     "mkdocs>=1.5",
     "mkdocs-material>=9.5",
     "mkdocstrings[python]>=0.24",
-]
-web = [
-    "streamlit>=1.30.0",
-    "openpyxl>=3.1.0",  # Excel export
 ]
 
 [project.scripts]
