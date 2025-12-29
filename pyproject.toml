@@ -12,18 +12,40 @@ license = "Apache-2.0"
 authors = [
     {name = "Seu Nome", email = "seu@email.com"},
 ]
-keywords = ["datasus", "sihsus", "sus", "saude", "brasil", "dados-publicos"]
+keywords = [
+    "datasus",
+    "sus",
+    "saude",
+    "brasil",
+    "sihsus",
+    "sim",
+    "siasus",
+    "sinasc",
+    "cnes",
+    "etl",
+    "pipeline",
+    "parquet",
+    "duckdb",
+    "epidemiologia",
+    "saude-publica",
+    "health-data",
+    "dados-publicos",
+]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
     "Intended Audience :: Healthcare Industry",
+    "Intended Audience :: Developers",
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering",
     "Topic :: Scientific/Engineering :: Medical Science Apps.",
+    "Topic :: Database",
+    "Natural Language :: Portuguese (Brazilian)",
     "Typing :: Typed",
 ]
 dependencies = [
