@@ -511,15 +511,16 @@ FROM typed{ibge_join_clause}
             self.logger.warning(f"Failed to load IBGE data: {e}")
             return False
 
-    def _generate_canonical_column_sql(self, actual_columns: list[str]) -> str:
+    def _generate_canonical_column_sql(self, actual_columns: list[str], ibge_loaded: bool = False) -> str:
         """Generate SQL SELECT with ALL columns from SIHSUS_PARQUET_SCHEMA.
 
         This ensures a consistent schema across all Parquet files, regardless of
         which columns exist in the source DBF. Missing columns are filled with
-        NULL cast to the appropriate type.
+        NULL cast to the appropriate type, or from IBGE JOIN if available.
 
         Args:
             actual_columns: List of column names that actually exist in the source table
+            ibge_loaded: Whether IBGE data is loaded and available for JOIN
 
         Returns:
             SQL column list with all canonical columns, properly typed
@@ -532,6 +533,7 @@ FROM typed{ibge_join_clause}
                 typed.dt_inter,
                 NULL::INTEGER AS uf_zi,  -- missing column with correct type
                 NULL::SMALLINT AS ano_cmpt,  -- missing column with correct type
+                ibge.municipio_res,  -- from IBGE JOIN if available
                 ...
         """
         actual_columns_lower = {col.lower() for col in actual_columns}
@@ -545,8 +547,17 @@ FROM typed{ibge_join_clause}
             'gestor_dt': 'gestor_dt_parsed'
         }
 
+        # IBGE enrichment columns - these come from the JOIN, not the source table
+        ibge_columns = {'municipio_res', 'uf_res', 'rg_imediata_res', 'rg_intermediaria_res'}
+
         for col_name, col_type in SIHSUS_PARQUET_SCHEMA.items():
-            if col_name in actual_columns_lower:
+            if col_name in ibge_columns:
+                # IBGE enrichment columns - use JOIN data if available
+                if ibge_loaded and 'munic_res' in actual_columns_lower:
+                    canonical_columns.append(f"ibge.{col_name}")
+                else:
+                    canonical_columns.append(f"NULL::{col_type} AS {col_name}")
+            elif col_name in actual_columns_lower:
                 # Column exists in source - use typed version
                 if col_type == "DATE" and col_name in date_column_mapping:
                     # Date columns use parsed version
@@ -607,27 +618,15 @@ FROM typed{ibge_join_clause}
                 )
                 ibge_loaded = True
 
-            # Build additional computed columns
-            additional_selects = []
             actual_columns_lower = {col.lower() for col in actual_columns}
-
-            # IBGE enrichment (only if data was loaded and munic_res exists)
-            if ibge_loaded and 'munic_res' in actual_columns_lower:
-                additional_selects.append(self._get_ibge_enrichment_sql())
-
-            # Build final SELECT clause
-            additional_sql = ""
-            if additional_selects:
-                joined_selects = ",\n        ".join(additional_selects)
-                additional_sql = f",\n        {joined_selects}"
 
             # Build IBGE JOIN clause if needed
             ibge_join_clause = ""
             if ibge_loaded and 'munic_res' in actual_columns_lower:
                 ibge_join_clause = self._get_ibge_join_sql(actual_columns)
 
-            # Generate canonical schema SELECT
-            canonical_select = self._generate_canonical_column_sql(actual_columns)
+            # Generate canonical schema SELECT (includes IBGE columns from JOIN if available)
+            canonical_select = self._generate_canonical_column_sql(actual_columns, ibge_loaded=ibge_loaded)
 
             transform_sql = f"""
 CREATE OR REPLACE VIEW {target_view} AS
@@ -655,7 +654,7 @@ typed AS (
 canonical AS (
     SELECT
         -- All columns from canonical schema (missing columns as NULL with correct type)
-        {canonical_select}{additional_sql}
+        {canonical_select}
     FROM typed{ibge_join_clause}
 )
 SELECT * FROM canonical
