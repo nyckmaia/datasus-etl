@@ -3,6 +3,11 @@
 This module provides SQL transformations for DataSUS subsystems (SIHSUS, SIM, etc.)
 executed in DuckDB. All data cleaning, validation, type conversions, and enrichment
 are performed in a single streaming SQL query for maximum performance.
+
+Note:
+    This module now uses the modular transform system from pydatasus.transform.sql.
+    The SQLTransformer class maintains backward compatibility while delegating
+    to TransformPipeline for actual transformations.
 """
 
 import logging
@@ -14,6 +19,7 @@ import duckdb
 from pydatasus.constants.sihsus_schema import SIHSUS_PARQUET_SCHEMA
 from pydatasus.datasets.sim.schema import SIM_PARQUET_SCHEMA
 from pydatasus.exceptions import PyInmetError
+from pydatasus.transform.sql import TransformPipeline
 from pydatasus.utils.ibge_loader import create_ibge_lookup_csv
 
 # Schema mapping by subsystem
@@ -51,17 +57,25 @@ class SQLTransformer:
         ... )
     """
 
-    def __init__(self, conn: duckdb.DuckDBPyConnection, subsystem: str = "sihsus") -> None:
+    def __init__(
+        self,
+        conn: duckdb.DuckDBPyConnection,
+        subsystem: str = "sihsus",
+        raw_mode: bool = False,
+    ) -> None:
         """Initialize SQL transformer.
 
         Args:
             conn: DuckDB connection to execute queries on
             subsystem: DataSUS subsystem name (sihsus, sim). Default: sihsus
+            raw_mode: If True, only apply cleaning (no type conversions).
+                     Useful for exporting raw data. Default: False
         """
         self.conn = conn
         self.subsystem = subsystem.lower()
         self.schema = SUBSYSTEM_SCHEMAS.get(self.subsystem, SIHSUS_PARQUET_SCHEMA)
         self.date_columns = SUBSYSTEM_DATE_COLUMNS.get(self.subsystem, ["dt_inter", "dt_saida"])
+        self.raw_mode = raw_mode
         self.logger = logging.getLogger(__name__)
 
     def transform_sihsus_data(
@@ -593,12 +607,12 @@ FROM typed{ibge_join_clause}
         ibge_data_path: Optional[Path] = None,
         enable_ibge_enrichment: bool = True,
     ) -> None:
-        """Apply SIHSUS transformations and normalize to canonical schema.
+        """Apply transformations and normalize to canonical schema.
 
-        Similar to transform_sihsus_data() but ensures the output view has
-        ALL columns from the canonical schema, with missing columns as NULL.
-        This enables consistent schema across all Parquet files when using
-        partitioned writes with APPEND.
+        Uses the modular TransformPipeline for all transformations.
+        Ensures the output view has ALL columns from the canonical schema,
+        with missing columns as NULL. This enables consistent schema across
+        all Parquet files when using partitioned writes with APPEND.
 
         Args:
             source_table: Name of source table/view in DuckDB
@@ -612,19 +626,19 @@ FROM typed{ibge_join_clause}
             PyInmetError: If transformation query fails
         """
         try:
-            # Get actual columns from source table
-            actual_columns = self.conn.execute(
-                f"SELECT column_name FROM information_schema.columns WHERE table_name = '{source_table}' ORDER BY ordinal_position"
-            ).fetchall()
-            actual_columns = [col[0] for col in actual_columns]
-            self.logger.info(f"Source table has {len(actual_columns)} columns, normalizing to {len(self.schema)} canonical columns")
+            from tqdm import tqdm
 
-            # Load IBGE data - prefer bundled data, fallback to provided path
-            ibge_loaded = False
-            if enable_ibge_enrichment:
-                ibge_loaded = self._load_ibge_data()
-            elif ibge_data_path and ibge_data_path.exists():
-                # Legacy: use provided CSV path
+            # Create transform pipeline with current configuration
+            pipeline = TransformPipeline(
+                conn=self.conn,
+                schema=self.schema,
+                subsystem=self.subsystem,
+                raw_mode=self.raw_mode,
+                enable_ibge=enable_ibge_enrichment,
+            )
+
+            # Handle legacy ibge_data_path parameter
+            if ibge_data_path and ibge_data_path.exists() and not enable_ibge_enrichment:
                 self.logger.info(f"Loading IBGE data from {ibge_data_path}")
                 self.conn.execute(
                     f"""
@@ -632,88 +646,23 @@ FROM typed{ibge_join_clause}
                     SELECT * FROM read_csv('{ibge_data_path}', delim=';', header=true)
                 """
                 )
-                ibge_loaded = True
+                if pipeline.ibge:
+                    pipeline.ibge._ibge_loaded = True
 
-            actual_columns_lower = {col.lower() for col in actual_columns}
-
-            # Build IBGE JOIN clause if needed
-            ibge_join_clause = ""
-            if ibge_loaded and 'munic_res' in actual_columns_lower:
-                ibge_join_clause = self._get_ibge_join_sql(actual_columns)
-
-            # Generate canonical schema SELECT (includes IBGE columns from JOIN if available)
-            canonical_select = self._generate_canonical_column_sql(actual_columns, ibge_loaded=ibge_loaded)
-
-            # Build dynamic date parsing SQL based on schema DATE columns
-            date_parsing_parts = []
-            for col_name, col_type in self.schema.items():
-                if col_type == "DATE" and col_name in actual_columns_lower:
-                    date_parsing_parts.append(
-                        f"{self._get_date_parsing_sql(col_name, allow_future=False)} AS {col_name}_parsed"
-                    )
-
-            date_parsing_sql = ",\n        ".join(date_parsing_parts) if date_parsing_parts else "NULL AS _no_dates"
-
-            # Build dynamic WHERE clause for row filtering
-            # Use subsystem-specific date columns for row validation
-            where_conditions = []
-            for date_col in self.date_columns:
-                if date_col in actual_columns_lower:
-                    where_conditions.append(f"cleaned.{date_col}_parsed IS NULL")
-
-            if where_conditions:
-                where_clause = f"NOT ({' AND '.join(where_conditions)})"
-            else:
-                where_clause = "1=1"  # No filtering if no date columns
-
-            transform_sql = f"""
-CREATE OR REPLACE VIEW {target_view} AS
-WITH cleaned AS (
-    SELECT
-        -- Original columns (cleaned) - only columns that exist
-        {self._get_cleaned_columns_sql(actual_columns)},
-
-        -- Parse dates with fallback to multiple formats and future date validation
-        {date_parsing_sql}
-    FROM {source_table}
-),
-typed AS (
-    SELECT
-        -- Apply schema-based type conversions
-        {self._apply_schema_types_sql(actual_columns)}
-    FROM cleaned
-    WHERE
-        -- Remove completely empty rows (at least one date must be valid)
-        {where_clause}
-),
-canonical AS (
-    SELECT
-        -- All columns from canonical schema (missing columns as NULL with correct type)
-        {canonical_select}
-    FROM typed{ibge_join_clause}
-)
-SELECT * FROM canonical
-"""
-
-            from tqdm import tqdm
-            tqdm.write(f"[TRANSFORM] Applying SQL transformations with canonical schema to create view: {target_view}...")
+            tqdm.write(f"[TRANSFORM] Applying SQL transformations to create view: {target_view}...")
             self.logger.info(f"Creating canonical transformed view: {target_view}")
-            self.logger.debug(f"Transform SQL length: {len(transform_sql)} characters")
 
-            try:
-                self.conn.execute(transform_sql)
-                tqdm.write(f"[TRANSFORM] Canonical view {target_view} created successfully\n")
-            except Exception as sql_error:
-                self.logger.error(f"Failed SQL query (length={len(transform_sql)}):\n{transform_sql}")
-                import tempfile
-                sql_file = tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', delete=False, suffix='.sql')
-                sql_file.write(transform_sql)
-                sql_file.close()
-                self.logger.error(f"Full SQL saved to: {sql_file.name}")
-                raise
+            # Execute transformation using pipeline
+            pipeline.execute_transform(source_table, target_view)
 
+            tqdm.write(f"[TRANSFORM] Canonical view {target_view} created successfully\n")
             self.logger.info(f"Canonical view {target_view} created successfully")
 
         except Exception as e:
             self.logger.error(f"Canonical transformation failed: {e}")
             raise PyInmetError(f"SQL canonical transformation failed: {e}") from e
+
+    # =========================================================================
+    # Legacy methods - kept for backward compatibility
+    # These methods are now implemented in modular transform classes
+    # =========================================================================
