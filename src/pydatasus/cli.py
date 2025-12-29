@@ -26,7 +26,7 @@ from pydatasus.transform.converters.dbc_to_dbf import DbcToDbfConverter
 app = typer.Typer(
     name="datasus",
     help="CLI para download e processamento de dados do DataSUS (SIHSUS, SIM, etc)",
-    add_completion=True,
+    add_completion=False,  # Hide --show-completion from help
     rich_markup_mode="rich",
 )
 console = Console()
@@ -63,37 +63,37 @@ def version() -> None:
 @app.command()
 def run(
     source: str = typer.Option(
-        "sihsus",
+        None,
         "--source",
         "-s",
         help="Subsistema DataSUS: sihsus (hospitalar), sim (mortalidade), siasus (ambulatorial)",
     ),
     start_date: str = typer.Option(
-        "2023-01-01",
+        None,
         "--start-date",
         help="Data inicial (YYYY-MM-DD)",
     ),
     end_date: Optional[str] = typer.Option(
         None,
         "--end-date",
-        help="Data final (YYYY-MM-DD). Padrão: hoje",
+        help="Data final (YYYY-MM-DD). Padrao: hoje",
     ),
     uf: Optional[str] = typer.Option(
         None,
         "--uf",
-        help="Estados (UF) separados por vírgula. Ex: SP,RJ,MG. Padrão: todos",
+        help="Estados (UF) separados por virgula. Ex: SP,RJ,MG. Padrao: todos",
     ),
     data_dir: Path = typer.Option(
-        Path("./data/datasus"),
+        None,
         "--data-dir",
         "-d",
-        help="Diretório base para os dados",
+        help="Diretorio base para os dados",
     ),
     compression: str = typer.Option(
         "zstd",
         "--compression",
         "-c",
-        help="Compressão Parquet: snappy, gzip, brotli, zstd",
+        help="Compressao Parquet: snappy, gzip, brotli, zstd",
     ),
     chunk_size: int = typer.Option(
         10000,
@@ -117,11 +117,39 @@ def run(
         help="Modo verboso (mais logs)",
     ),
 ) -> None:
-    """Run the complete DataSUS pipeline: download -> convert -> transform -> export.
+    """Executa o pipeline completo: download -> convert -> transform -> export.
 
-    [bold]Example:[/bold]
-        datasus run --source sihsus --start-date 2023-01-01 --end-date 2023-06-30 --uf SP,RJ
+    [bold]Exemplos de uso:[/bold]
+
+        # Baixar SIHSUS de SP e RJ em 2023
+        datasus run -s sihsus --start-date 2023-01-01 -d ./data/datasus --uf SP,RJ
+
+        # Baixar todos os estados de janeiro a marco 2024
+        datasus run -s sihsus --start-date 2024-01-01 --end-date 2024-03-31 -d ./data
+
+        # Baixar SIM (mortalidade) de 2022
+        datasus run -s sim --start-date 2022-01-01 --end-date 2022-12-31 -d ./data
     """
+    # Validate required parameters
+    missing_params = []
+    if source is None:
+        missing_params.append("--source (-s)")
+    if start_date is None:
+        missing_params.append("--start-date")
+    if data_dir is None:
+        missing_params.append("--data-dir (-d)")
+
+    if missing_params:
+        console.print("[red bold]Erro: Parametros obrigatorios faltando:[/red bold]")
+        for param in missing_params:
+            console.print(f"  [red]-[/red] {param}")
+        console.print()
+        console.print("[bold]Exemplo de uso:[/bold]")
+        console.print("  datasus run --source sihsus --start-date 2023-01-01 --data-dir ./data/datasus")
+        console.print()
+        console.print("[dim]Use 'datasus run --help' para ver todas as opcoes.[/dim]")
+        raise typer.Exit(1)
+
     setup_logging("DEBUG" if verbose else "INFO")
 
     # Validate source
@@ -201,19 +229,19 @@ def run(
 @app.command()
 def update(
     source: str = typer.Option(
-        "sihsus",
+        None,
         "--source",
         "-s",
         help="Subsistema DataSUS: sihsus, sim, siasus",
     ),
     data_dir: Path = typer.Option(
-        Path("./data/datasus"),
+        None,
         "--data-dir",
         "-d",
         help="Diretorio base para os dados",
     ),
     start_date: str = typer.Option(
-        "2023-01-01",
+        None,
         "--start-date",
         help="Data inicial (YYYY-MM-DD)",
     ),
@@ -245,14 +273,39 @@ def update(
         help="Modo verboso (mais logs)",
     ),
 ) -> None:
-    """Update existing database with new files from FTP (incremental update).
+    """Atualiza banco de dados com novos arquivos do FTP (update incremental).
 
-    Compares existing Parquet data with files available on FTP
-    and processes only new files that haven't been imported yet.
+    Compara dados Parquet existentes com arquivos disponiveis no FTP
+    e processa apenas arquivos novos que ainda nao foram importados.
 
-    [bold]Example:[/bold]
-        datasus update --source sihsus --data-dir ./data/datasus
+    [bold]Exemplos de uso:[/bold]
+
+        # Verificar e baixar novos arquivos SIHSUS
+        datasus update -s sihsus --start-date 2023-01-01 -d ./data/datasus
+
+        # Ver arquivos novos sem baixar (dry-run)
+        datasus update -s sihsus --start-date 2023-01-01 -d ./data/datasus --dry-run
     """
+    # Validate required parameters
+    missing_params = []
+    if source is None:
+        missing_params.append("--source (-s)")
+    if start_date is None:
+        missing_params.append("--start-date")
+    if data_dir is None:
+        missing_params.append("--data-dir (-d)")
+
+    if missing_params:
+        console.print("[red bold]Erro: Parametros obrigatorios faltando:[/red bold]")
+        for param in missing_params:
+            console.print(f"  [red]-[/red] {param}")
+        console.print()
+        console.print("[bold]Exemplo de uso:[/bold]")
+        console.print("  datasus update --source sihsus --start-date 2023-01-01 --data-dir ./data/datasus")
+        console.print()
+        console.print("[dim]Use 'datasus update --help' para ver todas as opcoes.[/dim]")
+        raise typer.Exit(1)
+
     setup_logging("DEBUG" if verbose else "INFO")
 
     from pydatasus.storage.incremental_updater import IncrementalUpdater
@@ -328,23 +381,43 @@ def update(
 @app.command()
 def status(
     source: str = typer.Option(
-        "sihsus",
+        None,
         "--source",
         "-s",
         help="Subsistema DataSUS: sihsus, sim, siasus",
     ),
     data_dir: Path = typer.Option(
-        Path("./data/datasus"),
+        None,
         "--data-dir",
         "-d",
         help="Diretorio base para os dados",
     ),
 ) -> None:
-    """Show status of existing database and available updates.
+    """Mostra status do banco de dados e atualizacoes disponiveis.
 
-    [bold]Example:[/bold]
-        datasus status --source sihsus --data-dir ./data/datasus
+    [bold]Exemplos de uso:[/bold]
+
+        # Ver status do banco SIHSUS
+        datasus status -s sihsus -d ./data/datasus
     """
+    # Validate required parameters
+    missing_params = []
+    if source is None:
+        missing_params.append("--source (-s)")
+    if data_dir is None:
+        missing_params.append("--data-dir (-d)")
+
+    if missing_params:
+        console.print("[red bold]Erro: Parametros obrigatorios faltando:[/red bold]")
+        for param in missing_params:
+            console.print(f"  [red]-[/red] {param}")
+        console.print()
+        console.print("[bold]Exemplo de uso:[/bold]")
+        console.print("  datasus status --source sihsus --data-dir ./data/datasus")
+        console.print()
+        console.print("[dim]Use 'datasus status --help' para ver todas as opcoes.[/dim]")
+        raise typer.Exit(1)
+
     setup_logging("WARNING")
 
     from pydatasus.storage.parquet_query_engine import ParquetQueryEngine
@@ -411,31 +484,31 @@ def status(
 @app.command()
 def download(
     source: str = typer.Option(
-        "sihsus",
+        None,
         "--source",
         "-s",
         help="Subsistema DataSUS: sihsus, sim, siasus",
     ),
     output_dir: Path = typer.Option(
-        Path("./data/datasus/sihsus/dbc"),
+        None,
         "--output-dir",
         "-o",
-        help="Diretório de saída para arquivos DBC",
+        help="Diretorio de saida para arquivos DBC",
     ),
     start_date: str = typer.Option(
-        "2023-01-01",
+        None,
         "--start-date",
         help="Data inicial (YYYY-MM-DD)",
     ),
     end_date: Optional[str] = typer.Option(
         None,
         "--end-date",
-        help="Data final (YYYY-MM-DD). Padrão: hoje",
+        help="Data final (YYYY-MM-DD). Padrao: hoje",
     ),
     uf: Optional[str] = typer.Option(
         None,
         "--uf",
-        help="Estados (UF) separados por vírgula. Ex: SP,RJ,MG",
+        help="Estados (UF) separados por virgula. Ex: SP,RJ,MG",
     ),
     override: bool = typer.Option(
         False,
@@ -443,11 +516,36 @@ def download(
         help="Sobrescrever arquivos existentes",
     ),
 ) -> None:
-    """Download DBC files from DataSUS FTP server.
+    """Baixa arquivos DBC do servidor FTP do DataSUS.
 
-    [bold]Example:[/bold]
-        datasus download --source sihsus --start-date 2023-01-01 --uf SP
+    [bold]Exemplos de uso:[/bold]
+
+        # Baixar arquivos DBC do SIHSUS de SP
+        datasus download -s sihsus --start-date 2023-01-01 -o ./data/dbc --uf SP
+
+        # Baixar todos os estados de 2023
+        datasus download -s sihsus --start-date 2023-01-01 --end-date 2023-12-31 -o ./data/dbc
     """
+    # Validate required parameters
+    missing_params = []
+    if source is None:
+        missing_params.append("--source (-s)")
+    if start_date is None:
+        missing_params.append("--start-date")
+    if output_dir is None:
+        missing_params.append("--output-dir (-o)")
+
+    if missing_params:
+        console.print("[red bold]Erro: Parametros obrigatorios faltando:[/red bold]")
+        for param in missing_params:
+            console.print(f"  [red]-[/red] {param}")
+        console.print()
+        console.print("[bold]Exemplo de uso:[/bold]")
+        console.print("  datasus download --source sihsus --start-date 2023-01-01 --output-dir ./data/dbc")
+        console.print()
+        console.print("[dim]Use 'datasus download --help' para ver todas as opcoes.[/dim]")
+        raise typer.Exit(1)
+
     setup_logging()
 
     console.print("\n[bold cyan]DataSUS - Download FTP[/bold cyan]\n")
