@@ -633,20 +633,20 @@ class SihsusPipeline(Pipeline[PipelineConfig]):
         deleted_dbc = 0
         deleted_dbf = 0
 
-        # Delete DBF files
+        # Delete DBF files (recursively, as files may be in UF subdirectories)
         dbf_dir = self.config.conversion.dbf_dir
         if dbf_dir.exists():
-            for dbf_file in dbf_dir.glob("*.dbf"):
+            for dbf_file in dbf_dir.rglob("*.dbf"):
                 try:
                     dbf_file.unlink()
                     deleted_dbf += 1
                 except Exception as e:
                     self.logger.warning(f"Failed to delete {dbf_file}: {e}")
 
-        # Delete DBC files
+        # Delete DBC files (recursively, as files may be in UF subdirectories)
         dbc_dir = self.config.download.output_dir
         if dbc_dir.exists():
-            for dbc_file in dbc_dir.glob("*.dbc"):
+            for dbc_file in dbc_dir.rglob("*.dbc"):
                 try:
                     dbc_file.unlink()
                     deleted_dbc += 1
