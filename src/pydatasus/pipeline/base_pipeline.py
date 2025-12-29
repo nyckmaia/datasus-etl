@@ -160,6 +160,61 @@ class SqlTransformStage(Stage):
         else:
             return self._execute_individual(context)
 
+    def _export_csv(
+        self,
+        db_manager,
+        view_name: str,
+        original_name: str,
+        output_dir: Path,
+        order_col: str,
+    ) -> None:
+        """Export data to CSV file with Hive partitioning.
+
+        Creates CSV files in partition directories: uf=XX/{original_name}.csv
+
+        Args:
+            db_manager: DuckDB manager instance
+            view_name: Name of the view to export
+            original_name: Original DBC filename (without extension)
+            output_dir: Base output directory
+            order_col: Column to order by
+        """
+        # Get UF value from the data to create partition directory
+        uf_result = db_manager._conn.execute(
+            f"SELECT DISTINCT uf FROM {view_name} LIMIT 1"
+        ).fetchone()
+
+        if uf_result is None:
+            self.logger.warning(f"No data in view {view_name}, skipping CSV export")
+            return
+
+        uf_value = uf_result[0]
+
+        # Create partition directory
+        partition_dir = output_dir / f"uf={uf_value}"
+        partition_dir.mkdir(parents=True, exist_ok=True)
+
+        # Output CSV file path (named after DBC source)
+        csv_path = partition_dir / f"{original_name}.csv"
+
+        # Export to CSV
+        delimiter = self.config.csv_delimiter
+        encoding = self.config.csv_encoding
+
+        export_sql = f"""
+            COPY (
+                SELECT * FROM {view_name}
+                ORDER BY {order_col} ASC NULLS LAST
+            )
+            TO '{csv_path}' (
+                FORMAT CSV,
+                HEADER true,
+                DELIMITER '{delimiter}',
+                ENCODING '{encoding}'
+            )
+        """
+        db_manager._conn.execute(export_sql)
+
     def _execute_partitioned(self, context: PipelineContext) -> PipelineContext:
         """Transform and export to Hive-partitioned Parquet with canonical schema."""
         from tqdm import tqdm
@@ -230,26 +285,37 @@ class SqlTransformStage(Stage):
                 # Get the date column for ordering (different per subsystem)
                 order_col = self._get_order_column()
 
-                # Export with partitioning
-                export_sql = f"""
-                    COPY (
-                        SELECT * FROM {view_name}
-                        ORDER BY {order_col} ASC NULLS LAST
+                # Export based on output format
+                if self.config.output_format == "csv":
+                    # CSV export: one file per DBC source
+                    self._export_csv(
+                        db_manager=db_manager,
+                        view_name=view_name,
+                        original_name=original_name,
+                        output_dir=parquet_dir,
+                        order_col=order_col,
                     )
-                    TO '{parquet_dir}' (
-                        FORMAT PARQUET,
-                        PARTITION_BY ({partition_cols}),
-                        {append_mode},
-                        COMPRESSION '{self.config.storage.compression}',
-                        ROW_GROUP_SIZE {self.config.storage.row_group_size}
-                    )
-                """
-                db_manager._conn.execute(export_sql)
+                else:
+                    # Parquet export with partitioning
+                    export_sql = f"""
+                        COPY (
+                            SELECT * FROM {view_name}
+                            ORDER BY {order_col} ASC NULLS LAST
+                        )
+                        TO '{parquet_dir}' (
+                            FORMAT PARQUET,
+                            PARTITION_BY ({partition_cols}),
+                            {append_mode},
+                            COMPRESSION '{self.config.storage.compression}',
+                            ROW_GROUP_SIZE {self.config.storage.row_group_size}
+                        )
+                    """
+                    db_manager._conn.execute(export_sql)
 
                 total_rows_exported += row_count
                 tqdm.write(
                     f"[OK] Exported {original_name}: {row_count:,} rows "
-                    f"(partitioned by {partition_cols})"
+                    f"({self.config.output_format.upper()}, partitioned by {partition_cols})"
                 )
 
                 # Cleanup: drop the view to free memory
@@ -260,24 +326,26 @@ class SqlTransformStage(Stage):
                 self.logger.error(f"Failed to transform/export {staging_table}: {e}")
                 raise
 
-        # Calculate total size of all Parquet files
-        total_size_bytes = sum(f.stat().st_size for f in parquet_dir.rglob("*.parquet"))
+        # Calculate total size based on output format
+        file_ext = "*.csv" if self.config.output_format == "csv" else "*.parquet"
+        output_files = list(parquet_dir.rglob(file_ext))
+        total_size_bytes = sum(f.stat().st_size for f in output_files)
         total_size_mb = total_size_bytes / (1024 * 1024)
 
         # Count partition directories and files
         partition_dirs = list(parquet_dir.glob("uf=*"))
-        parquet_files = list(parquet_dir.rglob("*.parquet"))
 
         context.set_metadata("total_rows_exported", total_rows_exported)
         context.set("parquet_dir", str(parquet_dir))
         context.set("partition_count", len(partition_dirs))
-        context.set("file_count", len(parquet_files))
-        context.set("exported_parquet_files", [str(f) for f in parquet_files])
+        context.set("file_count", len(output_files))
+        context.set("exported_parquet_files", [str(f) for f in output_files])
 
-        tqdm.write(f"\n[DONE] Partitioned export complete:")
+        format_name = self.config.output_format.upper()
+        tqdm.write(f"\n[DONE] {format_name} export complete:")
         tqdm.write(f"  - Total rows: {total_rows_exported:,}")
         tqdm.write(f"  - Partitions: {len(partition_dirs)} (by {partition_cols})")
-        tqdm.write(f"  - Files: {len(parquet_files)} ({total_size_mb:.1f}MB total)\n")
+        tqdm.write(f"  - Files: {len(output_files)} ({total_size_mb:.1f}MB total)\n")
 
         return context
 

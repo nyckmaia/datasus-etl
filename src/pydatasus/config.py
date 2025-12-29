@@ -157,6 +157,19 @@ class PipelineConfig(BaseModel):
                     "Only applies basic cleaning (remove invisible chars, trim whitespace). "
                     "All columns are kept as VARCHAR. Useful for debugging or custom processing."
     )
+    output_format: Literal["parquet", "csv"] = Field(
+        default="parquet",
+        description="Output file format: parquet (default) or csv. "
+                    "CSV exports one file per DBC source with header."
+    )
+    csv_delimiter: str = Field(
+        default=";",
+        description="CSV delimiter character (default: semicolon for Brazilian data)"
+    )
+    csv_encoding: str = Field(
+        default="UTF-8",
+        description="CSV file encoding (default: UTF-8)"
+    )
 
     model_config = {"arbitrary_types_allowed": True}
 
@@ -177,6 +190,8 @@ class PipelineConfig(BaseModel):
         chunk_size: int = 10000,
         keep_temp_files: bool = False,
         raw_mode: bool = False,
+        output_format: Literal["parquet", "csv"] = "parquet",
+        csv_delimiter: str = ";",
     ) -> "PipelineConfig":
         """Factory method to create PipelineConfig with automatic path configuration.
 
@@ -185,7 +200,7 @@ class PipelineConfig(BaseModel):
             └── {subsystem}/
                 ├── dbc/      (downloaded files)
                 ├── dbf/      (converted files)
-                └── parquet/  (final output)
+                └── parquet/ or csv/  (final output)
 
         Args:
             base_dir: Base directory for all data (e.g., ./data/datasus)
@@ -198,12 +213,17 @@ class PipelineConfig(BaseModel):
             chunk_size: Rows per chunk for DBF streaming
             keep_temp_files: Keep DBC/DBF files after Parquet export (default: False)
             raw_mode: Export without type conversions (default: False)
+            output_format: Output format: parquet (default) or csv
+            csv_delimiter: CSV delimiter character (default: semicolon)
 
         Returns:
             Configured PipelineConfig instance
         """
         base_dir = Path(base_dir)
         subsystem_dir = base_dir / subsystem
+
+        # Output directory based on format
+        output_dir = subsystem_dir / output_format
 
         return cls(
             download=DownloadConfig(
@@ -219,7 +239,7 @@ class PipelineConfig(BaseModel):
                 override=override,
             ),
             storage=StorageConfig(
-                parquet_dir=subsystem_dir / "parquet",
+                parquet_dir=output_dir,
                 compression=compression,
             ),
             database=DatabaseConfig(
@@ -227,5 +247,7 @@ class PipelineConfig(BaseModel):
             ),
             subsystem=subsystem,
             keep_temp_files=keep_temp_files,
+            output_format=output_format,
+            csv_delimiter=csv_delimiter,
             raw_mode=raw_mode,
         )

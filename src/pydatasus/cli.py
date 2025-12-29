@@ -156,6 +156,17 @@ def run(
         "-c",
         help="Compressao Parquet: snappy, gzip, brotli, zstd",
     ),
+    output_format: str = typer.Option(
+        "parquet",
+        "--output-format",
+        "-f",
+        help="Formato de saida: parquet (padrao) ou csv",
+    ),
+    csv_delimiter: str = typer.Option(
+        ";",
+        "--csv-delimiter",
+        help="Delimitador CSV (padrao: ponto-e-virgula)",
+    ),
     chunk_size: int = typer.Option(
         10000,
         "--chunk-size",
@@ -254,13 +265,22 @@ def run(
     table.add_row("Data final", end_date or "hoje")
     table.add_row("Estados (UF)", uf or "todos")
     table.add_row("Diretório", str(data_dir))
-    table.add_row("Compressão", compression)
+    table.add_row("Formato saída", output_format.upper())
+    table.add_row("Compressão", compression if output_format == "parquet" else "N/A")
     table.add_row("Chunk size", f"{chunk_size:,}")
     table.add_row("Manter temporários", "Sim" if keep_temp_files else "Não")
     table.add_row("Modo raw", "Sim (sem conversões)" if raw else "Não (com tipos)")
+    if output_format == "csv":
+        table.add_row("Delimitador CSV", repr(csv_delimiter))
 
     console.print(table)
     console.print()
+
+    # Validate output format
+    valid_formats = ["parquet", "csv"]
+    if output_format.lower() not in valid_formats:
+        console.print(f"[red]Erro: --output-format deve ser um de: {', '.join(valid_formats)}[/red]")
+        raise typer.Exit(1)
 
     # Create configuration using factory method
     config = PipelineConfig.create(
@@ -274,6 +294,8 @@ def run(
         chunk_size=chunk_size,
         keep_temp_files=keep_temp_files,
         raw_mode=raw,
+        output_format=output_format.lower(),  # type: ignore
+        csv_delimiter=csv_delimiter,
     )
 
     # Pre-download report: get file count from FTP
