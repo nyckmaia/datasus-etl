@@ -171,6 +171,12 @@ def run(
         "--keep-temp-files",
         help="Manter arquivos DBC e DBF apos processamento (padrao: deletar)",
     ),
+    raw: bool = typer.Option(
+        False,
+        "--raw",
+        help="Exportar dados sem conversoes de tipo (apenas limpeza basica). "
+             "Todas colunas como VARCHAR. Util para debug ou processamento customizado.",
+    ),
     verbose: bool = typer.Option(
         False,
         "--verbose",
@@ -251,6 +257,7 @@ def run(
     table.add_row("Compressão", compression)
     table.add_row("Chunk size", f"{chunk_size:,}")
     table.add_row("Manter temporários", "Sim" if keep_temp_files else "Não")
+    table.add_row("Modo raw", "Sim (sem conversões)" if raw else "Não (com tipos)")
 
     console.print(table)
     console.print()
@@ -266,6 +273,7 @@ def run(
         override=override,
         chunk_size=chunk_size,
         keep_temp_files=keep_temp_files,
+        raw_mode=raw,
     )
 
     # Pre-download report: get file count from FTP

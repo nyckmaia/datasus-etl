@@ -189,7 +189,11 @@ class SqlTransformStage(Stage):
         if db_manager is None:
             raise ValueError("DuckDB manager not found in context. DBF stage must run first.")
 
-        transformer = SQLTransformer(db_manager._conn)
+        transformer = SQLTransformer(
+            db_manager._conn,
+            subsystem="sihsus",
+            raw_mode=self.config.raw_mode,
+        )
 
         # Get list of staging tables
         staging_tables = context.get("staging_tables", [])
@@ -297,7 +301,11 @@ class SqlTransformStage(Stage):
         if db_manager is None:
             raise ValueError("DuckDB manager not found in context. DBF stage must run first.")
 
-        transformer = SQLTransformer(db_manager._conn)
+        transformer = SQLTransformer(
+            db_manager._conn,
+            subsystem="sihsus",
+            raw_mode=self.config.raw_mode,
+        )
 
         # Get list of staging tables
         staging_tables = context.get("staging_tables", [])

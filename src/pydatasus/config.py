@@ -151,6 +151,12 @@ class PipelineConfig(BaseModel):
         description="Keep temporary DBC and DBF files after successful Parquet export. "
                     "When False (default), temporary files are deleted to save disk space."
     )
+    raw_mode: bool = Field(
+        default=False,
+        description="Export raw data without type conversions or categorical mappings. "
+                    "Only applies basic cleaning (remove invisible chars, trim whitespace). "
+                    "All columns are kept as VARCHAR. Useful for debugging or custom processing."
+    )
 
     model_config = {"arbitrary_types_allowed": True}
 
@@ -170,6 +176,7 @@ class PipelineConfig(BaseModel):
         override: bool = False,
         chunk_size: int = 10000,
         keep_temp_files: bool = False,
+        raw_mode: bool = False,
     ) -> "PipelineConfig":
         """Factory method to create PipelineConfig with automatic path configuration.
 
@@ -190,6 +197,7 @@ class PipelineConfig(BaseModel):
             override: Override existing files
             chunk_size: Rows per chunk for DBF streaming
             keep_temp_files: Keep DBC/DBF files after Parquet export (default: False)
+            raw_mode: Export without type conversions (default: False)
 
         Returns:
             Configured PipelineConfig instance
@@ -219,4 +227,5 @@ class PipelineConfig(BaseModel):
             ),
             subsystem=subsystem,
             keep_temp_files=keep_temp_files,
+            raw_mode=raw_mode,
         )
