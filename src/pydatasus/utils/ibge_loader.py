@@ -112,14 +112,14 @@ def load_ibge_municipalities() -> dict[int, dict[str, str]]:
             if len(codigo_str) < 6:
                 continue
 
-            # IBGE 7-digit code format: D_UUMMMMC where:
-            # - D = verification digit (first digit, to be removed)
+            # IBGE 7-digit code format: UUMMMMV where:
             # - UU = UF code (2 digits)
             # - MMMM = municipality code (4 digits)
-            # - C = check digit or part of code
-            # SIHSUS munic_res uses first 6 digits after removing verification digit
-            # Example: 3550308 -> 550308 (São Paulo capital)
-            codigo_6 = int(codigo_str[1:7]) if len(codigo_str) >= 7 else int(codigo_str[-6:])
+            # - V = verification digit (LAST digit, to be removed)
+            # SIHSUS munic_res uses first 6 digits (removes last verification digit)
+            # Example: 3505005 -> 350500 (Barão de Antonina, SP)
+            # Example: 3550308 -> 355030 (São Paulo capital)
+            codigo_6 = int(codigo_str[:-1]) if len(codigo_str) >= 7 else int(codigo_str[:6])
 
             municipalities[codigo_6] = {
                 "municipio": str(row[8]).strip() if row[8] else None,
