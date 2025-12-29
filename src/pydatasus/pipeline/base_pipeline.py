@@ -215,6 +215,61 @@ class SqlTransformStage(Stage):
         """
         db_manager._conn.execute(export_sql)
 
+    def _export_parquet(
+        self,
+        db_manager,
+        view_name: str,
+        original_name: str,
+        output_dir: Path,
+        order_col: str,
+    ) -> None:
+        """Export data to Parquet file with Hive partitioning and original name.
+
+        Creates Parquet files in partition directories: uf=XX/{original_name}.parquet
+        This replaces DuckDB's automatic naming (data_0.parquet) with meaningful names.
+
+        Args:
+            db_manager: DuckDB manager instance
+            view_name: Name of the view to export
+            original_name: Original DBC filename (without extension)
+            output_dir: Base output directory
+            order_col: Column to order by
+        """
+        # Get UF value from the data to create partition directory
+        uf_result = db_manager._conn.execute(
+            f"SELECT DISTINCT uf FROM {view_name} LIMIT 1"
+        ).fetchone()
+
+        if uf_result is None:
+            self.logger.warning(f"No data in view {view_name}, skipping Parquet export")
+            return
+
+        uf_value = uf_result[0]
+
+        # Create partition directory
+        partition_dir = output_dir / f"uf={uf_value}"
+        partition_dir.mkdir(parents=True, exist_ok=True)
+
+        # Output Parquet file path (named after DBC source)
+        parquet_path = partition_dir / f"{original_name}.parquet"
+
+        # Export to Parquet with compression and settings
+        compression = self.config.storage.compression
+        row_group_size = self.config.storage.row_group_size
+
+        export_sql = f"""
+            COPY (
+                SELECT * FROM {view_name}
+                ORDER BY {order_col} ASC NULLS LAST
+            )
+            TO '{parquet_path}' (
+                FORMAT PARQUET,
+                COMPRESSION '{compression}',
+                ROW_GROUP_SIZE {row_group_size}
+            )
+        """
+        db_manager._conn.execute(export_sql)
+
     def _execute_partitioned(self, context: PipelineContext) -> PipelineContext:
         """Transform and export to Hive-partitioned Parquet with canonical schema."""
         from tqdm import tqdm
@@ -252,7 +307,6 @@ class SqlTransformStage(Stage):
         partition_cols = ", ".join(self.config.storage.partition_cols)
 
         total_rows_exported = 0
-        is_first_export = True
 
         # Process each staging table
         for i, staging_table in enumerate(staging_tables, 1):
@@ -275,13 +329,6 @@ class SqlTransformStage(Stage):
                     f"SELECT COUNT(*) FROM {view_name}"
                 ).fetchone()[0]
 
-                # Determine append mode
-                if is_first_export:
-                    append_mode = "OVERWRITE_OR_IGNORE"
-                    is_first_export = False
-                else:
-                    append_mode = "APPEND"
-
                 # Get the date column for ordering (different per subsystem)
                 order_col = self._get_order_column()
 
@@ -296,21 +343,14 @@ class SqlTransformStage(Stage):
                         order_col=order_col,
                     )
                 else:
-                    # Parquet export with partitioning
-                    export_sql = f"""
-                        COPY (
-                            SELECT * FROM {view_name}
-                            ORDER BY {order_col} ASC NULLS LAST
-                        )
-                        TO '{parquet_dir}' (
-                            FORMAT PARQUET,
-                            PARTITION_BY ({partition_cols}),
-                            {append_mode},
-                            COMPRESSION '{self.config.storage.compression}',
-                            ROW_GROUP_SIZE {self.config.storage.row_group_size}
-                        )
-                    """
-                    db_manager._conn.execute(export_sql)
+                    # Parquet export: one file per DBC source with partition structure
+                    self._export_parquet(
+                        db_manager=db_manager,
+                        view_name=view_name,
+                        original_name=original_name,
+                        output_dir=parquet_dir,
+                        order_col=order_col,
+                    )
 
                 total_rows_exported += row_count
                 tqdm.write(
