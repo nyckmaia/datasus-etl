@@ -146,6 +146,11 @@ class PipelineConfig(BaseModel):
         default="sihsus",
         description="DataSUS subsystem name (sihsus, sim, siasus, etc). Used to organize output directories."
     )
+    keep_temp_files: bool = Field(
+        default=False,
+        description="Keep temporary DBC and DBF files after successful Parquet export. "
+                    "When False (default), temporary files are deleted to save disk space."
+    )
 
     model_config = {"arbitrary_types_allowed": True}
 
@@ -164,6 +169,7 @@ class PipelineConfig(BaseModel):
         compression: Literal["snappy", "gzip", "brotli", "zstd"] = "zstd",
         override: bool = False,
         chunk_size: int = 10000,
+        keep_temp_files: bool = False,
     ) -> "PipelineConfig":
         """Factory method to create PipelineConfig with automatic path configuration.
 
@@ -183,6 +189,7 @@ class PipelineConfig(BaseModel):
             compression: Parquet compression codec
             override: Override existing files
             chunk_size: Rows per chunk for DBF streaming
+            keep_temp_files: Keep DBC/DBF files after Parquet export (default: False)
 
         Returns:
             Configured PipelineConfig instance
@@ -211,4 +218,5 @@ class PipelineConfig(BaseModel):
                 chunk_size=chunk_size,
             ),
             subsystem=subsystem,
+            keep_temp_files=keep_temp_files,
         )
