@@ -39,7 +39,8 @@ dependencies = [
     "simpledbf>=0.2.6",    # Fast DBF reading for small files
     "psutil>=5.9.0",       # System resource monitoring
     "streamlit>=1.30.0",   # Web interface
-    "openpyxl>=3.1.0",     # Excel export
+    "openpyxl>=3.1.0",     # Excel export (.xlsx)
+    "xlrd>=2.0.0",         # Excel import (.xls) for IBGE data
 ]
 
 [project.optional-dependencies]
@@ -68,6 +69,9 @@ Issues = "https://github.com/user/pydatasus/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pydatasus"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src/pydatasus/_data" = "pydatasus/_data"
 
 [tool.ruff]
 line-length = 100
