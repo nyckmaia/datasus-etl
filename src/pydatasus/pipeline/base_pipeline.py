@@ -473,7 +473,7 @@ class DatasusPipeline(Pipeline[PipelineConfig], ABC):
         self.logger.info("=" * 70)
 
     def _cleanup_temporary_files(self, success: bool = True) -> None:
-        """Delete temporary DBC and DBF files after successful Parquet export."""
+        """Delete temporary DBC and DBF files and directories after successful Parquet export."""
         if self.config.keep_temp_files:
             self.logger.info("Keeping temporary files (--keep-temp-files enabled)")
             return
@@ -484,6 +484,7 @@ class DatasusPipeline(Pipeline[PipelineConfig], ABC):
 
         deleted_dbc = 0
         deleted_dbf = 0
+        deleted_dirs = 0
 
         # Delete DBF files
         dbf_dir = self.config.conversion.dbf_dir
@@ -495,6 +496,9 @@ class DatasusPipeline(Pipeline[PipelineConfig], ABC):
                 except Exception as e:
                     self.logger.warning(f"Failed to delete {dbf_file}: {e}")
 
+            # Delete dbf directory and subdirectories if empty
+            deleted_dirs += self._remove_empty_dirs(dbf_dir)
+
         # Delete DBC files
         dbc_dir = self.config.download.output_dir
         if dbc_dir.exists():
@@ -505,10 +509,56 @@ class DatasusPipeline(Pipeline[PipelineConfig], ABC):
                 except Exception as e:
                     self.logger.warning(f"Failed to delete {dbc_file}: {e}")
 
-        if deleted_dbc > 0 or deleted_dbf > 0:
+            # Delete dbc directory and subdirectories if empty
+            deleted_dirs += self._remove_empty_dirs(dbc_dir)
+
+        if deleted_dbc > 0 or deleted_dbf > 0 or deleted_dirs > 0:
             self.logger.info(
-                f"Cleanup: deleted {deleted_dbc} DBC and {deleted_dbf} DBF temporary files"
+                f"Cleanup: deleted {deleted_dbc} DBC files, {deleted_dbf} DBF files, "
+                f"and {deleted_dirs} empty directories"
             )
+
+    def _remove_empty_dirs(self, root_dir: Path) -> int:
+        """Remove empty directories recursively, starting from deepest level.
+
+        Args:
+            root_dir: Root directory to clean up
+
+        Returns:
+            Number of directories removed
+        """
+        deleted_count = 0
+
+        if not root_dir.exists():
+            return 0
+
+        # Get all subdirectories, sorted by depth (deepest first)
+        all_dirs = sorted(
+            [d for d in root_dir.rglob("*") if d.is_dir()],
+            key=lambda p: len(p.parts),
+            reverse=True,
+        )
+
+        # Delete empty subdirectories (deepest first)
+        for dir_path in all_dirs:
+            try:
+                if dir_path.exists() and not any(dir_path.iterdir()):
+                    dir_path.rmdir()
+                    deleted_count += 1
+                    self.logger.debug(f"Removed empty directory: {dir_path}")
+            except Exception as e:
+                self.logger.warning(f"Failed to delete directory {dir_path}: {e}")
+
+        # Finally, try to delete the root directory itself if empty
+        try:
+            if root_dir.exists() and not any(root_dir.iterdir()):
+                root_dir.rmdir()
+                deleted_count += 1
+                self.logger.debug(f"Removed empty directory: {root_dir}")
+        except Exception as e:
+            self.logger.warning(f"Failed to delete directory {root_dir}: {e}")
+
+        return deleted_count
 
     def run(self) -> "PipelineContext":
         """Run the pipeline and cleanup resources."""
