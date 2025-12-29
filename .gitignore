@@ -13,7 +13,6 @@ __pycache__/
 *.dbf
 *.parquet
 *.csv
-TODO.md
 
 # Distribution / packaging
 .Python
