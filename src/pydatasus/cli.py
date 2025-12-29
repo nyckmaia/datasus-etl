@@ -105,6 +105,11 @@ def run(
         "--override",
         help="Sobrescrever arquivos existentes",
     ),
+    keep_temp_files: bool = typer.Option(
+        False,
+        "--keep-temp-files",
+        help="Manter arquivos DBC e DBF apos processamento (padrao: deletar)",
+    ),
     verbose: bool = typer.Option(
         False,
         "--verbose",
@@ -147,6 +152,7 @@ def run(
     table.add_row("Diretório", str(data_dir))
     table.add_row("Compressão", compression)
     table.add_row("Chunk size", f"{chunk_size:,}")
+    table.add_row("Manter temporários", "Sim" if keep_temp_files else "Não")
 
     console.print(table)
     console.print()
@@ -161,6 +167,7 @@ def run(
         compression=compression,  # type: ignore
         override=override,
         chunk_size=chunk_size,
+        keep_temp_files=keep_temp_files,
     )
 
     # Run pipeline

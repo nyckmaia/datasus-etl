@@ -616,6 +616,46 @@ class SihsusPipeline(Pipeline[PipelineConfig]):
 
         self.logger.info("=" * 70)
 
+    def _cleanup_temporary_files(self, success: bool = True) -> None:
+        """Delete temporary DBC and DBF files after successful Parquet export.
+
+        Args:
+            success: Whether the pipeline completed successfully
+        """
+        if self.config.keep_temp_files:
+            self.logger.info("Keeping temporary files (--keep-temp-files enabled)")
+            return
+
+        if not success:
+            self.logger.info("Skipping cleanup due to pipeline failure")
+            return
+
+        deleted_dbc = 0
+        deleted_dbf = 0
+
+        # Delete DBF files
+        dbf_dir = self.config.conversion.dbf_dir
+        if dbf_dir.exists():
+            for dbf_file in dbf_dir.glob("*.dbf"):
+                try:
+                    dbf_file.unlink()
+                    deleted_dbf += 1
+                except Exception as e:
+                    self.logger.warning(f"Failed to delete {dbf_file}: {e}")
+
+        # Delete DBC files
+        dbc_dir = self.config.download.output_dir
+        if dbc_dir.exists():
+            for dbc_file in dbc_dir.glob("*.dbc"):
+                try:
+                    dbc_file.unlink()
+                    deleted_dbc += 1
+                except Exception as e:
+                    self.logger.warning(f"Failed to delete {dbc_file}: {e}")
+
+        if deleted_dbc > 0 or deleted_dbf > 0:
+            self.logger.info(f"Cleanup: deleted {deleted_dbc} DBC and {deleted_dbf} DBF temporary files")
+
     def run(self) -> "PipelineContext":
         """Run the pipeline and cleanup resources.
 
@@ -629,6 +669,7 @@ class SihsusPipeline(Pipeline[PipelineConfig]):
         start_time = datetime.now()
         self.context.set_metadata("start_time", start_time)
 
+        success = False
         try:
             # Run parent implementation
             result = super().run()
@@ -636,6 +677,7 @@ class SihsusPipeline(Pipeline[PipelineConfig]):
             # Generate completion report
             self._generate_completion_report(result)
 
+            success = True
             return result
         except Exception as e:
             self.logger.error(f"Pipeline failed: {e}")
@@ -649,3 +691,6 @@ class SihsusPipeline(Pipeline[PipelineConfig]):
                     self.logger.debug("DuckDB connection closed")
                 except Exception as e:
                     self.logger.warning(f"Error closing DuckDB connection: {e}")
+
+            # Cleanup temporary files (only on success)
+            self._cleanup_temporary_files(success=success)
