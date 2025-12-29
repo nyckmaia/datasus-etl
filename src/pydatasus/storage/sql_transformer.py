@@ -13,6 +13,7 @@ import duckdb
 
 from pydatasus.constants.sihsus_schema import SIHSUS_PARQUET_SCHEMA
 from pydatasus.exceptions import PyInmetError
+from pydatasus.utils.ibge_loader import create_ibge_lookup_csv
 
 
 class SQLTransformer:
@@ -455,7 +456,10 @@ FROM typed{ibge_join_clause}
         Returns:
             SQL column list for IBGE data (from JOIN)
         """
-        return "ibge.nome_municipio,\n    ibge.uf AS uf_ibge,\n    ibge.regiao"
+        return """ibge.municipio_res,
+        ibge.uf_res,
+        ibge.rg_imediata_res,
+        ibge.rg_intermediaria_res"""
 
     def _get_ibge_join_sql(self, actual_columns: list[str]) -> str:
         """Generate SQL for IBGE LEFT JOIN.
@@ -469,10 +473,43 @@ FROM typed{ibge_join_clause}
         Returns:
             SQL JOIN clause (empty if munic_res doesn't exist)
         """
-        if 'munic_res' not in actual_columns:
+        if 'munic_res' not in [c.lower() for c in actual_columns]:
             return ""
 
-        return "\nLEFT JOIN ibge_data AS ibge\n    ON CAST(typed.munic_res AS VARCHAR) = CAST(ibge.codigo_municipio AS VARCHAR)"
+        return "\nLEFT JOIN ibge_data AS ibge\n    ON typed.munic_res = ibge.codigo_municipio"
+
+    def _load_ibge_data(self) -> bool:
+        """Load IBGE municipality data into DuckDB temp view.
+
+        Creates a temp view 'ibge_data' from the bundled IBGE Excel file.
+
+        Returns:
+            True if IBGE data was loaded successfully, False otherwise
+        """
+        try:
+            # Create CSV from bundled Excel file
+            csv_path = create_ibge_lookup_csv()
+            self.logger.info(f"Loading IBGE data from {csv_path}")
+
+            self.conn.execute(f"""
+                CREATE OR REPLACE TEMP VIEW ibge_data AS
+                SELECT
+                    CAST(codigo_municipio AS INTEGER) AS codigo_municipio,
+                    municipio_res,
+                    uf_res,
+                    rg_imediata_res,
+                    rg_intermediaria_res
+                FROM read_csv('{csv_path}', header=true)
+            """)
+
+            # Get count for logging
+            count = self.conn.execute("SELECT COUNT(*) FROM ibge_data").fetchone()[0]
+            self.logger.info(f"Loaded {count} municipalities from IBGE data")
+
+            return True
+        except Exception as e:
+            self.logger.warning(f"Failed to load IBGE data: {e}")
+            return False
 
     def _generate_canonical_column_sql(self, actual_columns: list[str]) -> str:
         """Generate SQL SELECT with ALL columns from SIHSUS_PARQUET_SCHEMA.
@@ -527,6 +564,7 @@ FROM typed{ibge_join_clause}
         source_table: str,
         target_view: str,
         ibge_data_path: Optional[Path] = None,
+        enable_ibge_enrichment: bool = True,
     ) -> None:
         """Apply SIHSUS transformations and normalize to canonical schema.
 
@@ -539,6 +577,9 @@ FROM typed{ibge_join_clause}
             source_table: Name of source table/view in DuckDB
             target_view: Name for the transformed view to create
             ibge_data_path: Optional path to IBGE CSV file for geographic enrichment
+                           (deprecated, use enable_ibge_enrichment instead)
+            enable_ibge_enrichment: Whether to enrich with IBGE municipality data
+                                   (default: True, uses bundled IBGE data)
 
         Raises:
             PyInmetError: If transformation query fails
@@ -551,8 +592,12 @@ FROM typed{ibge_join_clause}
             actual_columns = [col[0] for col in actual_columns]
             self.logger.info(f"Source table has {len(actual_columns)} columns, normalizing to {len(SIHSUS_PARQUET_SCHEMA)} canonical columns")
 
-            # Load IBGE data if provided
-            if ibge_data_path and ibge_data_path.exists():
+            # Load IBGE data - prefer bundled data, fallback to provided path
+            ibge_loaded = False
+            if enable_ibge_enrichment:
+                ibge_loaded = self._load_ibge_data()
+            elif ibge_data_path and ibge_data_path.exists():
+                # Legacy: use provided CSV path
                 self.logger.info(f"Loading IBGE data from {ibge_data_path}")
                 self.conn.execute(
                     f"""
@@ -560,13 +605,14 @@ FROM typed{ibge_join_clause}
                     SELECT * FROM read_csv('{ibge_data_path}', delim=';', header=true)
                 """
                 )
+                ibge_loaded = True
 
             # Build additional computed columns
             additional_selects = []
             actual_columns_lower = {col.lower() for col in actual_columns}
 
-            # IBGE enrichment
-            if ibge_data_path and 'munic_res' in actual_columns_lower:
+            # IBGE enrichment (only if data was loaded and munic_res exists)
+            if ibge_loaded and 'munic_res' in actual_columns_lower:
                 additional_selects.append(self._get_ibge_enrichment_sql())
 
             # Build final SELECT clause
@@ -577,7 +623,7 @@ FROM typed{ibge_join_clause}
 
             # Build IBGE JOIN clause if needed
             ibge_join_clause = ""
-            if ibge_data_path and 'munic_res' in actual_columns_lower:
+            if ibge_loaded and 'munic_res' in actual_columns_lower:
                 ibge_join_clause = self._get_ibge_join_sql(actual_columns)
 
             # Generate canonical schema SELECT
