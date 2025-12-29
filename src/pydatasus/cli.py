@@ -8,8 +8,9 @@ Usage:
 """
 
 import logging
+import shutil
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Optional
 
 import typer
 from rich.console import Console
@@ -22,6 +23,65 @@ from pydatasus.config import PipelineConfig
 from pydatasus.download.ftp_downloader import FTPDownloader
 from pydatasus.pipeline.sihsus_pipeline import SihsusPipeline
 from pydatasus.transform.converters.dbc_to_dbf import DbcToDbfConverter
+
+
+# Average DBC file sizes by subsystem (in MB)
+AVG_DBC_SIZES_MB = {
+    "sihsus": 20.0,
+    "sim": 5.0,
+    "siasus": 30.0,
+}
+
+# Parquet compression ratio (typically ~60% of DBC size)
+PARQUET_COMPRESSION_RATIO = 0.6
+
+
+def estimate_download_size(file_count: int, subsystem: str) -> tuple[float, float]:
+    """Estimate download and parquet sizes in MB.
+
+    Args:
+        file_count: Number of files to download
+        subsystem: Subsystem name (sihsus, sim, siasus)
+
+    Returns:
+        Tuple of (download_size_mb, parquet_size_mb)
+    """
+    avg_mb = AVG_DBC_SIZES_MB.get(subsystem.lower(), 20.0)
+    download_size = file_count * avg_mb
+    parquet_size = download_size * PARQUET_COMPRESSION_RATIO
+    return download_size, parquet_size
+
+
+def check_disk_space(path: Path, required_mb: float) -> tuple[bool, float]:
+    """Check if there's enough disk space.
+
+    Args:
+        path: Path to check (uses the drive/mount point)
+        required_mb: Required space in MB
+
+    Returns:
+        Tuple of (has_enough_space, available_mb)
+    """
+    # Ensure path exists (use parent if path doesn't exist)
+    check_path = path
+    while not check_path.exists():
+        check_path = check_path.parent
+        if check_path == check_path.parent:  # Root
+            break
+
+    try:
+        usage = shutil.disk_usage(check_path)
+        available_mb = usage.free / (1024 * 1024)
+        return available_mb >= required_mb, available_mb
+    except Exception:
+        return True, 0.0  # Assume OK if we can't check
+
+
+def format_size_mb(size_mb: float) -> str:
+    """Format size in MB to human readable string."""
+    if size_mb >= 1024:
+        return f"{size_mb / 1024:.1f} GB"
+    return f"{size_mb:.1f} MB"
 
 app = typer.Typer(
     name="datasus",
@@ -116,6 +176,12 @@ def run(
         "-v",
         help="Modo verboso (mais logs)",
     ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Pular confirmacao e executar diretamente",
+    ),
 ) -> None:
     """Executa o pipeline completo: download -> convert -> transform -> export.
 
@@ -129,6 +195,9 @@ def run(
 
         # Baixar SIM (mortalidade) de 2022
         datasus run -s sim --start-date 2022-01-01 --end-date 2022-12-31 -d ./data
+
+        # Executar sem confirmacao
+        datasus run -s sihsus --start-date 2023-01-01 -d ./data --yes
     """
     # Validate required parameters
     missing_params = []
@@ -198,7 +267,61 @@ def run(
         keep_temp_files=keep_temp_files,
     )
 
+    # Pre-download report: get file count from FTP
+    console.print("[dim]Consultando servidor FTP...[/dim]")
+
+    from pydatasus.storage.incremental_updater import IncrementalUpdater
+
+    updater = IncrementalUpdater(config)
+    available_files = updater.get_available_files_from_ftp()
+    file_count = len(available_files)
+
+    if file_count == 0:
+        console.print("[yellow]Nenhum arquivo encontrado no FTP para os criterios especificados.[/yellow]")
+        console.print("[dim]Verifique o subsistema, datas e UFs.[/dim]")
+        raise typer.Exit(0)
+
+    # Estimate sizes
+    download_mb, parquet_mb = estimate_download_size(file_count, source.lower())
+    total_needed_mb = download_mb + parquet_mb
+
+    # Check disk space
+    has_space, available_mb = check_disk_space(data_dir, total_needed_mb)
+
+    # Show pre-download report
+    console.print()
+    report_table = Table(title="[bold cyan]Resumo do Download[/bold cyan]", border_style="cyan")
+    report_table.add_column("Item", style="cyan")
+    report_table.add_column("Valor", style="white")
+
+    report_table.add_row("Arquivos a baixar", f"{file_count}")
+    report_table.add_row("Tamanho estimado (DBC)", format_size_mb(download_mb))
+    report_table.add_row("Tamanho final (Parquet)", format_size_mb(parquet_mb))
+    report_table.add_row("Espaco necessario total", format_size_mb(total_needed_mb))
+    report_table.add_row("Espaco livre no disco", format_size_mb(available_mb))
+
+    console.print(report_table)
+    console.print()
+
+    # Warn if not enough space
+    if not has_space:
+        console.print("[red bold]AVISO: Espaco em disco insuficiente![/red bold]")
+        console.print(
+            f"[red]Necessario: {format_size_mb(total_needed_mb)} | "
+            f"Disponivel: {format_size_mb(available_mb)}[/red]"
+        )
+        console.print()
+        console.print("[dim]Libere espaco no disco ou escolha outro diretorio.[/dim]")
+        raise typer.Exit(1)
+
+    # Ask for confirmation (unless --yes was passed)
+    if not yes:
+        if not typer.confirm("Deseja continuar com o download?"):
+            console.print("[yellow]Download cancelado pelo usuario.[/yellow]")
+            raise typer.Exit(0)
+
     # Run pipeline
+    console.print()
     console.print("[bold]Iniciando pipeline...[/bold]\n")
 
     if source.lower() == "sihsus":
@@ -272,6 +395,12 @@ def update(
         "-v",
         help="Modo verboso (mais logs)",
     ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Pular confirmacao e executar diretamente",
+    ),
 ) -> None:
     """Atualiza banco de dados com novos arquivos do FTP (update incremental).
 
@@ -285,6 +414,9 @@ def update(
 
         # Ver arquivos novos sem baixar (dry-run)
         datasus update -s sihsus --start-date 2023-01-01 -d ./data/datasus --dry-run
+
+        # Atualizar sem confirmacao
+        datasus update -s sihsus --start-date 2023-01-01 -d ./data/datasus --yes
     """
     # Validate required parameters
     missing_params = []
@@ -354,6 +486,20 @@ def update(
         if summary_data["new_count"] > 10:
             console.print(f"  ... e mais {summary_data['new_count'] - 10}")
 
+        # Show size estimates
+        download_mb, parquet_mb = estimate_download_size(summary_data["new_count"], source.lower())
+        total_needed_mb = download_mb + parquet_mb
+        has_space, available_mb = check_disk_space(data_dir, total_needed_mb)
+
+        console.print()
+        console.print(f"[dim]Tamanho estimado: {format_size_mb(download_mb)} (DBC) + {format_size_mb(parquet_mb)} (Parquet)[/dim]")
+        console.print(f"[dim]Espaco livre: {format_size_mb(available_mb)}[/dim]")
+
+        if not has_space:
+            console.print()
+            console.print("[red bold]AVISO: Espaco em disco insuficiente![/red bold]")
+            raise typer.Exit(1)
+
     if dry_run:
         console.print("\n[yellow]Modo dry-run: nenhum arquivo sera processado.[/yellow]")
         return
@@ -363,6 +509,13 @@ def update(
     if incremental_config is None:
         console.print("[green]Nada para atualizar.[/green]")
         return
+
+    # Ask for confirmation (unless --yes was passed)
+    if not yes:
+        console.print()
+        if not typer.confirm("Deseja continuar com a atualizacao?"):
+            console.print("[yellow]Atualizacao cancelada pelo usuario.[/yellow]")
+            raise typer.Exit(0)
 
     console.print("\n[bold]Iniciando atualizacao incremental...[/bold]")
 
