@@ -22,7 +22,7 @@
       "Bash(datasus --help:*)",
       "Bash(git commit:*)",
       "Bash(datasus status:*)",
-      "Bash(cat:*)"
+      "Bash(git reset:*)"
     ]
   }
 }
