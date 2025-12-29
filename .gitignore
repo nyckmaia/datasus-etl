@@ -7,8 +7,10 @@ __pycache__/
 *.so
 
 # DBC, DBF and Parquet files
-data/
-
+*.dbc
+*.dbf
+*.parquet
+*.csv
 TODO.md
 
 # Distribution / packaging

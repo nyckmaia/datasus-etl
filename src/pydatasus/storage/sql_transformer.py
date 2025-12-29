@@ -77,11 +77,7 @@ class SQLTransformer:
            - SEXO: 0→I, 1→M, 3→F
            - RACA_COR: 01→Branca, 02→Preta, 03→Parda, etc.
 
-        5. Computed columns:
-           - ANO_INTER, MES_INTER (extracted from DT_INTER)
-           - DIAS_INTERNACAO (difference between DT_SAIDA and DT_INTER)
-
-        6. IBGE enrichment (optional):
+        5. IBGE enrichment (optional):
            - Adds nome_municipio, uf, regiao via LEFT JOIN
 
         This replaces:
