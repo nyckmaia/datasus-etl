@@ -27,7 +27,7 @@ pip install pydatasus
 Ou para desenvolvimento:
 
 ```bash
-git clone https://github.com/user/pydatasus.git
+git clone https://github.com/nyckmaia/pydatasus.git
 cd pydatasus
 pip install -e ".[dev]"
 ```
