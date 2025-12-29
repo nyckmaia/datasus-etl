@@ -22,7 +22,11 @@
       "Bash(datasus --help:*)",
       "Bash(git commit:*)",
       "Bash(datasus status:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(tree:*)",
+      "Bash(.venv_test/Scripts/pip install:*)",
+      "Bash(.venv_test2/Scripts/pip install:*)",
+      "Bash(git merge:*)"
     ]
   }
 }
