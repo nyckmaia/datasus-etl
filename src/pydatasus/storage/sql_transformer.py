@@ -1,6 +1,6 @@
-"""SQL-based data transformations for SIHSUS data using DuckDB.
+"""SQL-based data transformations for DataSUS data using DuckDB.
 
-This module replaces the Polars-based SihsusProcessor with pure SQL transformations
+This module provides SQL transformations for DataSUS subsystems (SIHSUS, SIM, etc.)
 executed in DuckDB. All data cleaning, validation, type conversions, and enrichment
 are performed in a single streaming SQL query for maximum performance.
 """
@@ -12,40 +12,56 @@ from typing import Optional
 import duckdb
 
 from pydatasus.constants.sihsus_schema import SIHSUS_PARQUET_SCHEMA
+from pydatasus.datasets.sim.schema import SIM_PARQUET_SCHEMA
 from pydatasus.exceptions import PyInmetError
 from pydatasus.utils.ibge_loader import create_ibge_lookup_csv
 
+# Schema mapping by subsystem
+SUBSYSTEM_SCHEMAS = {
+    "sihsus": SIHSUS_PARQUET_SCHEMA,
+    "sim": SIM_PARQUET_SCHEMA,
+}
+
+# Date columns by subsystem (for row filtering)
+SUBSYSTEM_DATE_COLUMNS = {
+    "sihsus": ["dt_inter", "dt_saida"],
+    "sim": ["dtobito", "dtnasc"],
+}
+
 
 class SQLTransformer:
-    """SQL-based transformations for SIHSUS data.
+    """SQL-based transformations for DataSUS data.
 
     Performs all data transformations using DuckDB SQL queries:
     - Data cleaning (trim, uppercase, remove empty rows)
     - Type validation and conversion
     - Date parsing with multiple format fallback
     - Categorical mappings (SEXO, RACA_COR)
-    - Computed columns (ANO_INTER, MES_INTER, DIAS_INTERNACAO)
+    - Computed columns
     - IBGE geographic enrichment
 
-    This replaces the Polars-based SihsusProcessor with streaming SQL execution.
+    Supports multiple subsystems (SIHSUS, SIM) via the subsystem parameter.
 
     Example:
         >>> conn = duckdb.connect(":memory:")
-        >>> transformer = SQLTransformer(conn)
-        >>> transformer.transform_sihsus_data(
+        >>> transformer = SQLTransformer(conn, subsystem="sihsus")
+        >>> transformer.transform_to_canonical_view(
         ...     source_table="staging_data",
-        ...     target_view="sihsus_processed",
-        ...     ibge_data_path=Path("ibge.csv")
+        ...     target_view="processed",
         ... )
     """
 
-    def __init__(self, conn: duckdb.DuckDBPyConnection) -> None:
+    def __init__(self, conn: duckdb.DuckDBPyConnection, subsystem: str = "sihsus") -> None:
         """Initialize SQL transformer.
 
         Args:
             conn: DuckDB connection to execute queries on
+            subsystem: DataSUS subsystem name (sihsus, sim). Default: sihsus
         """
         self.conn = conn
+        self.subsystem = subsystem.lower()
+        self.schema = SUBSYSTEM_SCHEMAS.get(self.subsystem, SIHSUS_PARQUET_SCHEMA)
+        self.date_columns = SUBSYSTEM_DATE_COLUMNS.get(self.subsystem, ["dt_inter", "dt_saida"])
         self.logger = logging.getLogger(__name__)
 
     def transform_sihsus_data(
@@ -352,7 +368,7 @@ FROM typed{ibge_join_clause}
         return ",\n        ".join(cleaned)
 
     def _apply_schema_types_sql(self, actual_columns: list[str]) -> str:
-        """Apply type conversions based on SIHSUS_PARQUET_SCHEMA.
+        """Apply type conversions based on the subsystem schema.
 
         Converts cleaned VARCHAR columns to their target types defined in the schema.
         Uses TRY_CAST for safe conversion (NULL on failure).
@@ -364,7 +380,7 @@ FROM typed{ibge_join_clause}
             SQL column list with type conversions applied
 
         Note:
-            Only converts columns that exist in both actual_columns and SIHSUS_PARQUET_SCHEMA.
+            Only converts columns that exist in both actual_columns and the schema.
             Columns not in schema remain as VARCHAR.
             DATE columns use parsed versions from cleaned CTE.
         """
@@ -382,8 +398,8 @@ FROM typed{ibge_join_clause}
             col_lower = col.lower()
 
             # Check if column is in schema
-            if col_lower in SIHSUS_PARQUET_SCHEMA:
-                target_type = SIHSUS_PARQUET_SCHEMA[col_lower]
+            if col_lower in self.schema:
+                target_type = self.schema[col_lower]
 
                 # Special handling for different types
                 if target_type == "DATE":
@@ -512,7 +528,7 @@ FROM typed{ibge_join_clause}
             return False
 
     def _generate_canonical_column_sql(self, actual_columns: list[str], ibge_loaded: bool = False) -> str:
-        """Generate SQL SELECT with ALL columns from SIHSUS_PARQUET_SCHEMA.
+        """Generate SQL SELECT with ALL columns from the canonical schema.
 
         This ensures a consistent schema across all Parquet files, regardless of
         which columns exist in the source DBF. Missing columns are filled with
@@ -550,7 +566,7 @@ FROM typed{ibge_join_clause}
         # IBGE enrichment columns - these come from the JOIN, not the source table
         ibge_columns = {'municipio_res', 'uf_res', 'rg_imediata_res', 'rg_intermediaria_res'}
 
-        for col_name, col_type in SIHSUS_PARQUET_SCHEMA.items():
+        for col_name, col_type in self.schema.items():
             if col_name in ibge_columns:
                 # IBGE enrichment columns - use JOIN data if available
                 if ibge_loaded and 'munic_res' in actual_columns_lower:
@@ -580,7 +596,7 @@ FROM typed{ibge_join_clause}
         """Apply SIHSUS transformations and normalize to canonical schema.
 
         Similar to transform_sihsus_data() but ensures the output view has
-        ALL columns from SIHSUS_PARQUET_SCHEMA, with missing columns as NULL.
+        ALL columns from the canonical schema, with missing columns as NULL.
         This enables consistent schema across all Parquet files when using
         partitioned writes with APPEND.
 
@@ -601,7 +617,7 @@ FROM typed{ibge_join_clause}
                 f"SELECT column_name FROM information_schema.columns WHERE table_name = '{source_table}' ORDER BY ordinal_position"
             ).fetchall()
             actual_columns = [col[0] for col in actual_columns]
-            self.logger.info(f"Source table has {len(actual_columns)} columns, normalizing to {len(SIHSUS_PARQUET_SCHEMA)} canonical columns")
+            self.logger.info(f"Source table has {len(actual_columns)} columns, normalizing to {len(self.schema)} canonical columns")
 
             # Load IBGE data - prefer bundled data, fallback to provided path
             ibge_loaded = False
@@ -628,6 +644,28 @@ FROM typed{ibge_join_clause}
             # Generate canonical schema SELECT (includes IBGE columns from JOIN if available)
             canonical_select = self._generate_canonical_column_sql(actual_columns, ibge_loaded=ibge_loaded)
 
+            # Build dynamic date parsing SQL based on schema DATE columns
+            date_parsing_parts = []
+            for col_name, col_type in self.schema.items():
+                if col_type == "DATE" and col_name in actual_columns_lower:
+                    date_parsing_parts.append(
+                        f"{self._get_date_parsing_sql(col_name, allow_future=False)} AS {col_name}_parsed"
+                    )
+
+            date_parsing_sql = ",\n        ".join(date_parsing_parts) if date_parsing_parts else "NULL AS _no_dates"
+
+            # Build dynamic WHERE clause for row filtering
+            # Use subsystem-specific date columns for row validation
+            where_conditions = []
+            for date_col in self.date_columns:
+                if date_col in actual_columns_lower:
+                    where_conditions.append(f"cleaned.{date_col}_parsed IS NULL")
+
+            if where_conditions:
+                where_clause = f"NOT ({' AND '.join(where_conditions)})"
+            else:
+                where_clause = "1=1"  # No filtering if no date columns
+
             transform_sql = f"""
 CREATE OR REPLACE VIEW {target_view} AS
 WITH cleaned AS (
@@ -636,10 +674,7 @@ WITH cleaned AS (
         {self._get_cleaned_columns_sql(actual_columns)},
 
         -- Parse dates with fallback to multiple formats and future date validation
-        {self._get_date_parsing_sql('dt_inter', allow_future=False) if 'dt_inter' in actual_columns_lower else 'NULL'} AS dt_inter_parsed,
-        {self._get_date_parsing_sql('dt_saida', allow_future=False) if 'dt_saida' in actual_columns_lower else 'NULL'} AS dt_saida_parsed,
-        {self._get_date_parsing_sql('nasc', allow_future=False) if 'nasc' in actual_columns_lower else 'NULL'} AS nasc_parsed,
-        {self._get_date_parsing_sql('gestor_dt', allow_future=False) if 'gestor_dt' in actual_columns_lower else 'NULL'} AS gestor_dt_parsed
+        {date_parsing_sql}
     FROM {source_table}
 ),
 typed AS (
@@ -649,7 +684,7 @@ typed AS (
     FROM cleaned
     WHERE
         -- Remove completely empty rows (at least one date must be valid)
-        NOT (cleaned.dt_inter_parsed IS NULL AND cleaned.dt_saida_parsed IS NULL)
+        {where_clause}
 ),
 canonical AS (
     SELECT

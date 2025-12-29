@@ -22,6 +22,7 @@ from pydatasus import __version__
 from pydatasus.config import PipelineConfig
 from pydatasus.download.ftp_downloader import FTPDownloader
 from pydatasus.pipeline.sihsus_pipeline import SihsusPipeline
+from pydatasus.pipeline.sim_pipeline import SIMPipeline
 from pydatasus.transform.converters.dbc_to_dbf import DbcToDbfConverter
 
 
@@ -326,9 +327,12 @@ def run(
 
     if source.lower() == "sihsus":
         pipeline_obj = SihsusPipeline(config)
+    elif source.lower() == "sim":
+        pipeline_obj = SIMPipeline(config)
     else:
-        console.print(f"[yellow]Aviso: Subsistema '{source}' ainda não implementado. Usando SIHSUS.[/yellow]")
-        pipeline_obj = SihsusPipeline(config)
+        console.print(f"[red]Erro: Subsistema '{source}' ainda nao implementado.[/red]")
+        console.print("[dim]Subsistemas disponiveis: sihsus, sim[/dim]")
+        raise typer.Exit(1)
 
     result = pipeline_obj.run()
 
@@ -519,9 +523,14 @@ def update(
 
     console.print("\n[bold]Iniciando atualizacao incremental...[/bold]")
 
-    from pydatasus.pipeline.sihsus_pipeline import SihsusPipeline
+    if source.lower() == "sihsus":
+        pipeline_obj = SihsusPipeline(incremental_config)
+    elif source.lower() == "sim":
+        pipeline_obj = SIMPipeline(incremental_config)
+    else:
+        console.print(f"[red]Erro: Subsistema '{source}' ainda nao implementado.[/red]")
+        raise typer.Exit(1)
 
-    pipeline_obj = SihsusPipeline(incremental_config)
     result = pipeline_obj.run()
 
     # Print summary
