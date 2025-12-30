@@ -26,7 +26,12 @@
       "Bash(tree:*)",
       "Bash(.venv_test/Scripts/pip install:*)",
       "Bash(.venv_test2/Scripts/pip install:*)",
-      "Bash(git merge:*)"
+      "Bash(git merge:*)",
+      "Bash(datasus run --help:*)",
+      "Bash(git restore:*)",
+      "Bash(for branch in feature/modular-transformations feature/raw-export feature/csv-export feature/named-exports fix/pypi-metadata)",
+      "Bash(do echo -e \"\\\\n=== $branch ===\")",
+      "Bash(done)"
     ]
   }
 }
