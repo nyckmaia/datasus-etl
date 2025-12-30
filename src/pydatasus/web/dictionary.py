@@ -5,69 +5,163 @@ helping health researchers understand the data structure.
 """
 
 # SIHSUS - Hospital Information System Column Descriptions
+# Based on SIHSUS_PARQUET_SCHEMA from constants/sihsus_schema.py
 SIHSUS_COLUMNS = {
-    # Identification
-    "n_aih": "Numero da AIH (Autorizacao de Internacao Hospitalar)",
-    "ident": "Identificador do tipo de AIH",
-    "cnes": "Codigo CNES do estabelecimento de saude",
+    # Source identification
     "uf": "UF de internacao (sigla do estado)",
     "source_file": "Arquivo DBC de origem",
 
-    # Patient Demographics
-    "nasc": "Data de nascimento do paciente",
-    "idade": "Idade do paciente (em anos)",
-    "sexo": "Sexo do paciente (M/F)",
-    "raca_cor": "Raca/cor declarada",
-    "instru": "Grau de instrucao",
-    "nacional": "Nacionalidade",
-
-    # Geographic
+    # Geographic and temporal identification
+    "uf_zi": "Codigo UF do local",
+    "ano_cmpt": "Ano de competencia",
+    "mes_cmpt": "Mes de competencia (1-12)",
+    "espec": "Especialidade medica",
+    "cgc_hosp": "CNPJ do hospital",
+    "n_aih": "Numero da AIH (Autorizacao de Internacao Hospitalar)",
+    "ident": "Identificador do tipo de AIH",
+    "cep": "CEP do paciente",
     "munic_res": "Codigo IBGE do municipio de residencia",
     "municipio_res": "Nome do municipio de residencia (enriquecido)",
     "uf_res": "UF de residencia (enriquecido)",
     "rg_imediata_res": "Regiao geografica imediata (enriquecido)",
     "rg_intermediaria_res": "Regiao geografica intermediaria (enriquecido)",
-    "munic_mov": "Municipio de ocorrencia da internacao",
-    "cep": "CEP do paciente",
+
+    # Personal data
+    "nasc": "Data de nascimento do paciente",
+    "sexo": "Sexo do paciente (M/F/I)",
+
+    # ICU - Months (time in months in ICU)
+    "uti_mes_in": "Meses em UTI - tipo IN",
+    "uti_mes_an": "Meses em UTI - tipo AN",
+    "uti_mes_al": "Meses em UTI - tipo AL",
+    "uti_mes_to": "Meses em UTI - total",
+    "marca_uti": "Indicador de UTI",
+
+    # ICU - Admissions
+    "uti_int_in": "Internacoes em UTI - tipo IN",
+    "uti_int_an": "Internacoes em UTI - tipo AN",
+    "uti_int_al": "Internacoes em UTI - tipo AL",
+    "uti_int_to": "Internacoes em UTI - total",
+
+    # Procedure and costs
+    "proc_rea": "Procedimento realizado (codigo)",
+    "val_sh": "Valor dos servicos hospitalares",
+    "val_sp": "Valor dos servicos profissionais",
+    "val_sadt": "Valor de SADT (apoio diagnostico/terapeutico)",
+    "val_rn": "Valor do recem-nascido",
+    "val_ortp": "Valor de orteses e proteses",
+    "val_sangue": "Valor de sangue",
+    "val_sadtsr": "Valor SADT sem registro",
+    "val_transp": "Valor de transporte",
+    "val_obsang": "Valor observacao de sangue",
+    "val_ped1ac": "Valor complemento pediatria 1o ano",
+    "val_tot": "Valor total da AIH",
+    "val_uti": "Valor da UTI",
+    "us_tot": "Total de pontos/unidades de servico",
 
     # Dates
     "dt_inter": "Data de internacao",
     "dt_saida": "Data de saida/alta",
-    "gestor_dt": "Data do gestor",
 
-    # Clinical Information
+    # Diagnoses
     "diag_princ": "Diagnostico principal (CID-10)",
     "diag_secun": "Diagnostico secundario (CID-10)",
-    "proc_solic": "Procedimento solicitado",
-    "proc_rea": "Procedimento realizado",
-    "car_int": "Carater da internacao (eletiva/urgencia)",
-    "espec": "Especialidade do leito",
-    "complex": "Complexidade (alta/media/baixa)",
-    "cobranca": "Motivo de cobranca",
-    "morte": "Indicador de obito",
-    "marca_uti": "Indicador de UTI",
-    "uti_mes_to": "Total de dias em UTI",
 
-    # Hospitalization
+    # Administrative management
+    "cobranca": "Tipo de cobranca",
+    "natureza": "Natureza da unidade",
+    "gestao": "Gestao",
+    "munic_mov": "Municipio de movimento",
+
+    # Age
+    "cod_idade": "Codigo unidade de idade (1=anos, 2=meses, 3=dias)",
+    "idade": "Idade do paciente",
     "dias_perm": "Dias de permanencia",
+
+    # Outcome
+    "morte": "Indicador de obito (true/false)",
+
+    # File
+    "cod_arq": "Codigo do arquivo",
+    "cont": "Continuacao",
+    "nacional": "Nacionalidade",
+
+    # Procedures
+    "num_proc": "Numero de procedimentos",
+    "car_int": "Carater da internacao (eletiva/urgencia)",
+    "tot_pt_sp": "Total de pontos SP",
+
+    # Extra identification
+    "cpf_aut": "CPF do autorizador",
+    "homonimo": "Homonimo",
+    "num_filhos": "Numero de filhos",
+    "instru": "Grau de instrucao",
+    "cid_notif": "CID de notificacao",
+    "contracep1": "Contraceptivo 1",
+    "contracep2": "Contraceptivo 2",
+    "gestrisco": "Gestacao de risco",
+
+    # Federal/management costs
+    "val_sh_fed": "Valor SH federal",
+    "val_sp_fed": "Valor SP federal",
+    "val_sh_ges": "Valor SH gestao",
+    "val_sp_ges": "Valor SP gestao",
+    "val_uci": "Valor UCI",
+
+    # Daily rates
+    "diar_acom": "Diarias de acompanhante",
     "qt_diarias": "Quantidade de diarias",
 
-    # Financial
-    "val_sh": "Valor dos servicos hospitalares",
-    "val_sp": "Valor dos servicos profissionais",
-    "val_sadt": "Valor de SADT",
-    "val_rn": "Valor do recem-nascido",
-    "val_acomp": "Valor do acompanhante",
-    "val_uti": "Valor da UTI",
-    "val_tot": "Valor total da AIH",
-    "us_tot": "Total de pontos/unidades de servico",
+    # Medical classification
+    "cbor": "CBO (Classificacao Brasileira de Ocupacoes)",
+    "cnaer": "CNAE",
+    "etnia": "Etnia",
+    "raca_cor": "Raca/cor declarada",
 
-    # Administrative
-    "ano_cmpt": "Ano de competencia",
-    "mes_cmpt": "Mes de competencia",
+    # Complementary ICDs
+    "cid_asso": "CID associado",
+    "cid_morte": "CID de morte",
+    "diagsec1": "Diagnostico secundario 1",
+    "diagsec2": "Diagnostico secundario 2",
+    "diagsec3": "Diagnostico secundario 3",
+    "diagsec4": "Diagnostico secundario 4",
+    "diagsec5": "Diagnostico secundario 5",
+    "diagsec6": "Diagnostico secundario 6",
+    "diagsec7": "Diagnostico secundario 7",
+    "diagsec8": "Diagnostico secundario 8",
+    "diagsec9": "Diagnostico secundario 9",
+
+    # Secondary diagnosis types
+    "tpdisec1": "Tipo diagnostico secundario 1",
+    "tpdisec2": "Tipo diagnostico secundario 2",
+    "tpdisec3": "Tipo diagnostico secundario 3",
+    "tpdisec4": "Tipo diagnostico secundario 4",
+    "tpdisec5": "Tipo diagnostico secundario 5",
+    "tpdisec6": "Tipo diagnostico secundario 6",
+    "tpdisec7": "Tipo diagnostico secundario 7",
+    "tpdisec8": "Tipo diagnostico secundario 8",
+    "tpdisec9": "Tipo diagnostico secundario 9",
+
+    # Extra columns
+    "insc_pn": "Inscricao PN",
+    "seq_aih5": "Sequencia AIH 5",
+    "vincprev": "Vinculo previdenciario",
     "gestor_cod": "Codigo do gestor",
-    "cnpj_mant": "CNPJ da mantenedora",
+    "gestor_cpf": "CPF do gestor",
+    "gestor_dt": "Data do gestor",
+    "cnes": "Codigo CNES do estabelecimento de saude",
+    "cgc_mant": "CNPJ da mantenedora",
+    "complex": "Complexidade (alta/media/baixa)",
+    "faec_tp": "Tipo FAEC",
+    "financ": "Financiamento",
+    "gestor_tp": "Tipo de gestor",
+    "regct": "Registro CT",
+    "remessa": "Remessa",
+    "sequencia": "Sequencia",
+    "aud_just": "Justificativa de auditoria",
     "nat_jur": "Natureza juridica",
+    "sis_just": "Justificativa do sistema",
+    "marca_uci": "Marcador UCI",
 }
 
 # SIM - Mortality Information System Column Descriptions

@@ -32,9 +32,11 @@ if st.button("Iniciar Download"):
 Download → Conversao → Carga → Transformacao → Exportacao
 ```
 
-### 2. Templates SQL Prontos
+### 2. Templates SQL Prontos (Auto-Preenchimento)
 
 Arquivo: `src/pydatasus/web/templates.py`
+
+Ao selecionar um template no dropdown, a caixa de texto SQL e atualizada automaticamente (sem necessidade de clicar em botao separado).
 
 Templates disponiveis para SIHSUS:
 - Internacoes por UF
@@ -56,9 +58,11 @@ Templates disponiveis para SIM:
 - Obitos por Escolaridade
 - Obitos por Raca/Cor
 
-### 3. Dicionario de Dados Integrado
+### 3. Dicionario de Dados (Tabela Fixa)
 
 Arquivo: `src/pydatasus/web/dictionary.py`
+
+O dicionario de dados e exibido como uma tabela fixa no final da pagina "Consultar", facilitando a visualizacao durante a escrita de queries.
 
 Descricoes de todas as colunas em portugues:
 
@@ -67,7 +71,7 @@ Descricoes de todas as colunas em portugues:
 - `dt_inter`: Data de internacao
 - `diag_princ`: Diagnostico principal (CID-10)
 - `val_tot`: Valor total da AIH
-- ... (50+ colunas)
+- ... (116 colunas totais)
 
 **SIM:**
 - `numerodo`: Numero da Declaracao de Obito
@@ -75,7 +79,31 @@ Descricoes de todas as colunas em portugues:
 - `causabas`: Causa basica (CID-10)
 - ... (40+ colunas)
 
-### 4. Validacao SQL com Mensagens Claras
+### 4. Editor SQL com Syntax Highlighting
+
+O campo de consulta SQL agora usa o editor Ace (via `streamlit-ace`) com:
+
+- **Syntax Highlighting SQL**: Palavras-chave coloridas (SELECT, FROM, WHERE, etc.)
+- **Autocomplete**: Pressione Ctrl+Space para sugestoes de comandos SQL
+- **Tema Visual**: Tema "tomorrow" com boa legibilidade
+- **Keybinding VSCode**: Atalhos de teclado familiares
+- **Numeracao de Linhas**: Gutter com numeros de linha
+- **Auto-update**: Atualizacao em tempo real conforme digita
+
+```python
+from streamlit_ace import st_ace
+
+query = st_ace(
+    value=default_query,
+    language="sql",
+    theme="tomorrow",
+    keybinding="vscode",
+    font_size=14,
+    auto_update=True
+)
+```
+
+### 5. Validacao SQL com Mensagens Claras
 
 ```python
 def validate_sql(query: str) -> tuple[bool, str]:
@@ -83,7 +111,7 @@ def validate_sql(query: str) -> tuple[bool, str]:
     # Avisa se nao tiver LIMIT
 ```
 
-### 5. Estimativa de Tamanho Antes do Export
+### 6. Estimativa de Tamanho Antes do Export
 
 ```python
 # Mostra antes de exportar:
@@ -92,13 +120,13 @@ def validate_sql(query: str) -> tuple[bool, str]:
 - Tamanho Estimado: ~12.5 MB
 ```
 
-### 6. Graficos Plotly na Pagina Status
+### 7. Graficos Plotly na Pagina Status
 
 - Grafico de barras: Distribuicao por UF
 - Cores proporcionais ao volume de dados
 - Interativo (zoom, hover)
 
-### 7. Estatisticas das Colunas Numericas
+### 8. Estatisticas das Colunas Numericas
 
 Expander com estatisticas:
 - Minimo
@@ -106,12 +134,16 @@ Expander com estatisticas:
 - Media
 - Contagem de nao-nulos
 
-### 8. Selecao Rapida de Colunas no Export
+### 9. Selecao Rapida de Colunas no Export
 
 Botoes de atalho:
 - "Selecionar Todas"
 - "Limpar Selecao"
 - "Colunas Principais" (subset util por subsystem)
+
+### 10. Seletor de Pasta para Diretorio de Dados
+
+Icone de pasta (📁) ao lado do campo "Diretorio de Dados" que abre o dialogo nativo do sistema operacional para selecao de pasta.
 
 ## Estrutura de Arquivos
 
@@ -129,12 +161,9 @@ src/pydatasus/web/
 # pyproject.toml
 dependencies = [
     "streamlit>=1.30.0",
+    "streamlit-ace>=0.1.1",  # Editor SQL com syntax highlighting
     "openpyxl>=3.1.0",
-]
-
-[project.optional-dependencies]
-viz = [
-    "plotly>=5.18.0",
+    "plotly>=5.18.0",  # Graficos interativos (incluido por padrao)
 ]
 ```
 
@@ -146,10 +175,9 @@ datasus ui
 
 # Metodo 2: Direto com Streamlit
 streamlit run src/pydatasus/web/app.py
-
-# Com graficos (instalar plotly)
-pip install pydatasus[viz]
 ```
+
+Todas as dependencias, incluindo Plotly para graficos, sao instaladas automaticamente com `pip install pydatasus`.
 
 ## Proximas Melhorias Possiveis
 
@@ -177,13 +205,13 @@ pip install pydatasus[viz]
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### Pagina Consultar com Templates
+### Pagina Consultar com Templates e Dicionario
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │ 🔍 Consultar Dados                                          │
 ├─────────────────────────────────────────────────────────────┤
-│ 📋 Consultas Prontas          │ 📖 Dicionario              │
-│ [Internacoes por UF        ▼] │ [Ver descricao das colunas]│
+│ 📋 Consultas Prontas                                        │
+│ [Internacoes por UF        ▼] <- Auto-preenche SQL abaixo   │
 ├─────────────────────────────────────────────────────────────┤
 │ SELECT uf, COUNT(*) as total                                │
 │ FROM sihsus                                                 │
@@ -193,5 +221,14 @@ pip install pydatasus[viz]
 │ ⚠️ Adicione LIMIT para evitar consultas muito grandes       │
 │                                                             │
 │ [▶️ Executar]                                                │
+├─────────────────────────────────────────────────────────────┤
+│ 📖 Dicionario de Dados                                      │
+│ ┌────────────┬──────────────────────────────────────────┐   │
+│ │ Coluna     │ Descricao                                │   │
+│ ├────────────┼──────────────────────────────────────────┤   │
+│ │ diag_princ │ Diagnostico principal (CID-10)           │   │
+│ │ dt_inter   │ Data de internacao                       │   │
+│ │ val_tot    │ Valor total da AIH                       │   │
+│ └────────────┴──────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
 ```

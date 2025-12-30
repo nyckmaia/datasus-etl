@@ -61,8 +61,10 @@ dependencies = [
     "simpledbf>=0.2.6",    # Fast DBF reading for small files
     "psutil>=5.9.0",       # System resource monitoring
     "streamlit>=1.30.0",   # Web interface
+    "streamlit-ace>=0.1.1", # Code editor with SQL syntax highlighting
     "openpyxl>=3.1.0",     # Excel export (.xlsx)
     "xlrd>=2.0.0",         # Excel import (.xls) for IBGE data
+    "plotly>=5.18.0",      # Interactive charts for web UI
 ]
 
 [project.optional-dependencies]
@@ -77,9 +79,6 @@ docs = [
     "mkdocs>=1.5",
     "mkdocs-material>=9.5",
     "mkdocstrings[python]>=0.24",
-]
-viz = [
-    "plotly>=5.18.0",  # Interactive charts for web UI
 ]
 
 [project.scripts]
@@ -142,6 +141,10 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "datasus_dbc.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "streamlit_ace.*"
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
