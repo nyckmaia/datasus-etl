@@ -330,6 +330,7 @@ def page_download():
         start_date = st.date_input(
             "Data Inicial",
             value=date(2023, 1, 1),
+            min_value=date(1970, 1, 1),
             help="Data de inicio do periodo de download"
         )
 
@@ -337,6 +338,7 @@ def page_download():
         end_date = st.date_input(
             "Data Final",
             value=date.today(),
+            min_value=date(1970, 1, 1),
             help="Data final do periodo de download"
         )
 
@@ -410,7 +412,7 @@ def page_download():
     if st.button("📥 Iniciar Download", type="primary"):
         try:
             from pydatasus.config import PipelineConfig
-            from pydatasus.pipeline import SihsusPipeline, SimPipeline
+            from pydatasus.pipeline import SihsusPipeline, SIMPipeline
 
             config = PipelineConfig.create(
                 base_dir=data_dir,
@@ -424,7 +426,7 @@ def page_download():
 
             # Select pipeline based on subsystem
             if subsystem == "sim":
-                pipeline = SimPipeline(config)
+                pipeline = SIMPipeline(config)
             else:
                 pipeline = SihsusPipeline(config)
 

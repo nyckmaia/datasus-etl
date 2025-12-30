@@ -18,7 +18,7 @@ def main():
         subsystem="sihsus",  # DataSUS subsystem (sihsus, sim, siasus, etc)
         start_date="2023-01-01",
         end_date="2023-03-31",
-        uf_list=["SP", "RJ"],  # Only São Paulo and Rio de Janeiro states
+        uf_list=["SP"],  # Only São Paulo and Rio de Janeiro states
         compression="zstd",  # Better compression
         chunk_size=10000,  # Rows per chunk (adjust based on available RAM)
     )

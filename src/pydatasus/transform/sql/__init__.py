@@ -9,6 +9,7 @@ Transform Classes:
 - CleaningTransform: Removes invisible characters and trims whitespace
 - DateParsingTransform: Parses date strings with multiple format fallback
 - TypeCastTransform: Converts columns to target types based on schema
+- CidValidationTransform: Validates ICD-10 (CID) code format
 - SexoTransform: Maps SEXO codes to labels (M/F/I)
 - RacaCorTransform: Maps RACA_COR codes to labels
 - IbgeEnrichmentTransform: Adds geographic data via IBGE lookup
@@ -43,6 +44,7 @@ from pydatasus.transform.sql.cleaning import CleaningTransform
 from pydatasus.transform.sql.dates import DateParsingTransform
 from pydatasus.transform.sql.categorical import SexoTransform, RacaCorTransform
 from pydatasus.transform.sql.types import TypeCastTransform
+from pydatasus.transform.sql.validation import CidValidationTransform
 from pydatasus.transform.sql.enrichment import IbgeEnrichmentTransform
 from pydatasus.transform.sql.pipeline import TransformPipeline
 
@@ -51,6 +53,7 @@ __all__ = [
     "CleaningTransform",
     "DateParsingTransform",
     "TypeCastTransform",
+    "CidValidationTransform",
     "SexoTransform",
     "RacaCorTransform",
     "IbgeEnrichmentTransform",

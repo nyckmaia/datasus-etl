@@ -100,9 +100,9 @@ class DateParsingTransform(BaseTransform):
         """
         col_lower = column.lower()
         return f"""COALESCE(
-            TRY_CAST(STRPTIME(NULLIF({col_lower}, ''), '%Y%m%d') AS DATE),
-            TRY_CAST(STRPTIME(NULLIF({col_lower}, ''), '%d%m%Y') AS DATE),
-            TRY_CAST(STRPTIME(NULLIF({col_lower}, ''), '%Y-%m-%d') AS DATE),
+            CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%Y%m%d') AS DATE),
+            CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%d%m%Y') AS DATE),
+            CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%Y-%m-%d') AS DATE),
             TRY_CAST(NULLIF({col_lower}, '') AS DATE)
         ) AS {col_lower}_parsed"""
 
@@ -119,23 +119,23 @@ class DateParsingTransform(BaseTransform):
         return f"""COALESCE(
             -- Try format 1: YYYYMMDD with date validation
             CASE
-                WHEN TRY_CAST(STRPTIME(NULLIF({col_lower}, ''), '%Y%m%d') AS DATE) IS NOT NULL
-                     AND TRY_CAST(STRPTIME(NULLIF({col_lower}, ''), '%Y%m%d') AS DATE) <= CURRENT_DATE
-                THEN TRY_CAST(STRPTIME(NULLIF({col_lower}, ''), '%Y%m%d') AS DATE)
+                WHEN CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%Y%m%d') AS DATE) IS NOT NULL
+                     AND CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%Y%m%d') AS DATE) <= CURRENT_DATE
+                THEN CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%Y%m%d') AS DATE)
                 ELSE NULL
             END,
             -- Try format 2: DDMMYYYY with date validation
             CASE
-                WHEN TRY_CAST(STRPTIME(NULLIF({col_lower}, ''), '%d%m%Y') AS DATE) IS NOT NULL
-                     AND TRY_CAST(STRPTIME(NULLIF({col_lower}, ''), '%d%m%Y') AS DATE) <= CURRENT_DATE
-                THEN TRY_CAST(STRPTIME(NULLIF({col_lower}, ''), '%d%m%Y') AS DATE)
+                WHEN CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%d%m%Y') AS DATE) IS NOT NULL
+                     AND CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%d%m%Y') AS DATE) <= CURRENT_DATE
+                THEN CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%d%m%Y') AS DATE)
                 ELSE NULL
             END,
             -- Try format 3: YYYY-MM-DD with date validation
             CASE
-                WHEN TRY_CAST(STRPTIME(NULLIF({col_lower}, ''), '%Y-%m-%d') AS DATE) IS NOT NULL
-                     AND TRY_CAST(STRPTIME(NULLIF({col_lower}, ''), '%Y-%m-%d') AS DATE) <= CURRENT_DATE
-                THEN TRY_CAST(STRPTIME(NULLIF({col_lower}, ''), '%Y-%m-%d') AS DATE)
+                WHEN CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%Y-%m-%d') AS DATE) IS NOT NULL
+                     AND CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%Y-%m-%d') AS DATE) <= CURRENT_DATE
+                THEN CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%Y-%m-%d') AS DATE)
                 ELSE NULL
             END,
             -- Fallback: direct cast with validation
@@ -159,29 +159,29 @@ class DateParsingTransform(BaseTransform):
         col_lower = column.lower()
         if self.allow_future:
             return f"""COALESCE(
-                TRY_CAST(STRPTIME(NULLIF({col_lower}, ''), '%Y%m%d') AS DATE),
-                TRY_CAST(STRPTIME(NULLIF({col_lower}, ''), '%d%m%Y') AS DATE),
-                TRY_CAST(STRPTIME(NULLIF({col_lower}, ''), '%Y-%m-%d') AS DATE),
+                CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%Y%m%d') AS DATE),
+                CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%d%m%Y') AS DATE),
+                CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%Y-%m-%d') AS DATE),
                 TRY_CAST(NULLIF({col_lower}, '') AS DATE)
             )"""
         else:
             return f"""COALESCE(
                 CASE
-                    WHEN TRY_CAST(STRPTIME(NULLIF({col_lower}, ''), '%Y%m%d') AS DATE) IS NOT NULL
-                         AND TRY_CAST(STRPTIME(NULLIF({col_lower}, ''), '%Y%m%d') AS DATE) <= CURRENT_DATE
-                    THEN TRY_CAST(STRPTIME(NULLIF({col_lower}, ''), '%Y%m%d') AS DATE)
+                    WHEN CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%Y%m%d') AS DATE) IS NOT NULL
+                         AND CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%Y%m%d') AS DATE) <= CURRENT_DATE
+                    THEN CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%Y%m%d') AS DATE)
                     ELSE NULL
                 END,
                 CASE
-                    WHEN TRY_CAST(STRPTIME(NULLIF({col_lower}, ''), '%d%m%Y') AS DATE) IS NOT NULL
-                         AND TRY_CAST(STRPTIME(NULLIF({col_lower}, ''), '%d%m%Y') AS DATE) <= CURRENT_DATE
-                    THEN TRY_CAST(STRPTIME(NULLIF({col_lower}, ''), '%d%m%Y') AS DATE)
+                    WHEN CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%d%m%Y') AS DATE) IS NOT NULL
+                         AND CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%d%m%Y') AS DATE) <= CURRENT_DATE
+                    THEN CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%d%m%Y') AS DATE)
                     ELSE NULL
                 END,
                 CASE
-                    WHEN TRY_CAST(STRPTIME(NULLIF({col_lower}, ''), '%Y-%m-%d') AS DATE) IS NOT NULL
-                         AND TRY_CAST(STRPTIME(NULLIF({col_lower}, ''), '%Y-%m-%d') AS DATE) <= CURRENT_DATE
-                    THEN TRY_CAST(STRPTIME(NULLIF({col_lower}, ''), '%Y-%m-%d') AS DATE)
+                    WHEN CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%Y-%m-%d') AS DATE) IS NOT NULL
+                         AND CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%Y-%m-%d') AS DATE) <= CURRENT_DATE
+                    THEN CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%Y-%m-%d') AS DATE)
                     ELSE NULL
                 END,
                 CASE

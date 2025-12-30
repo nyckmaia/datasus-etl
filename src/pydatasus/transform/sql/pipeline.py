@@ -14,7 +14,15 @@ from pydatasus.transform.sql.cleaning import CleaningTransform
 from pydatasus.transform.sql.dates import DateParsingTransform
 from pydatasus.transform.sql.categorical import SexoTransform, RacaCorTransform
 from pydatasus.transform.sql.types import TypeCastTransform
+from pydatasus.transform.sql.validation import CidValidationTransform
 from pydatasus.transform.sql.enrichment import IbgeEnrichmentTransform
+
+# CID (ICD-10) columns by subsystem
+SIHSUS_CID_COLUMNS = [
+    "diag_princ", "diag_secun", "cid_asso", "cid_morte", "cid_notif",
+    "diagsec1", "diagsec2", "diagsec3", "diagsec4", "diagsec5",
+    "diagsec6", "diagsec7", "diagsec8", "diagsec9"
+]
 
 
 class TransformPipeline:
@@ -24,9 +32,10 @@ class TransformPipeline:
     1. CleaningTransform - Remove invisible characters, trim whitespace
     2. DateParsingTransform - Parse date strings with format fallback
     3. TypeCastTransform - Convert strings to target types
-    4. SexoTransform - Map SEXO codes to labels
-    5. RacaCorTransform - Map RACA_COR codes to labels
-    6. IbgeEnrichmentTransform - Add geographic data via JOIN
+    4. CidValidationTransform - Validate ICD-10 (CID) code format
+    5. SexoTransform - Map SEXO codes to labels
+    6. RacaCorTransform - Map RACA_COR codes to labels
+    7. IbgeEnrichmentTransform - Add geographic data via JOIN
 
     The pipeline generates a complete SQL query with CTEs for each stage.
 
@@ -89,6 +98,7 @@ class TransformPipeline:
             # Raw mode: only cleaning
             self.date_parsing = None
             self.type_cast = None
+            self.cid_validation = None
             self.sexo = None
             self.raca_cor = None
             self.ibge = None
@@ -97,6 +107,11 @@ class TransformPipeline:
             date_columns = self._date_columns_map.get(self.subsystem, [])
             self.date_parsing = DateParsingTransform(date_columns=date_columns)
             self.type_cast = TypeCastTransform(self.schema)
+
+            # CID validation for SIHSUS subsystem
+            cid_columns = SIHSUS_CID_COLUMNS if self.subsystem == "sihsus" else []
+            self.cid_validation = CidValidationTransform(cid_columns=cid_columns) if cid_columns else None
+
             self.sexo = SexoTransform()
             self.raca_cor = RacaCorTransform()
 
@@ -115,6 +130,8 @@ class TransformPipeline:
                 result.append(self.date_parsing)
             if self.type_cast:
                 result.append(self.type_cast)
+            if self.cid_validation:
+                result.append(self.cid_validation)
             if self.sexo:
                 result.append(self.sexo)
             if self.raca_cor:
@@ -202,6 +219,8 @@ class TransformPipeline:
                 typed.append(f"{self.sexo.get_sql_expression(col_lower)} AS {col_lower}")
             elif col_lower == "raca_cor" and self.raca_cor:
                 typed.append(f"{self.raca_cor.get_sql_expression(col_lower)} AS {col_lower}")
+            elif self.cid_validation and self.cid_validation.applies_to(col_lower):
+                typed.append(f"{self.cid_validation.get_sql_expression(col_lower)} AS {col_lower}")
             elif col_lower in date_column_mapping:
                 # Use parsed date version
                 parsed_col = date_column_mapping[col_lower]

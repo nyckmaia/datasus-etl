@@ -31,7 +31,8 @@
       "Bash(git restore:*)",
       "Bash(for branch in feature/modular-transformations feature/raw-export feature/csv-export feature/named-exports fix/pypi-metadata)",
       "Bash(do echo -e \"\\\\n=== $branch ===\")",
-      "Bash(done)"
+      "Bash(done)",
+      "Bash(python3:*)"
     ]
   }
 }
