@@ -78,6 +78,9 @@ docs = [
     "mkdocs-material>=9.5",
     "mkdocstrings[python]>=0.24",
 ]
+viz = [
+    "plotly>=5.18.0",  # Interactive charts for web UI
+]
 
 [project.scripts]
 datasus = "pydatasus.cli:app"
