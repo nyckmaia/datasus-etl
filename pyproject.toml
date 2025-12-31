@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "datasus-etl"
 version = "0.1.0"
-description = "Pipeline profissional para dados do DATASUS (Sistema de Informações Hospitalares - SIHSUS)"
+description = "Pipeline profissional para dados do DATASUS: extração, transformação e carga em formatos otimizados."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"

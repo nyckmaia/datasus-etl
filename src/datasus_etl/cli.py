@@ -12,6 +12,7 @@ import shutil
 from pathlib import Path
 from typing import Optional
 
+import duckdb
 import typer
 from rich.console import Console
 from rich.logging import RichHandler
@@ -1043,6 +1044,387 @@ def ui(
         "--server.headless", "false",
     ])
 
+
+def _check_duckdb_cli() -> Optional[str]:
+    """Check if DuckDB CLI is installed and return its path.
+
+    Returns:
+        Path to duckdb CLI executable, or None if not found
+    """
+    duckdb_path = shutil.which("duckdb")
+    return duckdb_path
+
+
+def _run_duckdb_cli(
+    data_dir: Path,
+    subsystems: list[str],
+    console_obj: Console,
+) -> None:
+    """Run native DuckDB CLI with pre-configured VIEWs.
+
+    Creates a temporary .duckdb file with VIEWs and opens the CLI.
+
+    Args:
+        data_dir: Base data directory
+        subsystems: List of subsystem names to create VIEWs for
+        console_obj: Rich console for output
+    """
+    import subprocess
+    import tempfile
+
+    # Create temporary database file path (don't create the file yet)
+    tmp_dir = tempfile.gettempdir()
+    tmp_db_path = Path(tmp_dir) / f"datasus_tmp_{id(subsystems)}.duckdb"
+
+    # Remove if exists from previous run
+    if tmp_db_path.exists():
+        tmp_db_path.unlink()
+
+    try:
+        # Create database and register VIEWs
+        conn = duckdb.connect(str(tmp_db_path))
+
+        views_created = []
+        for subsystem in subsystems:
+            parquet_path = data_dir / subsystem / "parquet"
+            parquet_pattern = str(parquet_path / "**/*.parquet")
+
+            try:
+                conn.execute(f"""
+                    CREATE OR REPLACE VIEW {subsystem} AS
+                    SELECT * FROM read_parquet(
+                        '{parquet_pattern}',
+                        hive_partitioning=true,
+                        union_by_name=true
+                    )
+                """)
+                views_created.append(subsystem)
+            except Exception as e:
+                console_obj.print(f"[yellow]Aviso: Falha ao criar VIEW '{subsystem}': {e}[/yellow]")
+
+        conn.close()
+
+        if not views_created:
+            console_obj.print("[red]Erro: Nenhuma VIEW criada com sucesso.[/red]")
+            return
+
+        # Show info before launching CLI
+        console_obj.print()
+        console_obj.print("[bold cyan]DuckDB CLI[/bold cyan]")
+        console_obj.print(f"VIEWs disponiveis: [green]{', '.join(views_created)}[/green]")
+        console_obj.print("[dim]Digite .help para ver comandos do DuckDB CLI[/dim]")
+        console_obj.print("[dim]Digite .exit ou Ctrl+D para sair[/dim]")
+        console_obj.print()
+
+        # Launch DuckDB CLI
+        subprocess.run(["duckdb", str(tmp_db_path)])
+
+    finally:
+        # Cleanup temporary files
+        try:
+            tmp_db_path.unlink()
+        except Exception:
+            pass
+        # Also remove .wal file if exists
+        wal_path = tmp_db_path.with_suffix(".duckdb.wal")
+        try:
+            if wal_path.exists():
+                wal_path.unlink()
+        except Exception:
+            pass
+
+
+def _discover_subsystems(data_dir: Path) -> list[str]:
+    """Discover available subsystems by scanning for parquet directories.
+
+    Args:
+        data_dir: Base data directory
+
+    Returns:
+        List of subsystem names that have parquet files
+    """
+    subsystems = []
+    if not data_dir.exists():
+        return subsystems
+
+    for subdir in data_dir.iterdir():
+        if subdir.is_dir():
+            parquet_dir = subdir / "parquet"
+            if parquet_dir.exists():
+                parquet_files = list(parquet_dir.rglob("*.parquet"))
+                if parquet_files:
+                    subsystems.append(subdir.name)
+
+    return sorted(subsystems)
+
+
+def _show_db_help(console_obj: Console, max_rows: int) -> None:
+    """Show help for interactive shell commands."""
+    help_table = Table(title="Comandos Disponiveis", border_style="cyan")
+    help_table.add_column("Comando", style="cyan")
+    help_table.add_column("Descricao", style="white")
+
+    help_table.add_row(".tables", "Lista VIEWs disponiveis")
+    help_table.add_row(".schema <view>", "Mostra schema da VIEW")
+    help_table.add_row(".count <view>", "Conta registros na VIEW")
+    help_table.add_row(".sample <view> [n]", "Mostra N registros aleatorios (padrao: 10)")
+    help_table.add_row(".csv <arquivo>", "Exporta ultimo resultado para CSV")
+    help_table.add_row(".maxrows [n]", f"Define max linhas exibidas (atual: {max_rows})")
+    help_table.add_row(".exit / .quit", "Sai do shell")
+    help_table.add_row("Ctrl+C", "Cancela query atual")
+    help_table.add_row("Ctrl+D", "Sai do shell")
+
+    console_obj.print(help_table)
+
+
+def _run_interactive_shell(
+    conn: duckdb.DuckDBPyConnection,
+    views: list[str],
+    console_obj: Console,
+) -> None:
+    """Run interactive DuckDB shell.
+
+    Args:
+        conn: DuckDB connection with registered views
+        views: List of available view names
+        console_obj: Rich console for output
+    """
+    import polars as pl
+
+    last_result: Optional[pl.DataFrame] = None
+    max_rows: int = 50  # Default max rows to display
+
+    # Configure polars display settings
+    pl.Config.set_tbl_rows(max_rows)
+
+    console_obj.print()
+    console_obj.print("[bold cyan]DataSUS DuckDB Shell[/bold cyan] [dim](REPL Python)[/dim]")
+    console_obj.print(f"VIEWs disponiveis: [green]{', '.join(views)}[/green]")
+    console_obj.print("[dim]Digite .help para ver comandos disponiveis[/dim]")
+    console_obj.print()
+    console_obj.print(
+        "[yellow]Dica:[/yellow] Para melhor performance e visualizacao, instale o DuckDB CLI:\n"
+        "      [link=https://duckdb.org/docs/installation/]https://duckdb.org/docs/installation/[/link]"
+    )
+    console_obj.print()
+
+    while True:
+        try:
+            query = input("datasus> ").strip()
+            if not query:
+                continue
+
+            # Special commands
+            query_lower = query.lower()
+            if query_lower in (".exit", ".quit", "exit", "quit"):
+                console_obj.print("[dim]Ate logo![/dim]")
+                break
+
+            if query_lower == ".help":
+                _show_db_help(console_obj, max_rows)
+                continue
+
+            if query_lower == ".tables":
+                console_obj.print(f"VIEWs: [green]{', '.join(views)}[/green]")
+                continue
+
+            if query_lower.startswith(".schema"):
+                parts = query.split()
+                view = parts[1] if len(parts) > 1 else (views[0] if views else None)
+                if view is None:
+                    console_obj.print("[yellow]Nenhuma VIEW disponivel[/yellow]")
+                    continue
+                if view not in views:
+                    console_obj.print(f"[red]VIEW '{view}' nao encontrada. Disponiveis: {', '.join(views)}[/red]")
+                    continue
+                result = conn.execute(f"DESCRIBE {view}").pl()
+                console_obj.print(result)
+                continue
+
+            if query_lower.startswith(".count"):
+                parts = query.split()
+                view = parts[1] if len(parts) > 1 else (views[0] if views else None)
+                if view is None:
+                    console_obj.print("[yellow]Nenhuma VIEW disponivel[/yellow]")
+                    continue
+                if view not in views:
+                    console_obj.print(f"[red]VIEW '{view}' nao encontrada. Disponiveis: {', '.join(views)}[/red]")
+                    continue
+                result = conn.execute(f"SELECT COUNT(*) as total FROM {view}").pl()
+                total = result["total"][0]
+                console_obj.print(f"Total de registros em [cyan]{view}[/cyan]: [bold]{total:,}[/bold]")
+                continue
+
+            if query_lower.startswith(".sample"):
+                parts = query.split()
+                view = parts[1] if len(parts) > 1 else (views[0] if views else None)
+                n = int(parts[2]) if len(parts) > 2 else 10
+                if view is None:
+                    console_obj.print("[yellow]Nenhuma VIEW disponivel[/yellow]")
+                    continue
+                if view not in views:
+                    console_obj.print(f"[red]VIEW '{view}' nao encontrada. Disponiveis: {', '.join(views)}[/red]")
+                    continue
+                result = conn.execute(f"SELECT * FROM {view} USING SAMPLE {n} ROWS").pl()
+                last_result = result
+                console_obj.print(result)
+                continue
+
+            if query_lower.startswith(".csv"):
+                if last_result is None:
+                    console_obj.print("[yellow]Nenhuma query executada ainda[/yellow]")
+                    continue
+                parts = query.split()
+                filename = parts[1] if len(parts) > 1 else "output.csv"
+                last_result.write_csv(filename)
+                console_obj.print(f"[green]Exportado para {filename} ({len(last_result)} linhas)[/green]")
+                continue
+
+            if query_lower.startswith(".maxrows"):
+                parts = query.split()
+                if len(parts) > 1:
+                    try:
+                        new_max = int(parts[1])
+                        if new_max < 1:
+                            console_obj.print("[red]Erro: maxrows deve ser >= 1[/red]")
+                            continue
+                        max_rows = new_max
+                        pl.Config.set_tbl_rows(max_rows)
+                        console_obj.print(f"[green]Max linhas alterado para {max_rows}[/green]")
+                    except ValueError:
+                        console_obj.print(f"[red]Erro: valor invalido '{parts[1]}'. Use um numero inteiro.[/red]")
+                else:
+                    console_obj.print(f"Max linhas atual: [cyan]{max_rows}[/cyan]")
+                continue
+
+            # Regular SQL query
+            result = conn.execute(query).pl()
+            last_result = result
+            console_obj.print(result)
+
+        except KeyboardInterrupt:
+            console_obj.print("\n[dim]Use .exit para sair[/dim]")
+        except EOFError:
+            console_obj.print("\n[dim]Ate logo![/dim]")
+            break
+        except Exception as e:
+            console_obj.print(f"[red]Erro: {e}[/red]")
+
+
+@app.command()
+def db(
+    data_dir: Path = typer.Option(
+        None,
+        "--data-dir",
+        "-d",
+        help="Diretorio base dos dados (contendo subpastas como sihsus/, sim/, etc)",
+    ),
+    source: Optional[str] = typer.Option(
+        None,
+        "--source",
+        "-s",
+        help="Filtrar por subsistema especifico (sihsus, sim, siasus)",
+    ),
+) -> None:
+    """Abre shell interativo DuckDB com VIEWs para dados Parquet.
+
+    Detecta automaticamente subpastas com dados Parquet e cria VIEWs
+    correspondentes para consultas SQL.
+
+    [bold]Exemplos de uso:[/bold]
+
+        # Detecta todos os subsistemas e cria VIEWs
+        datasus db --data-dir ./data/datasus
+
+        # Cria apenas VIEW para sihsus
+        datasus db --data-dir ./data/datasus --source sihsus
+
+    [bold]Comandos do shell:[/bold]
+
+        .tables          Lista VIEWs disponiveis
+        .schema <view>   Mostra colunas da VIEW
+        .count <view>    Conta registros
+        .sample <view>   Mostra amostra de 10 registros
+        .csv <arquivo>   Exporta ultimo resultado para CSV
+        .maxrows [n]     Define max linhas exibidas (padrao: 50)
+        .exit            Sai do shell
+    """
+    # Validate required parameters
+    if data_dir is None:
+        console.print("[red bold]Erro: Parametro obrigatorio faltando:[/red bold]")
+        console.print("  [red]-[/red] --data-dir (-d)")
+        console.print()
+        console.print("[bold]Exemplo de uso:[/bold]")
+        console.print("  datasus db --data-dir ./data/datasus")
+        console.print()
+        console.print("[dim]Use 'datasus db --help' para ver todas as opcoes.[/dim]")
+        raise typer.Exit(1)
+
+    if not data_dir.exists():
+        console.print(f"[red]Erro: Diretorio nao encontrado: {data_dir}[/red]")
+        raise typer.Exit(1)
+
+    # Discover available subsystems
+    if source:
+        # User specified a specific source
+        source_lower = source.lower()
+        parquet_dir = data_dir / source_lower / "parquet"
+        if not parquet_dir.exists():
+            console.print(f"[red]Erro: Diretorio Parquet nao encontrado: {parquet_dir}[/red]")
+            console.print(f"[dim]Verifique se o subsistema '{source_lower}' foi processado.[/dim]")
+            raise typer.Exit(1)
+        parquet_files = list(parquet_dir.rglob("*.parquet"))
+        if not parquet_files:
+            console.print(f"[red]Erro: Nenhum arquivo Parquet em: {parquet_dir}[/red]")
+            raise typer.Exit(1)
+        subsystems = [source_lower]
+    else:
+        # Auto-discover subsystems
+        subsystems = _discover_subsystems(data_dir)
+        if not subsystems:
+            console.print(f"[yellow]Nenhum dado Parquet encontrado em: {data_dir}[/yellow]")
+            console.print("[dim]Execute 'datasus pipeline' primeiro para criar os dados.[/dim]")
+            raise typer.Exit(1)
+
+    # Check if DuckDB CLI is available
+    duckdb_cli_path = _check_duckdb_cli()
+
+    if duckdb_cli_path:
+        # Use native DuckDB CLI for better performance
+        _run_duckdb_cli(data_dir, subsystems, console)
+    else:
+        # Fallback to Python REPL
+        conn = duckdb.connect(":memory:")
+
+        # Register VIEWs for each subsystem
+        views_created = []
+        for subsystem in subsystems:
+            parquet_path = data_dir / subsystem / "parquet"
+            parquet_pattern = str(parquet_path / "**/*.parquet")
+
+            try:
+                conn.execute(f"""
+                    CREATE OR REPLACE VIEW {subsystem} AS
+                    SELECT * FROM read_parquet(
+                        '{parquet_pattern}',
+                        hive_partitioning=true,
+                        union_by_name=true
+                    )
+                """)
+                views_created.append(subsystem)
+            except Exception as e:
+                console.print(f"[yellow]Aviso: Falha ao criar VIEW '{subsystem}': {e}[/yellow]")
+
+        if not views_created:
+            console.print("[red]Erro: Nenhuma VIEW criada com sucesso.[/red]")
+            conn.close()
+            raise typer.Exit(1)
+
+        # Run interactive shell
+        try:
+            _run_interactive_shell(conn, views_created, console)
+        finally:
+            conn.close()
 
 
 if __name__ == "__main__":

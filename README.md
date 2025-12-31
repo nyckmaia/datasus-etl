@@ -1,4 +1,4 @@
-# PyDataSUS
+# datasus-etl
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
@@ -21,20 +21,20 @@ Pipeline profissional para download, processamento e consulta de dados do **DATA
 ## Instalacao
 
 ```bash
-pip install pydatasus
+pip install datasus-etl
 ```
 
 Ou para desenvolvimento:
 
 ```bash
-git clone https://github.com/nyckmaia/pydatasus.git
-cd pydatasus
+git clone https://github.com/nyckmaia/datasus-etl.git
+cd datasus-etl
 pip install -e ".[dev]"
 ```
 
 ## Uso
 
-O PyDataSUS oferece 3 formas de uso:
+O datasus-etl oferece 3 formas de uso:
 
 ### 1. CLI (Command Line Interface)
 
@@ -68,8 +68,8 @@ datasus ui --port 8080
 ### 2. Python API
 
 ```python
-from pydatasus.config import PipelineConfig
-from pydatasus.pipeline.sihsus_pipeline import SihsusPipeline
+from datasus-etl.config import PipelineConfig
+from datasus-etl.pipeline.sihsus_pipeline import SihsusPipeline
 
 # Criar configuracao usando factory method
 config = PipelineConfig.create(
@@ -91,7 +91,7 @@ print(f"Linhas exportadas: {result.get_metadata('total_rows_exported'):,}")
 **Consultar dados com SQL:**
 
 ```python
-from pydatasus.storage.parquet_query_engine import ParquetQueryEngine
+from datasus-etl.storage.parquet_query_engine import ParquetQueryEngine
 
 # Conectar ao banco Parquet
 engine = ParquetQueryEngine("./data/datasus/sihsus/parquet", view_name="sihsus")
@@ -222,7 +222,7 @@ config = PipelineConfig.create(
 pytest
 
 # Com coverage
-pytest --cov=pydatasus --cov-report=html
+pytest --cov=datasus-etl --cov-report=html
 
 # Testes especificos
 pytest tests/unit/test_config.py
