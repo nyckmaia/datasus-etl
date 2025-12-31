@@ -3,8 +3,8 @@
 import polars as pl
 import pytest
 
-from pydatasus.config import StorageConfig
-from pydatasus.storage.parquet_writer import ParquetWriter
+from datasus_etl.config import StorageConfig
+from datasus_etl.storage.parquet_writer import ParquetWriter
 
 
 class TestParquetWriter:

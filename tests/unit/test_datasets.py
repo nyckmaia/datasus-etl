@@ -2,7 +2,7 @@
 
 import pytest
 
-from pydatasus.datasets import DatasetConfig, DatasetRegistry, SIHSUSConfig, SIMConfig
+from datasus_etl.datasets import DatasetConfig, DatasetRegistry, SIHSUSConfig, SIMConfig
 
 
 class TestDatasetRegistry:

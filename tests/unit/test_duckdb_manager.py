@@ -3,9 +3,9 @@
 import polars as pl
 import pytest
 
-from pydatasus.config import DatabaseConfig
-from pydatasus.exceptions import PyInmetError
-from pydatasus.storage.duckdb_manager import DuckDBManager
+from datasus_etl.config import DatabaseConfig
+from datasus_etl.exceptions import PyInmetError
+from datasus_etl.storage.duckdb_manager import DuckDBManager
 
 
 class TestDuckDBManager:

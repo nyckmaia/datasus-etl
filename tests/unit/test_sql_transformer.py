@@ -3,7 +3,7 @@
 import duckdb
 import pytest
 
-from pydatasus.storage.sql_transformer import SQLTransformer
+from datasus_etl.storage.sql_transformer import SQLTransformer
 
 
 @pytest.fixture

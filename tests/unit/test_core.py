@@ -2,11 +2,11 @@
 
 import pytest
 
-from pydatasus.config import PipelineConfig
-from pydatasus.core.context import PipelineContext
-from pydatasus.core.pipeline import Pipeline
-from pydatasus.core.stage import Stage
-from pydatasus.exceptions import PyInmetError
+from datasus_etl.config import PipelineConfig
+from datasus_etl.core.context import PipelineContext
+from datasus_etl.core.pipeline import Pipeline
+from datasus_etl.core.stage import Stage
+from datasus_etl.exceptions import PyInmetError
 
 
 class TestPipelineContext:
@@ -176,7 +176,7 @@ class TestPipeline:
 
     def test_pipeline_initialization(self, temp_dir):
         """Test pipeline initialization."""
-        from pydatasus.config import (
+        from datasus_etl.config import (
             ConversionConfig,
             DownloadConfig,
             ProcessingConfig,
@@ -203,7 +203,7 @@ class TestPipeline:
 
     def test_pipeline_add_stage(self, temp_dir):
         """Test adding stages to pipeline."""
-        from pydatasus.config import (
+        from datasus_etl.config import (
             ConversionConfig,
             DownloadConfig,
             ProcessingConfig,
@@ -232,7 +232,7 @@ class TestPipeline:
 
     def test_pipeline_run_success(self, temp_dir):
         """Test successful pipeline execution."""
-        from pydatasus.config import (
+        from datasus_etl.config import (
             ConversionConfig,
             DownloadConfig,
             ProcessingConfig,
@@ -262,7 +262,7 @@ class TestPipeline:
 
     def test_pipeline_run_failure(self, temp_dir):
         """Test pipeline execution with failure."""
-        from pydatasus.config import (
+        from datasus_etl.config import (
             ConversionConfig,
             DownloadConfig,
             ProcessingConfig,

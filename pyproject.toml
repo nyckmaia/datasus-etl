@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "pydatasus"
+name = "datasus-etl"
 version = "0.1.0"
 description = "Pipeline profissional para dados do DATASUS (Sistema de Informações Hospitalares - SIHSUS)"
 readme = "README.md"
@@ -82,20 +82,20 @@ docs = [
 ]
 
 [project.scripts]
-datasus = "pydatasus.cli:app"
-pydatasus = "pydatasus.cli:app"  # Alias for backward compatibility
+datasus = "datasus_etl.cli:app"
+pydatasus = "datasus_etl.cli:app"  # Alias for backward compatibility
 
 [project.urls]
-Homepage = "https://github.com/user/pydatasus"
-Documentation = "https://pydatasus.readthedocs.io"
-Repository = "https://github.com/user/pydatasus"
-Issues = "https://github.com/user/pydatasus/issues"
+Homepage = "https://github.com/user/datasus-etl"
+Documentation = "https://datasus-etl.readthedocs.io"
+Repository = "https://github.com/user/datasus-etl"
+Issues = "https://github.com/user/datasus-etl/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/pydatasus"]
+packages = ["src/datasus_etl"]
 
 [tool.hatch.build.targets.wheel.sources]
-"src/pydatasus/_data" = "pydatasus/_data"
+"src/datasus_etl/_data" = "datasus_etl/_data"
 
 [tool.ruff]
 line-length = 100
@@ -113,7 +113,7 @@ ignore = ["E501"]
 "tests/**/*.py" = ["S101", "PLR2004"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["pydatasus"]
+known-first-party = ["datasus_etl"]
 
 [tool.mypy]
 python_version = "3.11"
@@ -153,7 +153,7 @@ pythonpath = ["src"]
 addopts = [
     "--strict-markers",
     "--strict-config",
-    "--cov=pydatasus",
+    "--cov=datasus_etl",
     "--cov-report=term-missing",
 ]
 markers = [

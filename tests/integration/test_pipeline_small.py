@@ -9,8 +9,8 @@ Run with: pytest tests/integration/ -v --slow
 import pytest
 from pathlib import Path
 
-from pydatasus.config import PipelineConfig
-from pydatasus.storage.parquet_query_engine import ParquetQueryEngine
+from datasus_etl.config import PipelineConfig
+from datasus_etl.storage.parquet_query_engine import ParquetQueryEngine
 
 
 # Mark all tests in this module as slow (require network)
@@ -158,7 +158,7 @@ class TestIncrementalUpdater:
 
     def test_get_processed_files_no_data(self, temp_dir):
         """Test with no existing Parquet data."""
-        from pydatasus.storage.incremental_updater import IncrementalUpdater
+        from datasus_etl.storage.incremental_updater import IncrementalUpdater
 
         config = PipelineConfig.create(
             base_dir=temp_dir,
@@ -174,7 +174,7 @@ class TestIncrementalUpdater:
 
     def test_get_update_summary_no_data(self, temp_dir):
         """Test update summary with no existing data."""
-        from pydatasus.storage.incremental_updater import IncrementalUpdater
+        from datasus_etl.storage.incremental_updater import IncrementalUpdater
 
         config = PipelineConfig.create(
             base_dir=temp_dir,

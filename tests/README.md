@@ -1,6 +1,6 @@
-# PyDataSUS Tests
+# DataSUS ETL Tests
 
-Comprehensive test suite for PyDataSUS using pytest.
+Comprehensive test suite for DataSUS ETL using pytest.
 
 ## 📁 Structure
 
@@ -21,14 +21,14 @@ tests/
 ### Run all tests
 
 ```bash
-cd pydatasus
+cd datasus-etl
 pytest
 ```
 
 ### Run with coverage
 
 ```bash
-pytest --cov=src/pydatasus --cov-report=html
+pytest --cov=src/datasus_etl --cov-report=html
 ```
 
 ### Run specific test file
@@ -131,7 +131,7 @@ Tests are designed to run in CI/CD pipelines:
 - name: Run tests
   run: |
     pip install -e ".[dev]"
-    pytest --cov=src/pydatasus
+    pytest --cov=src/datasus_etl
 ```
 
 ## 📈 Coverage Goals

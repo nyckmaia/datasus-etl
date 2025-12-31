@@ -1,0 +1,346 @@
+"""Query engine for Parquet data using DuckDB.
+
+Provides a simple interface for users to query partitioned Parquet files
+using SQL, with results returned as Polars DataFrames.
+"""
+
+import logging
+from pathlib import Path
+from typing import Optional, Union
+
+import duckdb
+import polars as pl
+
+from datasus_etl.exceptions import PyInmetError
+
+
+class ParquetQueryEngine:
+    """Query engine for Parquet data using DuckDB.
+
+    Creates an in-memory DuckDB database with a VIEW pointing to Parquet files.
+    Users can execute SQL queries and get results as Polars DataFrames.
+
+    The engine uses DuckDB's zero-copy Parquet reading for maximum performance.
+    Queries benefit from partition pruning and columnar execution.
+
+    Example:
+        >>> engine = ParquetQueryEngine("data/parquet")
+        >>> df = engine.sql('''
+        ...     SELECT ano_inter, COUNT(*) as total
+        ...     FROM sihsus
+        ...     WHERE uf_zi = 'SP'
+        ...     GROUP BY ano_inter
+        ...     ORDER BY ano_inter
+        ... ''')
+        >>> print(df)
+        shape: (10, 2)
+        ┌───────────┬───────┐
+        │ ano_inter ┆ total │
+        │ ---       ┆ ---   │
+        │ i64       ┆ i64   │
+        ╞═══════════╪═══════╡
+        │ 2015      ┆ 45678 │
+        │ 2016      ┆ 47234 │
+        └───────────┴───────┘
+
+    Attributes:
+        parquet_dir: Path to directory with partitioned Parquet files
+    """
+
+    def __init__(
+        self,
+        parquet_dir: Union[str, Path],
+        view_name: str = "sihsus",
+        union_by_name: bool = True,
+        include_filename: bool = False,
+    ) -> None:
+        """Initialize query engine.
+
+        Args:
+            parquet_dir: Path to directory with partitioned Parquet files
+            view_name: Name for the DuckDB view (default: "sihsus")
+            union_by_name: Combine files with different schemas by column name (default: True)
+            include_filename: Add 'filename' column with source file path (default: False)
+
+        Raises:
+            ValueError: If parquet_dir doesn't exist
+            PyInmetError: If VIEW creation fails
+        """
+        self.parquet_dir = Path(parquet_dir)
+        self._conn: Optional[duckdb.DuckDBPyConnection] = None
+        self._view_name = view_name
+        self._union_by_name = union_by_name
+        self._include_filename = include_filename
+        self.logger = logging.getLogger(__name__)
+
+        if not self.parquet_dir.exists():
+            raise ValueError(f"Parquet directory not found: {self.parquet_dir}")
+
+        # Create in-memory DuckDB connection
+        self.logger.info("Initializing DuckDB connection")
+        self._conn = duckdb.connect(":memory:")
+
+        # Register VIEW pointing to Parquet files
+        self._register_parquet_view()
+
+    def _register_parquet_view(self) -> None:
+        """Register Parquet files as DuckDB VIEW with schema handling.
+
+        Creates a VIEW that reads all Parquet files in the directory tree.
+        The VIEW is lazy and won't load data until queried.
+
+        Uses:
+        - hive_partitioning=true to leverage partition columns for pruning
+        - union_by_name to handle files with different column sets
+        - filename to track data provenance (optional)
+
+        Raises:
+            PyInmetError: If VIEW creation fails
+        """
+        try:
+            # Pattern to match all parquet files recursively
+            parquet_pattern = str(self.parquet_dir / "**/*.parquet")
+
+            # Create VIEW with hive partitioning and schema handling
+            self._conn.execute(
+                f"""
+                CREATE OR REPLACE VIEW {self._view_name} AS
+                SELECT * FROM read_parquet(
+                    '{parquet_pattern}',
+                    hive_partitioning=true,
+                    union_by_name={str(self._union_by_name).lower()},
+                    filename={str(self._include_filename).lower()}
+                )
+            """
+            )
+
+            self.logger.info(
+                f"Registered view '{self._view_name}' for {parquet_pattern} "
+                f"(union_by_name={self._union_by_name}, filename={self._include_filename})"
+            )
+
+        except Exception as e:
+            self.logger.error(f"Failed to register Parquet view: {e}")
+            raise PyInmetError(f"Parquet VIEW creation failed: {e}") from e
+
+    def sql(
+        self, query: str, read_mode: bool = True
+    ) -> Optional[pl.DataFrame]:
+        """Execute SQL query on Parquet data.
+
+        Args:
+            query: SQL query string (can reference the view name)
+            read_mode: If True, return results as DataFrame.
+                      If False, execute only (for DDL/DML).
+
+        Returns:
+            Polars DataFrame with query results (if read_mode=True),
+            None otherwise
+
+        Raises:
+            PyInmetError: If query execution fails
+
+        Example:
+            >>> df = engine.sql('''
+            ...     SELECT
+            ...         ano_inter,
+            ...         uf_zi,
+            ...         COUNT(*) as total_internacoes,
+            ...         AVG(val_tot) as valor_medio,
+            ...         SUM(qt_diarias) as total_diarias
+            ...     FROM sihsus
+            ...     WHERE ano_inter BETWEEN 2015 AND 2020
+            ...         AND sexo_descr = 'F'
+            ...     GROUP BY ano_inter, uf_zi
+            ...     ORDER BY ano_inter, uf_zi
+            ... ''')
+        """
+        if not self._conn:
+            raise PyInmetError("DuckDB connection not initialized")
+
+        try:
+            self.logger.debug(f"Executing query: {query[:100]}...")
+
+            if read_mode:
+                # Execute query and return as Polars DataFrame
+                result = self._conn.execute(query).pl()
+                self.logger.debug(f"Query returned {len(result)} rows")
+                return result
+            else:
+                # Execute only (for DDL/DML statements)
+                self._conn.execute(query)
+                self.logger.debug("Query executed successfully")
+                return None
+
+        except Exception as e:
+            self.logger.error(f"Query failed: {e}")
+            raise PyInmetError(f"Query execution failed: {e}") from e
+
+    def tables(self) -> list[str]:
+        """List available tables/views in the database.
+
+        Returns:
+            List of table/view names
+
+        Example:
+            >>> engine.tables()
+            ['sihsus']
+        """
+        if not self._conn:
+            raise PyInmetError("DuckDB connection not initialized")
+
+        result = self._conn.execute("SHOW TABLES").fetchall()
+        return [row[0] for row in result]
+
+    def schema(self, table_name: Optional[str] = None) -> pl.DataFrame:
+        """Get schema of table/view.
+
+        Args:
+            table_name: Table name (defaults to main view)
+
+        Returns:
+            DataFrame with column information (name, type, null, key, default, extra)
+
+        Example:
+            >>> schema = engine.schema()
+            >>> print(schema)
+            shape: (50, 6)
+            ┌─────────────┬──────────┬─────┬─────┬─────────┬───────┐
+            │ column_name ┆ type     ┆ ... │
+        """
+        if not self._conn:
+            raise PyInmetError("DuckDB connection not initialized")
+
+        table = table_name or self._view_name
+        return self._conn.execute(f"DESCRIBE {table}").pl()
+
+    def count(self) -> int:
+        """Get total row count in the main view.
+
+        Returns:
+            Total number of rows
+
+        Example:
+            >>> engine.count()
+            1234567
+        """
+        result = self.sql(f"SELECT COUNT(*) as count FROM {self._view_name}")
+        return result["count"][0]
+
+    def sample(self, n: int = 10) -> pl.DataFrame:
+        """Get random sample of rows.
+
+        Args:
+            n: Number of rows to sample (default: 10)
+
+        Returns:
+            DataFrame with sampled rows
+
+        Example:
+            >>> sample = engine.sample(5)
+        """
+        return self.sql(
+            f"SELECT * FROM {self._view_name} USING SAMPLE {n} ROWS"
+        )
+
+    def close(self) -> None:
+        """Close DuckDB connection.
+
+        Called automatically when object is deleted, but can be called
+        explicitly to free resources earlier.
+        """
+        if self._conn:
+            self._conn.close()
+            self._conn = None
+            self.logger.info("DuckDB connection closed")
+
+    def __enter__(self) -> "ParquetQueryEngine":
+        """Context manager entry."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Context manager exit."""
+        self.close()
+
+    def __repr__(self) -> str:
+        """String representation."""
+        status = "connected" if self._conn else "closed"
+        return f"ParquetQueryEngine(dir={self.parquet_dir}, view={self._view_name}, status={status})"
+
+    def __del__(self) -> None:
+        """Cleanup connection on deletion."""
+        self.close()
+
+    def get_processed_source_files(self) -> set[str]:
+        """Get set of source files already processed in this Parquet dataset.
+
+        This method queries the 'source_file' column to find which DBC files
+        have already been processed. Useful for incremental updates.
+
+        Returns:
+            Set of source file names (e.g., {"RDSP2301.dbc", "RDRJ2301.dbc"})
+
+        Raises:
+            PyInmetError: If query fails or source_file column doesn't exist
+        """
+        if not self._conn:
+            raise PyInmetError("DuckDB connection not initialized")
+
+        try:
+            # Check if source_file column exists
+            schema_df = self.schema()
+            column_names = schema_df["column_name"].to_list()
+
+            if "source_file" not in column_names:
+                self.logger.warning(
+                    "Column 'source_file' not found in Parquet schema. "
+                    "Incremental update not available for this dataset."
+                )
+                return set()
+
+            # Query distinct source files
+            result = self.sql(
+                f"SELECT DISTINCT source_file FROM {self._view_name} WHERE source_file IS NOT NULL"
+            )
+
+            if result is None or len(result) == 0:
+                return set()
+
+            return set(result["source_file"].to_list())
+
+        except Exception as e:
+            self.logger.error(f"Failed to get processed source files: {e}")
+            raise PyInmetError(f"Failed to query source files: {e}") from e
+
+    def get_file_row_counts(self) -> dict[str, int]:
+        """Get row count per source file.
+
+        Returns:
+            Dictionary mapping source_file -> row count
+
+        Example:
+            >>> engine.get_file_row_counts()
+            {'RDSP2301.dbc': 12345, 'RDRJ2301.dbc': 67890}
+        """
+        if not self._conn:
+            raise PyInmetError("DuckDB connection not initialized")
+
+        try:
+            result = self.sql(
+                f"""
+                SELECT source_file, COUNT(*) as row_count
+                FROM {self._view_name}
+                WHERE source_file IS NOT NULL
+                GROUP BY source_file
+                ORDER BY source_file
+                """
+            )
+
+            if result is None or len(result) == 0:
+                return {}
+
+            return dict(zip(result["source_file"].to_list(), result["row_count"].to_list()))
+
+        except Exception as e:
+            self.logger.error(f"Failed to get file row counts: {e}")
+            return {}

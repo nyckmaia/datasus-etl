@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from pydatasus.config import (
+from datasus_etl.config import (
     ConversionConfig,
     DatabaseConfig,
     DownloadConfig,

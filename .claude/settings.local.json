@@ -32,7 +32,10 @@
       "Bash(for branch in feature/modular-transformations feature/raw-export feature/csv-export feature/named-exports fix/pypi-metadata)",
       "Bash(do echo -e \"\\\\n=== $branch ===\")",
       "Bash(done)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(git mv:*)",
+      "Bash(datasus:*)",
+      "Bash(pip uninstall:*)"
     ]
   }
 }
