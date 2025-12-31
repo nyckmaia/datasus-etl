@@ -634,16 +634,82 @@ LIMIT 10"""
 
         # Data dictionary as fixed table at the bottom
         st.markdown("---")
-        st.subheader("📖 Dicionario de Dados")
-        st.markdown(f"Descricao das colunas do subsistema **{subsystem.upper()}**:")
+        st.subheader("📖 Dicionário de Dados")
+        st.markdown(f"Descrição das colunas do subsistema **{subsystem.upper()}**:")
 
-        descriptions = get_column_descriptions(subsystem)
-        dict_data = [
-            {"Coluna": col, "Descricao": desc}
-            for col, desc in sorted(descriptions.items())
-        ]
-        df_dict = pd.DataFrame(dict_data)
-        st.dataframe(df_dict, width='stretch', height=400)
+        try:
+            descriptions = get_column_descriptions(subsystem)
+
+            # Get type schema
+            if subsystem == "sim":
+                from datasus_etl.datasets.sim.schema import SIM_PARQUET_SCHEMA as TYPE_SCHEMA
+            else:
+                from datasus_etl.constants.sihsus_schema import SIHSUS_PARQUET_SCHEMA as TYPE_SCHEMA
+
+            # Get actual columns from the engine schema
+            schema_result = engine.schema()
+            if schema_result is not None:
+                actual_cols = schema_result.to_pandas()["column_name"].tolist()
+
+                # Calculate null percentages for each column
+                null_stats = {}
+                total_rows = engine.count()
+
+                if total_rows > 0:
+                    # Build query for null counts (batch to avoid timeout)
+                    cols_to_check = actual_cols[:30]  # Limit to first 30 columns
+                    null_parts = []
+                    for col in cols_to_check:
+                        null_parts.append(
+                            f"SUM(CASE WHEN {col} IS NULL THEN 1 ELSE 0 END) as {col}_nulls"
+                        )
+
+                    if null_parts:
+                        null_query = f"SELECT {', '.join(null_parts)} FROM {subsystem}"
+                        null_result = engine.sql(null_query)
+
+                        if null_result is not None:
+                            null_row = null_result.to_pandas().iloc[0]
+                            for col in cols_to_check:
+                                null_count = null_row.get(f"{col}_nulls", 0) or 0
+                                null_stats[col.lower()] = round(100.0 * null_count / total_rows, 1)
+
+                # Build dictionary data with types and null percentages
+                dict_data = []
+                for col in actual_cols:
+                    col_lower = col.lower()
+                    dict_data.append({
+                        "Coluna": col,
+                        "Descrição": descriptions.get(col_lower, ""),
+                        "Tipo": TYPE_SCHEMA.get(col_lower, "VARCHAR"),
+                        "% Nulos": f"{null_stats.get(col_lower, 0):.1f}%" if col_lower in null_stats else "-"
+                    })
+
+                df_dict = pd.DataFrame(dict_data)
+                st.dataframe(df_dict, width='stretch', height=500)
+
+                if len(actual_cols) > 30:
+                    st.info(f"% Nulos calculado para as primeiras 30 colunas de {len(actual_cols)}.")
+
+            else:
+                # Fallback to simple dictionary
+                dict_data = [
+                    {"Coluna": col, "Descrição": desc, "Tipo": TYPE_SCHEMA.get(col, "VARCHAR"), "% Nulos": "-"}
+                    for col, desc in sorted(descriptions.items())
+                ]
+                df_dict = pd.DataFrame(dict_data)
+                st.dataframe(df_dict, width='stretch', height=500)
+
+        except Exception as e:
+            st.warning(f"Erro ao carregar dicionário: {e}")
+            # Fallback to simple dictionary
+            descriptions = get_column_descriptions(subsystem)
+            dict_data = [
+                {"Coluna": col, "Descrição": desc}
+                for col, desc in sorted(descriptions.items())
+            ]
+            df_dict = pd.DataFrame(dict_data)
+            st.dataframe(df_dict, width='stretch', height=400)
 
         engine.close()
 
