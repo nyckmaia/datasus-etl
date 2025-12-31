@@ -45,10 +45,14 @@ class DownloadConfig(BaseModel):
 
 
 class ConversionConfig(BaseModel):
-    """Configuration for file conversions (DBC→DBF)."""
+    """Configuration for file conversions (DBC→DBF or DBC→CSV)."""
 
-    dbc_dir: Path = Field(description="Directory with DBC files")
-    dbf_dir: Path = Field(description="Directory for DBF files")
+    dbc_dir: Path = Field(description="Directory with DBC files or single DBC file")
+    dbf_dir: Path = Field(description="Directory for output files (DBF or CSV)")
+    output_format: Literal["dbf", "csv"] = Field(
+        default="dbf",
+        description="Output format: 'dbf' (default) or 'csv'"
+    )
     csv_dir: Optional[Path] = Field(
         default=None,
         description="DEPRECATED: CSV intermediate format no longer used. Data goes directly DBF→DuckDB→Parquet. This field is ignored.",

@@ -762,35 +762,62 @@ def download(
 
 @app.command()
 def convert(
-    input_dir: Path = typer.Argument(..., help="Diretório com arquivos DBC"),
-    output_dir: Path = typer.Argument(..., help="Diretório de saída para DBF"),
+    input_path: Path = typer.Argument(
+        ...,
+        help="Arquivo DBC ou diretório com arquivos DBC",
+    ),
+    output_dir: Path = typer.Argument(
+        ...,
+        help="Diretório de saída para arquivos convertidos",
+    ),
+    format: str = typer.Option(
+        "dbf",
+        "--format",
+        "-f",
+        help="Formato de saída: 'dbf' (padrão) ou 'csv'",
+    ),
     override: bool = typer.Option(
         False,
         "--override",
         help="Sobrescrever arquivos existentes",
     ),
 ) -> None:
-    """Convert DBC files to DBF format.
+    """Convert DBC files to DBF or CSV format.
 
-    [bold]Example:[/bold]
+    Accepts a single DBC file or a directory containing DBC files.
+
+    [bold]Examples:[/bold]
         datasus convert ./data/dbc ./data/dbf
+        datasus convert ./data/arquivo.dbc ./data/dbf
+        datasus convert ./data/dbc ./data/csv --format csv
     """
     setup_logging()
 
-    console.print("\n[bold cyan]DataSUS - Conversao DBC->DBF[/bold cyan]\n")
+    # Validate format
+    if format.lower() not in ("dbf", "csv"):
+        console.print(f"[red]Erro: formato inválido '{format}'. Use 'dbf' ou 'csv'.[/red]")
+        raise typer.Exit(1)
+
+    format_upper = format.upper()
+    console.print(f"\n[bold cyan]DataSUS - Conversão DBC→{format_upper}[/bold cyan]\n")
 
     from datasus_etl.config import ConversionConfig
 
     config = ConversionConfig(
-        dbc_dir=input_dir,
+        dbc_dir=input_path,
         dbf_dir=output_dir,
+        output_format=format.lower(),  # type: ignore
         override=override,
     )
 
     converter = DbcToDbfConverter(config)
-    stats = converter.convert_directory()
+    stats = converter.convert(input_path, output_dir)
 
-    console.print(f"\n[green]✓ Conversão concluída: {stats['converted']} arquivos convertidos[/green]")
+    console.print(f"\n[green]✓ Conversão concluída: {stats['converted']} arquivo(s) convertido(s)[/green]")
+    if stats.get('skipped', 0) > 0:
+        console.print(f"[yellow]  {stats['skipped']} arquivo(s) já existente(s) (use --override para reconverter)[/yellow]")
+    if stats.get('errors', 0) > 0:
+        console.print(f"[red]  {stats['errors']} erro(s) durante conversão[/red]")
 
 
 @app.command()
