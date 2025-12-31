@@ -197,6 +197,22 @@ def pipeline_cmd(
         help="Exportar dados sem conversoes de tipo (apenas limpeza basica). "
              "Todas colunas como VARCHAR. Util para debug ou processamento customizado.",
     ),
+    num_workers: int = typer.Option(
+        4,
+        "--num-workers",
+        "-w",
+        help="Numero de workers paralelos (1-8, padrao: 4). "
+             "Usado no modo memory-aware para processar DBC files em paralelo.",
+    ),
+    memory_aware: bool = typer.Option(
+        False,
+        "--memory-aware",
+        "-m",
+        help="Ativar modo memory-aware para grandes datasets. "
+             "Processa 1 arquivo DBC por vez com workers paralelos, "
+             "exportando imediatamente para evitar estouro de RAM. "
+             "Recomendado para processar todos os 27 estados.",
+    ),
     verbose: bool = typer.Option(
         False,
         "--verbose",
@@ -225,6 +241,13 @@ def pipeline_cmd(
 
         # Executar sem confirmacao
         datasus pipeline -s sihsus --start-date 2023-01-01 -d ./data --yes
+
+        # MODO MEMORY-AWARE (recomendado para grandes datasets)
+        # Processa todos os 27 estados sem estourar a RAM
+        datasus pipeline -s sihsus --start-date 2023-01-01 -d ./data --memory-aware -w 4
+
+        # Memory-aware com mais workers (se tiver bastante RAM)
+        datasus pipeline -s sihsus --start-date 2023-01-01 -d ./data -m -w 8
     """
     # Validate required parameters
     missing_params = []
@@ -291,6 +314,11 @@ def pipeline_cmd(
         console.print(f"[red]Erro: --output-format deve ser um de: {', '.join(valid_formats)}[/red]")
         raise typer.Exit(1)
 
+    # Validate num_workers
+    if num_workers < 1 or num_workers > 8:
+        console.print("[red]Erro: --num-workers deve estar entre 1 e 8[/red]")
+        raise typer.Exit(1)
+
     # Create configuration using factory method
     config = PipelineConfig.create(
         base_dir=data_dir,
@@ -305,7 +333,19 @@ def pipeline_cmd(
         raw_mode=raw,
         output_format=output_format.lower(),  # type: ignore
         csv_delimiter=csv_delimiter,
+        num_workers=num_workers,
+        memory_aware_mode=memory_aware,
     )
+
+    # Show memory-aware mode info if enabled
+    if memory_aware:
+        import psutil
+        available_ram_gb = psutil.virtual_memory().available / (1024**3)
+        console.print(f"[cyan]Modo memory-aware ativado:[/cyan]")
+        console.print(f"  - Workers: {num_workers}")
+        console.print(f"  - RAM disponivel: {available_ram_gb:.1f} GB")
+        console.print(f"  - Cada arquivo DBC sera processado independentemente")
+        console.print()
 
     # Pre-download report: get file count from FTP
     console.print("[dim]Consultando servidor FTP...[/dim]")

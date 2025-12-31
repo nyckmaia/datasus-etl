@@ -16,6 +16,7 @@ from datasus_etl.core.pipeline import Pipeline
 from datasus_etl.core.stage import Stage
 from datasus_etl.download.ftp_downloader import FTPDownloader
 from datasus_etl.storage.duckdb_manager import DuckDBManager
+from datasus_etl.storage.memory_aware_processor import MemoryAwareProcessor
 from datasus_etl.storage.sql_transformer import SQLTransformer
 from datasus_etl.transform.converters.dbc_to_dbf import DbcToDbfConverter
 from datasus_etl.transform.converters.dbf_to_duckdb import DbfToDuckDBConverter
@@ -484,6 +485,79 @@ class SqlTransformStage(Stage):
         return order_columns.get(self.subsystem, "uf")
 
 
+class MemoryAwareProcessingStage(Stage):
+    """Stage for memory-aware parallel processing of DBC files.
+
+    This stage replaces DbcToDbfStage, DbfToDbStage, and SqlTransformStage
+    when memory_aware_mode is enabled. It processes each DBC file independently:
+
+    1. Decompress DBC → temporary DBF
+    2. Stream DBF → independent DuckDB in-memory connection
+    3. Apply SQL transformations
+    4. Export to Parquet/CSV with Hive partitioning (by UF)
+    5. Clean up and release memory
+
+    Each worker uses its own DuckDB connection, allowing true parallelism
+    while preventing RAM exhaustion on large datasets.
+    """
+
+    def __init__(
+        self,
+        config: PipelineConfig,
+        ibge_data_path: Path = None,
+        subsystem: str = "sihsus",
+    ) -> None:
+        super().__init__("Memory-Aware DBC Processing")
+        self.config = config
+        self.ibge_data_path = ibge_data_path
+        self.subsystem = subsystem
+
+    def _execute(self, context: PipelineContext) -> PipelineContext:
+        """Execute memory-aware processing of all DBC files."""
+        from tqdm import tqdm
+
+        # Find all DBC files
+        dbc_dir = self.config.download.output_dir
+        dbc_files = list(dbc_dir.rglob("*.dbc")) + list(dbc_dir.rglob("*.DBC"))
+
+        if not dbc_files:
+            self.logger.warning(f"No DBC files found in {dbc_dir}")
+            return context
+
+        self.logger.info(f"Found {len(dbc_files)} DBC files for memory-aware processing")
+
+        # Create processor with configured workers
+        processor = MemoryAwareProcessor(
+            config=self.config,
+            num_workers=self.config.database.num_workers,
+            ibge_data_path=self.ibge_data_path,
+        )
+
+        # Process all files
+        output_dir = self.config.storage.parquet_dir
+        results = processor.process_all(dbc_files, output_dir)
+
+        # Store results in context
+        successful = [r for r in results if r.success]
+        failed = [r for r in results if not r.success]
+
+        context.set("processing_results", results)
+        context.set("exported_parquet_files", [str(r.output_file) for r in successful])
+        context.set_metadata("total_rows_exported", processor.total_rows_exported)
+        context.set_metadata("files_processed", len(successful))
+        context.set_metadata("files_failed", len(failed))
+
+        # Count partitions
+        partition_dirs = list(output_dir.glob("uf=*"))
+        context.set("partition_count", len(partition_dirs))
+
+        if failed:
+            for r in failed:
+                context.add_error(f"Failed: {r.source_file}: {r.error}")
+
+        return context
+
+
 class DatasusPipeline(Pipeline[PipelineConfig], ABC):
     """Base class for all DataSUS subsystem pipelines.
 
@@ -521,13 +595,34 @@ class DatasusPipeline(Pipeline[PipelineConfig], ABC):
         pass
 
     def setup_stages(self) -> None:
-        """Set up standard pipeline stages."""
+        """Set up standard pipeline stages.
+
+        Uses memory-aware mode if enabled in config, which processes
+        one DBC file at a time with parallel workers to prevent RAM exhaustion.
+        """
+        # Always start with download
         self.add_stage(DownloadStage(self.config, self.subsystem_name.upper()))
-        self.add_stage(DbcToDbfStage(self.config))
-        self.add_stage(DbfToDbStage(self.config))
-        self.add_stage(
-            SqlTransformStage(self.config, self.ibge_data_path, subsystem=self.subsystem_name)
-        )
+
+        # Check if memory-aware mode is enabled
+        if self.config.database.memory_aware_mode:
+            # Memory-aware mode: single stage handles DBC→Parquet directly
+            self.logger.info(
+                f"Using memory-aware mode with {self.config.database.num_workers} workers"
+            )
+            self.add_stage(
+                MemoryAwareProcessingStage(
+                    self.config,
+                    self.ibge_data_path,
+                    subsystem=self.subsystem_name,
+                )
+            )
+        else:
+            # Standard mode: separate stages
+            self.add_stage(DbcToDbfStage(self.config))
+            self.add_stage(DbfToDbStage(self.config))
+            self.add_stage(
+                SqlTransformStage(self.config, self.ibge_data_path, subsystem=self.subsystem_name)
+            )
 
         self.logger.info(f"{self.subsystem_name.upper()} pipeline configured with {len(self._stages)} stages")
 

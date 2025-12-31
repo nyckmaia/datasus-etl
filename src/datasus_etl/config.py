@@ -133,6 +133,19 @@ class DatabaseConfig(BaseModel):
         le=2000,
         description="File size threshold (MB) for using full DataFrame vs chunked streaming (default: 250MB)"
     )
+    num_workers: int = Field(
+        default=4,
+        ge=1,
+        le=8,
+        description="Number of parallel workers for memory-aware processing (1-8, default: 4). "
+                    "Workers use independent DuckDB connections. Set to 1 for serial processing."
+    )
+    memory_aware_mode: bool = Field(
+        default=False,
+        description="Enable memory-aware processing mode for large datasets. "
+                    "Processes one DBC file at a time with parallel workers, "
+                    "exporting immediately to prevent RAM exhaustion."
+    )
 
 
 class PipelineConfig(BaseModel):
@@ -196,6 +209,8 @@ class PipelineConfig(BaseModel):
         raw_mode: bool = False,
         output_format: Literal["parquet", "csv"] = "parquet",
         csv_delimiter: str = ";",
+        num_workers: int = 4,
+        memory_aware_mode: bool = False,
     ) -> "PipelineConfig":
         """Factory method to create PipelineConfig with automatic path configuration.
 
@@ -219,6 +234,8 @@ class PipelineConfig(BaseModel):
             raw_mode: Export without type conversions (default: False)
             output_format: Output format: parquet (default) or csv
             csv_delimiter: CSV delimiter character (default: semicolon)
+            num_workers: Number of parallel workers (1-8, default: 4)
+            memory_aware_mode: Enable memory-aware processing for large datasets
 
         Returns:
             Configured PipelineConfig instance
@@ -248,6 +265,8 @@ class PipelineConfig(BaseModel):
             ),
             database=DatabaseConfig(
                 chunk_size=chunk_size,
+                num_workers=num_workers,
+                memory_aware_mode=memory_aware_mode,
             ),
             subsystem=subsystem,
             keep_temp_files=keep_temp_files,
