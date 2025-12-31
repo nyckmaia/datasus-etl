@@ -2,202 +2,170 @@
 
 ## Resumo Executivo
 
-Este documento descreve a implementação do modo memory-aware para processamento
-de grandes datasets do DataSUS sem esgotar a memória RAM.
+Este documento analisa o consumo de memória RAM durante o processamento de dados do DataSUS e propõe melhorias para otimizar o uso em máquinas com recursos limitados.
 
 ---
 
-## 1. Implementação do Modo Memory-Aware
+## 1. Processo Atual de Streaming
 
-### 1.1 Ativação
+### 1.1 Fluxo de Dados
 
-```bash
-# Ativar modo memory-aware com 4 workers paralelos
-datasus run -s sihsus --start-date 2023-01-01 -d ./data --memory-aware -w 4
-
-# Usar alias curto
-datasus run -s sihsus --start-date 2023-01-01 -d ./data -m -w 4
+```
+DBC (comprimido) → DBF (descomprimido) → DuckDB Staging → Parquet
 ```
 
-### 1.2 Parâmetros
+O pipeline atual utiliza streaming DBF→DuckDB para processar arquivos sem carregar tudo em memória:
 
-| Parâmetro | Alias | Default | Descrição |
-|-----------|-------|---------|-----------|
-| `--memory-aware` | `-m` | False | Ativa o modo memory-aware |
-| `--num-workers` | `-w` | 4 | Número de workers paralelos (1-8) |
+1. **Descompressão DBC→DBF**: Arquivo por arquivo usando `datasus-dbc`
+2. **Leitura DBF**: Streaming via `dbfread` com chunks de ~10.000 registros
+3. **Staging DuckDB**: Inserção batch em tabela temporária
+4. **Transformação**: SQL queries no DuckDB
+5. **Export Parquet**: Via DuckDB's Parquet writer
+
+### 1.2 Componentes que Usam RAM
+
+| Componente | Uso de RAM | Descrição |
+|------------|------------|-----------|
+| DBF Reader | Baixo (~50MB) | Leitura streaming com chunks |
+| DuckDB Staging | **Alto** | Tabelas temporárias acumulam em memória |
+| SQL Transforms | Médio | Depende da complexidade das queries |
+| Parquet Writer | Baixo | Streaming direto do DuckDB |
 
 ---
 
-## 2. Como Funciona
+## 2. Problema: Acúmulo em Tabelas Staging
 
-### 2.1 Fluxo de Processamento
+### 2.1 Causa Raiz
 
-```
-Para cada arquivo DBC (em paralelo com N workers):
-    1. Descomprime DBC → DBF temporário
-    2. Cria conexão DuckDB in-memory independente
-    3. Stream DBF → tabela staging
-    4. Aplica transformações SQL
-    5. Exporta para Parquet/CSV particionado (uf=XX/)
-    6. Fecha conexão DuckDB (libera RAM)
-    7. Deleta DBF temporário
-```
-
-### 2.2 Isolamento de Workers
-
-Cada worker usa sua própria conexão DuckDB in-memory:
+O DuckDB mantém tabelas staging em memória até o export final. Para grandes volumes de dados (ex: todos os estados de um ano), a RAM pode se esgotar:
 
 ```python
-# Cada worker cria conexão independente
-conn = duckdb.connect(":memory:")  # Não compartilha dados
+# Atual: todos os arquivos vão para mesma tabela staging
+for dbf_file in dbf_files:
+    stream_to_staging(dbf_file, staging_table)  # Acumula em RAM
 
-# Configura limite de RAM por conexão
-conn.execute(f"SET memory_limit = '{per_conn_limit_gb}GB'")
+# Só depois exporta tudo
+export_to_parquet(staging_table)  # Precisa de toda RAM disponível
 ```
 
-Isso permite:
-- Verdadeiro paralelismo (sem locks)
-- Isolamento de memória
-- Falha de um worker não afeta outros
+### 2.2 Consumo Estimado
 
-### 2.3 Gerenciamento Automático de RAM
+| Volume | Registros | RAM Estimada |
+|--------|-----------|--------------|
+| 1 UF, 1 mês | ~100K | ~200MB |
+| 1 UF, 1 ano | ~1.2M | ~2.4GB |
+| Todos UFs, 1 mês | ~2.5M | ~5GB |
+| Todos UFs, 1 ano | ~30M | **~60GB** |
 
-O processador estima automaticamente o uso de RAM:
+---
+
+## 3. Proposta: Export Incremental por Arquivo
+
+### 3.1 Novo Fluxo
 
 ```python
-# Estima RAM por arquivo
-estimated_dbf_size = dbc_size * 10  # DBC → DBF: ~10x
-estimated_ram = estimated_dbf_size * 3  # DBF → RAM: ~3x
+# Proposta: exportar Parquet por arquivo DBF
+for dbf_file in dbf_files:
+    # 1. Stream para staging temporária
+    stream_to_staging(dbf_file, temp_table)
 
-# Calcula workers seguros
-usable_ram = available_ram * 0.7  # 70% safety margin
-max_safe_workers = usable_ram / estimated_ram
+    # 2. Transforma
+    transformed = apply_transforms(temp_table)
 
-# Se RAM insuficiente, usa modo serial
-if max_safe_workers < 2:
-    processing_mode = "serial"
+    # 3. Exporta imediatamente
+    export_to_parquet(transformed, output_file)
+
+    # 4. Limpa staging (libera RAM)
+    drop_table(temp_table)
+```
+
+### 3.2 Vantagens
+
+- **RAM Constante**: Uso de memória proporcional a 1 arquivo (~200MB)
+- **Resistente a Falhas**: Arquivos já exportados não são perdidos
+- **Incremental Nativo**: Facilita reprocessamento parcial
+- **Paralelização**: Múltiplos workers podem processar simultaneamente
+
+### 3.3 Desvantagens
+
+- **Mais Arquivos Parquet**: Um arquivo por DBF fonte
+- **Compactação Menor**: Parquet funciona melhor com mais dados
+- **Queries Mais Lentas**: DuckDB precisa abrir múltiplos arquivos
+
+---
+
+## 4. Comparativo de Abordagens
+
+| Aspecto | Batch Atual | Incremental Proposto |
+|---------|-------------|---------------------|
+| RAM mínima | ~8GB | ~512MB |
+| Tempo total | Menor | Ligeiramente maior (+10%) |
+| Resistência a falhas | Baixa | Alta |
+| Tamanho Parquet final | Menor | ~20% maior |
+| Complexidade código | Menor | Média |
+| Queries SQL | Mais rápidas | Ligeiramente mais lentas |
+
+---
+
+## 5. Modo Híbrido Recomendado
+
+### 5.1 Estratégia Adaptativa
+
+Detectar RAM disponível e escolher modo automaticamente:
+
+```python
+import psutil
+
+def get_processing_mode() -> str:
+    available_ram_gb = psutil.virtual_memory().available / (1024**3)
+
+    if available_ram_gb >= 16:
+        return "batch"      # RAM suficiente para batch completo
+    elif available_ram_gb >= 4:
+        return "chunked"    # Processa N arquivos por vez
+    else:
+        return "streaming"  # 1 arquivo por vez
+```
+
+### 5.2 Configuração Sugerida
+
+```python
+class ProcessingConfig:
+    mode: Literal["auto", "batch", "chunked", "streaming"] = "auto"
+    chunk_size: int = 10  # Arquivos por chunk no modo chunked
+    max_memory_mb: Optional[int] = None  # Limite manual de RAM
 ```
 
 ---
 
-## 3. Estrutura de Saída
+## 6. Implementação Futura
 
-### 3.1 Particionamento Hive
+### 6.1 Prioridades
 
-Os arquivos são organizados por UF:
+1. **Fase 1**: Implementar modo `streaming` para sistemas com pouca RAM
+2. **Fase 2**: Adicionar detecção automática de RAM
+3. **Fase 3**: Implementar modo `chunked` como intermediário
+4. **Fase 4**: Otimizar compactação Parquet pós-processamento
 
-```
-output_dir/
-├── uf=AC/
-│   ├── RDAC2301.parquet
-│   └── RDAC2302.parquet
-├── uf=SP/
-│   ├── RDSP2301.parquet
-│   └── RDSP2302.parquet
-└── uf=RJ/
-    ├── RDRJ2301.parquet
-    └── RDRJ2302.parquet
-```
+### 6.2 Arquivos a Modificar
 
-### 3.2 Nomenclatura
-
-- Cada arquivo Parquet/CSV mantém o nome do DBC original
-- Particionado por coluna `uf`
-- Facilita queries por estado:
-
-```sql
-SELECT * FROM read_parquet('output_dir/uf=SP/*.parquet')
-```
+- `src/datasus_etl/config.py`: Adicionar opções de modo
+- `src/datasus_etl/storage/duckdb_manager.py`: Lógica de streaming
+- `src/datasus_etl/storage/parquet_writer.py`: Export incremental
+- `src/datasus_etl/cli.py`: Opção `--low-memory`
 
 ---
 
-## 4. Comparativo de Modos
+## 7. Conclusão
 
-| Aspecto | Modo Padrão | Modo Memory-Aware |
-|---------|-------------|-------------------|
-| RAM mínima | ~8GB+ | ~2GB |
-| Paralelismo | Single DuckDB | Multi-conexão |
-| Arquivo/vez | Todos carregados | 1 por worker |
-| Tolerância a falha | Baixa (tudo perdido) | Alta (por arquivo) |
-| Velocidade | Mais rápido (se RAM) | Ligeiramente menor |
-| Uso de disco | Menor (compactação) | ~20% maior |
+O modo híbrido baseado em RAM disponível é a melhor abordagem:
 
----
+- **Máquinas robustas (16GB+)**: Batch para máxima performance
+- **Máquinas médias (4-16GB)**: Chunked para balancear RAM e performance
+- **Máquinas modestas (<4GB)**: Streaming para garantir execução
 
-## 5. Recomendações de Uso
-
-### 5.1 Quando Usar Memory-Aware
-
-- Processamento de todos os 27 estados
-- Períodos longos (vários anos)
-- Máquinas com RAM limitada (<16GB)
-- Ambientes compartilhados
-
-### 5.2 Configuração de Workers
-
-| RAM Disponível | Workers Recomendados |
-|----------------|----------------------|
-| < 4 GB | 1 (serial) |
-| 4-8 GB | 2 |
-| 8-16 GB | 4 |
-| > 16 GB | 8 |
-
-### 5.3 Exemplo para Dataset Completo
-
-```bash
-# Processar todos os estados de 2020-2023
-datasus run \
-    -s sihsus \
-    --start-date 2020-01-01 \
-    --end-date 2023-12-31 \
-    -d ./data \
-    --memory-aware \
-    --num-workers 4 \
-    --yes
-```
+A implementação do modo streaming deve ser priorizada para permitir uso em máquinas com recursos limitados, especialmente em ambientes acadêmicos e de pesquisa.
 
 ---
 
-## 6. Arquivos de Implementação
-
-| Arquivo | Descrição |
-|---------|-----------|
-| `storage/memory_aware_processor.py` | Processador principal |
-| `pipeline/base_pipeline.py` | Stage MemoryAwareProcessingStage |
-| `config.py` | Parâmetros num_workers, memory_aware_mode |
-| `cli.py` | Flags --memory-aware e --num-workers |
-
----
-
-## 7. Métricas de Saída
-
-O processador exibe métricas durante a execução:
-
-```
-============================================================
-Memory-Aware Processing: 324 DBC files
-============================================================
-Available RAM: 15.2 GB
-Est. RAM/file: 0.45 GB
-Workers: 4 (parallel mode)
-Output: ./data/sihsus/parquet
-Format: PARQUET
-============================================================
-
-Processing DBC files (4 workers): 100%|████████| 324/324
-[OK] RDSP2301.dbc → uf=SP: 145,234 rows
-[OK] RDRJ2301.dbc → uf=RJ: 98,765 rows
-...
-
-============================================================
-Processing Complete
-============================================================
-Successful: 324/324 files
-Failed: 0
-Total rows: 12,345,678
-============================================================
-```
-
----
-
-*Documento atualizado após implementação.*
+*Documento gerado para análise técnica. Implementação sujeita a revisão.*
