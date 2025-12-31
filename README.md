@@ -3,7 +3,12 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-Pipeline profissional para download, processamento e consulta de dados do **DATASUS** (Sistema de Informacoes Hospitalares do SUS).
+Pipeline profissional para download, processamento e consulta de dados do **DATASUS** (Departamento de Informatica do SUS).
+
+Suporta multiplos subsistemas:
+- **SIHSUS** - Sistema de Informacoes Hospitalares
+- **SIM** - Sistema de Informacoes sobre Mortalidade
+- **SIASUS** - Sistema de Informacoes Ambulatoriais (em desenvolvimento)
 
 ## Caracteristicas
 
@@ -16,6 +21,7 @@ Pipeline profissional para download, processamento e consulta de dados do **DATA
 - **Interface Web** (Streamlit) para usuarios nao-tecnicos
 - **CLI completa** para automacao
 - **Python API** para integracao em pipelines
+- **Shell interativo DuckDB** para consultas SQL
 - **Limpeza automatica** de arquivos temporarios (DBC/DBF)
 
 ## Instalacao
@@ -34,42 +40,77 @@ pip install -e ".[dev]"
 
 ## Uso
 
-O datasus-etl oferece 3 formas de uso:
+O datasus-etl oferece 4 formas de uso:
 
 ### 1. CLI (Command Line Interface)
 
 ```bash
 # Pipeline completo: download -> convert -> transform -> export
-datasus run --source sihsus --start-date 2023-01-01 --end-date 2023-12-31 --uf SP,RJ
+datasus pipeline --source sihsus --start-date 2023-01-01 --end-date 2023-12-31 --data-dir ./data/datasus --uf SP,RJ
 
 # Atualizacao incremental (apenas arquivos novos)
-datasus update --source sihsus --data-dir ./data/datasus
+datasus update --source sihsus --start-date 2023-01-01 --data-dir ./data/datasus
 
 # Ver status do banco de dados
 datasus status --source sihsus --data-dir ./data/datasus
+
+# Shell interativo DuckDB para consultas SQL
+datasus db --data-dir ./data/datasus
 
 # Abrir interface web
 datasus ui
 datasus ui --port 8080
 ```
 
-**Opcoes do comando `run`:**
+**Opcoes do comando `pipeline`:**
 
 | Opcao | Descricao | Padrao |
 |-------|-----------|--------|
-| `--source`, `-s` | Subsistema (sihsus, sim, siasus) | sihsus |
-| `--start-date` | Data inicial (YYYY-MM-DD) | 2023-01-01 |
+| `--source`, `-s` | Subsistema (sihsus, sim, siasus) | - |
+| `--start-date` | Data inicial (YYYY-MM-DD) | - |
 | `--end-date` | Data final (YYYY-MM-DD) | hoje |
 | `--uf` | Estados separados por virgula | todos |
-| `--data-dir`, `-d` | Diretorio de dados | ./data/datasus |
+| `--data-dir`, `-d` | Diretorio de dados | - |
 | `--compression`, `-c` | Compressao Parquet | zstd |
+| `--memory-aware`, `-m` | Modo otimizado para RAM | False |
+| `--num-workers`, `-w` | Workers paralelos (1-8) | 4 |
 | `--keep-temp-files` | Manter arquivos DBC/DBF | False |
 
-### 2. Python API
+### 2. Shell Interativo DuckDB
+
+```bash
+# Abre shell com VIEWs automaticas para cada subsistema
+datasus db --data-dir ./data/datasus
+
+# Filtrar por subsistema especifico
+datasus db --data-dir ./data/datasus --source sihsus
+```
+
+**Comandos do shell:**
+
+| Comando | Descricao |
+|---------|-----------|
+| `.tables` | Lista VIEWs disponiveis |
+| `.schema <view>` | Mostra colunas da VIEW |
+| `.count <view>` | Conta registros |
+| `.sample <view> [n]` | Mostra N registros aleatorios |
+| `.csv <arquivo>` | Exporta ultimo resultado para CSV |
+| `.maxrows [n]` | Define max linhas exibidas |
+| `.exit` | Sai do shell |
+
+**Exemplo de sessao:**
+
+```sql
+datasus> SELECT COUNT(*) FROM sihsus;
+datasus> SELECT uf, COUNT(*) as total FROM sihsus GROUP BY uf ORDER BY total DESC;
+datasus> .csv resultado.csv
+```
+
+### 3. Python API
 
 ```python
-from datasus-etl.config import PipelineConfig
-from datasus-etl.pipeline.sihsus_pipeline import SihsusPipeline
+from datasus_etl.config import PipelineConfig
+from datasus_etl.pipeline.sihsus_pipeline import SihsusPipeline
 
 # Criar configuracao usando factory method
 config = PipelineConfig.create(
@@ -91,7 +132,7 @@ print(f"Linhas exportadas: {result.get_metadata('total_rows_exported'):,}")
 **Consultar dados com SQL:**
 
 ```python
-from datasus-etl.storage.parquet_query_engine import ParquetQueryEngine
+from datasus_etl.storage.parquet_query_engine import ParquetQueryEngine
 
 # Conectar ao banco Parquet
 engine = ParquetQueryEngine("./data/datasus/sihsus/parquet", view_name="sihsus")
@@ -121,7 +162,7 @@ print(f"Total: {engine.count():,} registros")
 engine.close()
 ```
 
-### 3. Interface Web (Streamlit)
+### 4. Interface Web (Streamlit)
 
 ```bash
 datasus ui
@@ -140,16 +181,22 @@ Apos o processamento, os dados sao organizados em:
 
 ```
 data/datasus/
-└── sihsus/                    # Subsistema
-    ├── dbc/                   # Arquivos originais (deletados apos processamento)
-    ├── dbf/                   # Arquivos convertidos (deletados apos processamento)
-    └── parquet/               # Dados finais
-        ├── uf=SP/
-        │   └── data_0.parquet
-        ├── uf=RJ/
-        │   └── data_0.parquet
-        └── uf=MG/
-            └── data_0.parquet
+├── sihsus/                    # Sistema de Informacoes Hospitalares
+│   ├── dbc/                   # Arquivos originais (deletados apos processamento)
+│   ├── dbf/                   # Arquivos convertidos (deletados apos processamento)
+│   └── parquet/               # Dados finais
+│       ├── uf=SP/
+│       │   └── data_0.parquet
+│       ├── uf=RJ/
+│       │   └── data_0.parquet
+│       └── uf=MG/
+│           └── data_0.parquet
+├── sim/                       # Sistema de Informacoes sobre Mortalidade
+│   └── parquet/
+│       └── ...
+└── siasus/                    # Sistema de Informacoes Ambulatoriais
+    └── parquet/
+        └── ...
 ```
 
 ## Colunas Enriquecidas
@@ -175,7 +222,7 @@ Alem das transformacoes existentes:
 | Subsistema | Descricao | Status |
 |------------|-----------|--------|
 | SIHSUS | Sistema de Informacoes Hospitalares | Completo |
-| SIM | Sistema de Informacoes sobre Mortalidade | Em desenvolvimento |
+| SIM | Sistema de Informacoes sobre Mortalidade | Completo |
 | SIASUS | Sistema de Informacoes Ambulatoriais | Planejado |
 
 ## Performance
@@ -183,18 +230,41 @@ Alem das transformacoes existentes:
 O pipeline e otimizado para processar grandes volumes:
 
 - **Streaming DBF**: Processa arquivos maiores que a RAM
-- **Chunked processing**: Configurable chunk size
+- **Memory-aware mode**: Processa 1 arquivo por vez com workers paralelos
+- **Chunked processing**: Tamanho de chunk configuravel
 - **Partition pruning**: DuckDB le apenas particoes necessarias
 - **Parquet compressao**: zstd oferece melhor compressao
 
 ## Configuracao
 
-### Ajustar para RAM Limitada
+### Modo Memory-Aware (Recomendado para Grandes Datasets)
+
+```bash
+# Processa todos os 27 estados sem estourar a RAM
+datasus pipeline -s sihsus --start-date 2023-01-01 -d ./data/datasus --memory-aware -w 4
+```
 
 ```python
+from datasus_etl.config import PipelineConfig
+
 config = PipelineConfig.create(
     base_dir="./data/datasus",
     subsystem="sihsus",
+    start_date="2023-01-01",
+    memory_aware_mode=True,
+    num_workers=4,
+)
+```
+
+### Ajustar para RAM Limitada
+
+```python
+from datasus_etl.config import PipelineConfig
+
+config = PipelineConfig.create(
+    base_dir="./data/datasus",
+    subsystem="sihsus",
+    start_date="2023-01-01",
     chunk_size=5000,  # Reduzir para menos RAM
 )
 ```
@@ -202,15 +272,18 @@ config = PipelineConfig.create(
 ### Manter Arquivos Temporarios
 
 ```bash
-datasus run --source sihsus --keep-temp-files
+datasus pipeline --source sihsus --start-date 2023-01-01 -d ./data/datasus --keep-temp-files
 ```
 
 Ou via Python:
 
 ```python
+from datasus_etl.config import PipelineConfig
+
 config = PipelineConfig.create(
     base_dir="./data/datasus",
     subsystem="sihsus",
+    start_date="2023-01-01",
     keep_temp_files=True,
 )
 ```
@@ -222,7 +295,7 @@ config = PipelineConfig.create(
 pytest
 
 # Com coverage
-pytest --cov=datasus-etl --cov-report=html
+pytest --cov=datasus_etl --cov-report=html
 
 # Testes especificos
 pytest tests/unit/test_config.py
