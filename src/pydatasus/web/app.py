@@ -236,7 +236,7 @@ def page_status():
                     color_continuous_scale="Blues"
                 )
                 fig.update_layout(showlegend=False)
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
 
         except Exception as e:
             st.warning(f"Nao foi possivel gerar grafico: {e}")
@@ -288,7 +288,7 @@ def page_status():
 
                 stats = engine.sql(stats_query)
                 if stats is not None:
-                    st.dataframe(stats.to_pandas(), use_container_width=True)
+                    st.dataframe(stats.to_pandas(), width='stretch')
 
             except Exception as e:
                 st.warning(f"Erro ao calcular estatisticas: {e}")
@@ -301,7 +301,7 @@ def page_status():
                 {"Arquivo": k, "Linhas": v}
                 for k, v in sorted(file_counts.items())
             ])
-            st.dataframe(df, use_container_width=True)
+            st.dataframe(df, width='stretch')
 
         engine.close()
 
@@ -610,7 +610,7 @@ LIMIT 10"""
 
                     if result is not None:
                         st.success(f"Consulta retornou {len(result):,} linhas em {elapsed:.2f}s")
-                        st.dataframe(result.to_pandas(), use_container_width=True)
+                        st.dataframe(result.to_pandas(), width='stretch')
 
                         # Download buttons
                         col1, col2 = st.columns(2)
@@ -630,7 +630,7 @@ LIMIT 10"""
         with st.expander("Ver amostra dos dados"):
             sample = engine.sample(10)
             if sample is not None:
-                st.dataframe(sample.to_pandas(), use_container_width=True)
+                st.dataframe(sample.to_pandas(), width='stretch')
 
         # Data dictionary as fixed table at the bottom
         st.markdown("---")
@@ -643,7 +643,7 @@ LIMIT 10"""
             for col, desc in sorted(descriptions.items())
         ]
         df_dict = pd.DataFrame(dict_data)
-        st.dataframe(df_dict, use_container_width=True, height=400)
+        st.dataframe(df_dict, width='stretch', height=400)
 
         engine.close()
 
