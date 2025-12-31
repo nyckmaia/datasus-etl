@@ -162,7 +162,7 @@ def page_home():
 
 
 def page_status():
-    """Render database status page with visualizations."""
+    """Render database status page with statistics tables."""
     st.title("📊 Status do Banco de Dados")
 
     data_dir = get_data_dir()
@@ -181,6 +181,7 @@ def page_status():
 
     try:
         from datasus_etl.storage.parquet_query_engine import ParquetQueryEngine
+        from datasus_etl.web.dictionary import get_column_descriptions
         import pandas as pd
 
         engine = ParquetQueryEngine(parquet_dir, view_name=subsystem)
@@ -188,7 +189,6 @@ def page_status():
         # Get statistics
         total_rows = engine.count()
         processed_files = engine.get_processed_source_files()
-        file_counts = engine.get_file_row_counts()
 
         # Calculate total size
         total_size = sum(f.stat().st_size for f in parquet_files)
@@ -209,99 +209,102 @@ def page_status():
         with col4:
             st.metric("Tamanho", f"{total_size_mb:.1f} MB")
 
-        # Plotly chart - Records by UF
+        # UF Table (replacing Plotly chart)
         st.markdown("---")
-        st.subheader("Registros por Estado (UF)")
+        st.subheader("📍 Registros por Estado (UF)")
 
         try:
-            import plotly.express as px
+            # Determine date column based on subsystem
+            date_col = "dtobito" if subsystem == "sim" else "dt_inter"
 
-            # Query UF distribution
-            uf_data = engine.sql(f"""
-                SELECT uf, COUNT(*) as total
+            # Query UF distribution with date range
+            uf_query = f"""
+                SELECT
+                    uf,
+                    COUNT(*) as registros,
+                    ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER(), 1) as uso_pct,
+                    MIN({date_col}) as data_inicial,
+                    MAX({date_col}) as data_final
                 FROM {subsystem}
                 GROUP BY uf
-                ORDER BY total DESC
-            """)
+                ORDER BY registros DESC
+            """
+
+            uf_data = engine.sql(uf_query)
 
             if uf_data is not None and len(uf_data) > 0:
                 df_uf = uf_data.to_pandas()
-                fig = px.bar(
-                    df_uf,
-                    x="uf",
-                    y="total",
-                    title="Distribuicao de Registros por UF",
-                    labels={"uf": "Estado", "total": "Registros"},
-                    color="total",
-                    color_continuous_scale="Blues"
-                )
-                fig.update_layout(showlegend=False)
-                st.plotly_chart(fig, width='stretch')
+                df_uf.columns = ["UF", "Registros", "Uso (%)", "Data Inicial", "Data Final"]
+                st.dataframe(df_uf, width='stretch', height=400)
 
         except Exception as e:
-            st.warning(f"Nao foi possivel gerar grafico: {e}")
+            st.warning(f"Erro ao carregar dados por UF: {e}")
 
-        # Statistics expander
-        with st.expander("📊 Estatisticas das Colunas Numericas"):
-            try:
-                # Get numeric column stats
-                if subsystem == "sihsus":
-                    stats_query = f"""
+        # Column Statistics Table (expanded, not in expander)
+        st.markdown("---")
+        st.subheader("📊 Estatísticas das Colunas")
+
+        try:
+            # Get schema from engine
+            schema_df = engine.schema()
+            if schema_df is not None:
+                schema_data = schema_df.to_pandas()
+                column_names = schema_data["column_name"].tolist()
+
+                # Get column descriptions
+                descriptions = get_column_descriptions(subsystem)
+
+                # Get type mapping from schema files
+                if subsystem == "sim":
+                    from datasus_etl.datasets.sim.schema import SIM_PARQUET_SCHEMA as TYPE_SCHEMA
+                else:
+                    from datasus_etl.constants.sihsus_schema import SIHSUS_PARQUET_SCHEMA as TYPE_SCHEMA
+
+                # Build statistics query for all columns
+                stats_parts = []
+                for col in column_names:
+                    col_lower = col.lower()
+                    stats_parts.append(f"""
                         SELECT
-                            'val_tot' as coluna,
-                            MIN(val_tot) as minimo,
-                            MAX(val_tot) as maximo,
-                            ROUND(AVG(val_tot), 2) as media,
-                            COUNT(val_tot) as nao_nulos
+                            '{col}' as coluna,
+                            CAST(MIN({col}) AS VARCHAR) as minimo,
+                            CAST(MAX({col}) AS VARCHAR) as maximo,
+                            ROUND(100.0 * SUM(CASE WHEN {col} IS NULL THEN 1 ELSE 0 END) / COUNT(*), 1) as pct_nulos
                         FROM {subsystem}
-                        WHERE val_tot IS NOT NULL
-                        UNION ALL
-                        SELECT
-                            'dias_perm' as coluna,
-                            MIN(dias_perm) as minimo,
-                            MAX(dias_perm) as maximo,
-                            ROUND(AVG(dias_perm), 2) as media,
-                            COUNT(dias_perm) as nao_nulos
-                        FROM {subsystem}
-                        WHERE dias_perm IS NOT NULL
-                        UNION ALL
-                        SELECT
-                            'idade' as coluna,
-                            MIN(idade) as minimo,
-                            MAX(idade) as maximo,
-                            ROUND(AVG(idade), 2) as media,
-                            COUNT(idade) as nao_nulos
-                        FROM {subsystem}
-                        WHERE idade IS NOT NULL
-                    """
-                else:  # SIM
-                    stats_query = f"""
-                        SELECT
-                            'idade' as coluna,
-                            MIN(idade) as minimo,
-                            MAX(idade) as maximo,
-                            ROUND(AVG(idade), 2) as media,
-                            COUNT(idade) as nao_nulos
-                        FROM {subsystem}
-                        WHERE idade IS NOT NULL
-                    """
+                    """)
 
-                stats = engine.sql(stats_query)
-                if stats is not None:
-                    st.dataframe(stats.to_pandas(), width='stretch')
+                # Execute combined query (limit to avoid performance issues)
+                if len(stats_parts) > 0:
+                    # Query first 30 columns to avoid timeout
+                    limited_parts = stats_parts[:30]
+                    stats_query = " UNION ALL ".join(limited_parts)
 
-            except Exception as e:
-                st.warning(f"Erro ao calcular estatisticas: {e}")
+                    stats_result = engine.sql(stats_query)
 
-        # Show file details
-        if file_counts:
-            st.subheader("Arquivos por Fonte")
+                    if stats_result is not None:
+                        stats_df = stats_result.to_pandas()
 
-            df = pd.DataFrame([
-                {"Arquivo": k, "Linhas": v}
-                for k, v in sorted(file_counts.items())
-            ])
-            st.dataframe(df, width='stretch')
+                        # Add descriptions and types
+                        stats_list = []
+                        for _, row in stats_df.iterrows():
+                            col_name = row["coluna"].lower()
+                            stats_list.append({
+                                "Coluna": row["coluna"],
+                                "Descrição": descriptions.get(col_name, ""),
+                                "Tipo": TYPE_SCHEMA.get(col_name, "VARCHAR"),
+                                "Mínimo": row["minimo"] if row["minimo"] else "-",
+                                "Máximo": row["maximo"] if row["maximo"] else "-",
+                                "% Nulos": f"{row['pct_nulos']:.1f}%"
+                            })
+
+                        final_df = pd.DataFrame(stats_list)
+                        st.dataframe(final_df, width='stretch', height=600)
+
+                        if len(column_names) > 30:
+                            st.info(f"Mostrando 30 de {len(column_names)} colunas.")
+
+        except Exception as e:
+            st.warning(f"Erro ao calcular estatisticas: {e}")
 
         engine.close()
 
