@@ -1,0 +1,10 @@
+# Streamlit configuration for DataSUS ETL
+# This file prevents Streamlit from asking for email on first run
+
+[browser]
+# Disable usage statistics collection (prevents email prompt)
+gatherUsageStats = false
+
+[server]
+# Run in headless mode (no browser prompt for email)
+headless = true
