@@ -1,9 +1,9 @@
-"""Command-line interface for PyDataSUS.
+"""Command-line interface for DataSUS ETL.
 
 Usage:
     datasus --help
-    datasus run --source sihsus --start-date 2023-01-01 --end-date 2023-12-31 --uf SP,RJ
-    datasus download --source sihsus --start-date 2023-01-01 --uf SP
+    datasus pipeline --source sihsus --start-date 2023-01-01 --end-date 2023-12-31 --uf SP,RJ
+    datasus download-only --source sihsus --start-date 2023-01-01 --uf SP
     datasus version
 """
 
@@ -86,7 +86,16 @@ def format_size_mb(size_mb: float) -> str:
 
 app = typer.Typer(
     name="datasus",
-    help="CLI para download e processamento de dados do DataSUS (SIHSUS, SIM, etc)",
+    help="""CLI para download e processamento de dados do DataSUS (SIHSUS, SIM, etc)
+
+[bold]Exemplo de uso (pipeline completo):[/bold]
+
+    datasus pipeline -s sihsus --start-date 2023-01-01 -d ./data --uf SP,RJ
+
+[bold]Apenas baixar arquivos DBC:[/bold]
+
+    datasus download-only -s sihsus --start-date 2023-01-01 -o ./data/dbc --uf SP
+""",
     add_completion=False,  # Hide --show-completion from help
     rich_markup_mode="rich",
 )
@@ -121,8 +130,8 @@ def version() -> None:
     ))
 
 
-@app.command()
-def run(
+@app.command(name="pipeline")
+def pipeline_cmd(
     source: str = typer.Option(
         None,
         "--source",
@@ -206,16 +215,16 @@ def run(
     [bold]Exemplos de uso:[/bold]
 
         # Baixar SIHSUS de SP e RJ em 2023
-        datasus run -s sihsus --start-date 2023-01-01 -d ./data/datasus --uf SP,RJ
+        datasus pipeline -s sihsus --start-date 2023-01-01 -d ./data/datasus --uf SP,RJ
 
         # Baixar todos os estados de janeiro a marco 2024
-        datasus run -s sihsus --start-date 2024-01-01 --end-date 2024-03-31 -d ./data
+        datasus pipeline -s sihsus --start-date 2024-01-01 --end-date 2024-03-31 -d ./data
 
         # Baixar SIM (mortalidade) de 2022
-        datasus run -s sim --start-date 2022-01-01 --end-date 2022-12-31 -d ./data
+        datasus pipeline -s sim --start-date 2022-01-01 --end-date 2022-12-31 -d ./data
 
         # Executar sem confirmacao
-        datasus run -s sihsus --start-date 2023-01-01 -d ./data --yes
+        datasus pipeline -s sihsus --start-date 2023-01-01 -d ./data --yes
     """
     # Validate required parameters
     missing_params = []
@@ -232,9 +241,9 @@ def run(
             console.print(f"  [red]-[/red] {param}")
         console.print()
         console.print("[bold]Exemplo de uso:[/bold]")
-        console.print("  datasus run --source sihsus --start-date 2023-01-01 --data-dir ./data/datasus")
+        console.print("  datasus pipeline --source sihsus --start-date 2023-01-01 --data-dir ./data/datasus")
         console.print()
-        console.print("[dim]Use 'datasus run --help' para ver todas as opcoes.[/dim]")
+        console.print("[dim]Use 'datasus pipeline --help' para ver todas as opcoes.[/dim]")
         raise typer.Exit(1)
 
     setup_logging("DEBUG" if verbose else "INFO")
@@ -622,7 +631,7 @@ def status(
 
     if not parquet_dir.exists():
         console.print(f"[yellow]Diretorio nao encontrado: {parquet_dir}[/yellow]")
-        console.print("Execute 'datasus run' para criar o banco de dados.")
+        console.print("Execute 'datasus pipeline' para criar o banco de dados.")
         return
 
     parquet_files = list(parquet_dir.rglob("*.parquet"))
@@ -673,8 +682,8 @@ def status(
         console.print(f"[red]Erro ao ler banco: {e}[/red]")
 
 
-@app.command()
-def download(
+@app.command(name="download-only")
+def download_only(
     source: str = typer.Option(
         None,
         "--source",
@@ -708,15 +717,15 @@ def download(
         help="Sobrescrever arquivos existentes",
     ),
 ) -> None:
-    """Baixa arquivos DBC do servidor FTP do DataSUS.
+    """Baixa arquivos DBC do servidor FTP do DataSUS (sem processar).
 
     [bold]Exemplos de uso:[/bold]
 
         # Baixar arquivos DBC do SIHSUS de SP
-        datasus download -s sihsus --start-date 2023-01-01 -o ./data/dbc --uf SP
+        datasus download-only -s sihsus --start-date 2023-01-01 -o ./data/dbc --uf SP
 
         # Baixar todos os estados de 2023
-        datasus download -s sihsus --start-date 2023-01-01 --end-date 2023-12-31 -o ./data/dbc
+        datasus download-only -s sihsus --start-date 2023-01-01 --end-date 2023-12-31 -o ./data/dbc
     """
     # Validate required parameters
     missing_params = []
@@ -733,9 +742,9 @@ def download(
             console.print(f"  [red]-[/red] {param}")
         console.print()
         console.print("[bold]Exemplo de uso:[/bold]")
-        console.print("  datasus download --source sihsus --start-date 2023-01-01 --output-dir ./data/dbc")
+        console.print("  datasus download-only --source sihsus --start-date 2023-01-01 --output-dir ./data/dbc")
         console.print()
-        console.print("[dim]Use 'datasus download --help' para ver todas as opcoes.[/dim]")
+        console.print("[dim]Use 'datasus download-only --help' para ver todas as opcoes.[/dim]")
         raise typer.Exit(1)
 
     setup_logging()
@@ -830,32 +839,6 @@ def ui(
         "--server.headless", "false",
     ])
 
-
-# Legacy alias for backward compatibility
-@app.command(hidden=True)
-def pipeline(
-    base_dir: Path = typer.Option(Path("./data/datasus"), "--base-dir", "-b"),
-    start_date: str = typer.Option("2023-01-01", "--start-date"),
-    end_date: Optional[str] = typer.Option(None, "--end-date"),
-    ufs: Optional[str] = typer.Option(None, "--ufs"),
-    tabwin_dir: Path = typer.Option(Path("C:/Program Files/TAB415"), "--tabwin-dir"),
-    db_path: Optional[Path] = typer.Option(None, "--db-path"),
-) -> None:
-    """[DEPRECATED] Use 'datasus run' instead."""
-    console.print("[yellow]Aviso: 'pipeline' está deprecado. Use 'datasus run' em seu lugar.[/yellow]\n")
-
-    # Redirect to run command
-    run(
-        source="sihsus",
-        start_date=start_date,
-        end_date=end_date,
-        uf=ufs,
-        data_dir=base_dir,
-        compression="zstd",
-        chunk_size=10000,
-        override=False,
-        verbose=False,
-    )
 
 
 if __name__ == "__main__":
