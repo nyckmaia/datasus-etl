@@ -250,3 +250,45 @@ class FTPDownloader:
             "skipped": len(self._skipped_files),
             "failed": len(self._failed_files),
         }
+
+    def get_file_info(self) -> dict[str, object]:
+        """Get information about files available for download without downloading.
+
+        Returns:
+            Dictionary with file information:
+            - file_count: Number of files
+            - files: List of (filename, uf, size_bytes)
+            - total_size_bytes: Total size in bytes
+            - estimated_parquet_bytes: Estimated Parquet size (~60% of DBC)
+            - estimated_csv_bytes: Estimated CSV size (~300% of DBC)
+        """
+        self.logger.info("Fetching file information from DATASUS FTP")
+
+        # Parse dates
+        start_date = datetime.datetime.strptime(self.config.start_date, "%Y-%m-%d")
+        end_date = (
+            datetime.datetime.strptime(self.config.end_date, "%Y-%m-%d")
+            if self.config.end_date
+            else datetime.datetime.now()
+        )
+
+        if end_date < start_date:
+            raise DownloadError("end_date must be >= start_date")
+
+        # Get UF list
+        uf_list = self.config.uf_list or ALL_UFS
+
+        # Collect files from FTP
+        files = self._collect_files_from_ftp(start_date, end_date, uf_list)
+
+        # Calculate totals
+        total_size = sum(size for _, _, _, size in files)
+        file_list = [(filename, uf, size) for _, filename, uf, size in files]
+
+        return {
+            "file_count": len(files),
+            "files": file_list,
+            "total_size_bytes": total_size,
+            "estimated_parquet_bytes": int(total_size * 0.6),
+            "estimated_csv_bytes": int(total_size * 3.0),
+        }

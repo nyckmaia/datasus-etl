@@ -673,6 +673,143 @@ def status(
         console.print(f"[red]Erro ao ler banco: {e}[/red]")
 
 
+def _format_size(size_bytes: int) -> str:
+    """Format bytes to human readable string."""
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    elif size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    elif size_bytes < 1024 * 1024 * 1024:
+        return f"{size_bytes / (1024 * 1024):.1f} MB"
+    else:
+        return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
+
+
+@app.command(name="download-estimate")
+def download_estimate(
+    source: str = typer.Option(
+        None,
+        "--source",
+        "-s",
+        help="Subsistema DataSUS: sihsus, sim, siasus",
+    ),
+    start_date: str = typer.Option(
+        None,
+        "--start-date",
+        help="Data inicial (YYYY-MM-DD)",
+    ),
+    end_date: Optional[str] = typer.Option(
+        None,
+        "--end-date",
+        help="Data final (YYYY-MM-DD). Padrão: hoje",
+    ),
+    uf: Optional[str] = typer.Option(
+        None,
+        "--uf",
+        help="Estados (UF) separados por vírgula. Ex: SP,RJ,MG",
+    ),
+) -> None:
+    """Estima quantidade e tamanho dos arquivos a serem baixados.
+
+    Consulta o servidor FTP do DataSUS para obter informações sobre os
+    arquivos disponíveis sem efetuar download.
+
+    [bold]Exemplos de uso:[/bold]
+
+        # Estimar downloads do SIHSUS de SP em 2023
+        datasus download-estimate -s sihsus --start-date 2023-01-01 --end-date 2023-12-31 --uf SP
+
+        # Estimar todos os estados
+        datasus download-estimate -s sihsus --start-date 2023-01-01
+    """
+    # Validate required parameters
+    missing_params = []
+    if source is None:
+        missing_params.append("--source (-s)")
+    if start_date is None:
+        missing_params.append("--start-date")
+
+    if missing_params:
+        console.print("[red bold]Erro: Parâmetros obrigatórios faltando:[/red bold]")
+        for param in missing_params:
+            console.print(f"  [red]-[/red] {param}")
+        console.print()
+        console.print("[bold]Exemplo de uso:[/bold]")
+        console.print("  datasus download-estimate --source sihsus --start-date 2023-01-01")
+        console.print()
+        console.print("[dim]Use 'datasus download-estimate --help' para ver todas as opções.[/dim]")
+        raise typer.Exit(1)
+
+    # Validate source
+    source_lower = source.lower() if source else ""
+    if source_lower not in ("sihsus", "sim", "siasus"):
+        console.print(f"[red]Erro: Subsistema inválido '{source}'. Use: sihsus, sim, siasus[/red]")
+        raise typer.Exit(1)
+
+    setup_logging()
+
+    console.print("\n[bold cyan]DataSUS - Estimativa de Download[/bold cyan]\n")
+    console.print(f"[dim]Consultando servidor FTP...[/dim]\n")
+
+    from datasus_etl.config import DownloadConfig
+
+    uf_list = parse_uf_list(uf)
+
+    # Create config (output_dir not needed for estimate)
+    config = DownloadConfig(
+        output_dir=Path("."),  # Not used
+        start_date=start_date,
+        end_date=end_date,
+        uf_list=uf_list,
+    )
+
+    downloader = FTPDownloader(config)
+    info = downloader.get_file_info()
+
+    file_count = info["file_count"]
+    total_size = info["total_size_bytes"]
+    parquet_size = info["estimated_parquet_bytes"]
+    csv_size = info["estimated_csv_bytes"]
+
+    # Display results
+    console.print(f"[bold]Arquivos encontrados:[/bold] {file_count}")
+    console.print()
+
+    from rich.table import Table
+
+    table = Table(title="Estimativa de Armazenamento", show_header=True, header_style="bold cyan")
+    table.add_column("Formato", style="cyan")
+    table.add_column("Tamanho Estimado", justify="right")
+    table.add_column("Observação", style="dim")
+
+    table.add_row("DBC (comprimido)", _format_size(total_size), "Tamanho no FTP")  # type: ignore
+    table.add_row("Parquet", _format_size(parquet_size), "~60% do DBC")  # type: ignore
+    table.add_row("CSV", _format_size(csv_size), "~300% do DBC")  # type: ignore
+
+    console.print(table)
+    console.print()
+
+    # Show files by UF
+    files_by_uf: dict[str, int] = {}
+    for _, file_uf, size in info["files"]:  # type: ignore
+        files_by_uf[file_uf] = files_by_uf.get(file_uf, 0) + 1
+
+    if files_by_uf:
+        uf_table = Table(title="Arquivos por UF", show_header=True, header_style="bold cyan")
+        uf_table.add_column("UF", style="cyan")
+        uf_table.add_column("Arquivos", justify="right")
+
+        for uf_code in sorted(files_by_uf.keys()):
+            uf_table.add_row(uf_code, str(files_by_uf[uf_code]))
+
+        console.print(uf_table)
+        console.print()
+
+    # Warning about DBC deletion
+    console.print("[yellow]⚠ Nota:[/yellow] Por padrão, o comando 'pipeline' deleta os arquivos DBC")
+    console.print("  após processamento. Use 'download-only' para manter os arquivos DBC.")
+
+
 @app.command()
 def download(
     source: str = typer.Option(
