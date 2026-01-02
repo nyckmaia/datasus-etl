@@ -313,11 +313,28 @@ def page_status():
 
 
 def page_download():
-    """Render download page with pipeline execution."""
+    """Render download page with pipeline execution.
+
+    Uses st.session_state + st.rerun() pattern for real-time progress updates.
+    Streamlit only renders UI after script completes, so we use periodic reruns
+    to poll the pipeline progress from a background thread.
+    """
     st.title("📥 Download de Dados")
 
     data_dir = get_data_dir()
     subsystem = st.session_state.get("subsystem", "sihsus")
+
+    # Initialize pipeline state in session_state
+    if "pipeline_running" not in st.session_state:
+        st.session_state.pipeline_running = False
+        st.session_state.pipeline_progress = 0.0
+        st.session_state.pipeline_message = "Iniciando..."
+        st.session_state.pipeline_stage = "Download"
+        st.session_state.pipeline_done = False
+        st.session_state.pipeline_error = None
+        st.session_state.pipeline_result = None
+        st.session_state.pipeline_start_time = 0
+        st.session_state.pipeline_thread = None
 
     st.markdown("""
     Configure os parametros de download abaixo.
@@ -334,7 +351,8 @@ def page_download():
             "Data Inicial",
             value=date(2023, 1, 1),
             min_value=date(1970, 1, 1),
-            help="Data de inicio do periodo de download"
+            help="Data de inicio do periodo de download",
+            disabled=st.session_state.pipeline_running
         )
 
     with col2:
@@ -342,14 +360,16 @@ def page_download():
             "Data Final",
             value=date.today(),
             min_value=date(1970, 1, 1),
-            help="Data final do periodo de download"
+            help="Data final do periodo de download",
+            disabled=st.session_state.pipeline_running
         )
 
     selected_ufs = st.multiselect(
         "Estados (UF)",
         options=ALL_UFS,
         default=["SP"],
-        help="Selecione os estados para download. Deixe vazio para todos."
+        help="Selecione os estados para download. Deixe vazio para todos.",
+        disabled=st.session_state.pipeline_running
     )
 
     col3, col4 = st.columns(2)
@@ -358,20 +378,22 @@ def page_download():
         compression = st.selectbox(
             "Compressao Parquet",
             options=["zstd", "snappy", "gzip", "brotli"],
-            help="Algoritmo de compressao para arquivos Parquet"
+            help="Algoritmo de compressao para arquivos Parquet",
+            disabled=st.session_state.pipeline_running
         )
 
     with col4:
         output_format = st.selectbox(
             "Formato de Saida",
             options=["parquet", "csv"],
-            help="Formato dos arquivos de saida"
+            help="Formato dos arquivos de saida",
+            disabled=st.session_state.pipeline_running
         )
 
     st.markdown("---")
 
     # Check for updates button
-    if st.button("🔍 Verificar Atualizacoes", type="secondary"):
+    if st.button("🔍 Verificar Atualizacoes", type="secondary", disabled=st.session_state.pipeline_running):
         with st.spinner("Verificando arquivos no FTP..."):
             try:
                 from datasus_etl.config import PipelineConfig
@@ -411,13 +433,12 @@ def page_download():
             except Exception as e:
                 st.error(f"Erro: {e}")
 
-    # Download button with pipeline execution
-    if st.button("📥 Iniciar Download", type="primary"):
+    # Download button - starts pipeline in background thread
+    if st.button("📥 Iniciar Download", type="primary", disabled=st.session_state.pipeline_running):
         try:
             import threading
             from datasus_etl.config import PipelineConfig
             from datasus_etl.pipeline import SihsusPipeline, SIMPipeline
-            from datasus_etl.exceptions import PipelineCancelled
 
             config = PipelineConfig.create(
                 base_dir=data_dir,
@@ -429,145 +450,140 @@ def page_download():
                 output_format=output_format,
             )
 
+            # Store config in session for later use
+            st.session_state.pipeline_config = config
+
             # Select pipeline based on subsystem
             if subsystem == "sim":
                 pipeline = SIMPipeline(config)
             else:
                 pipeline = SihsusPipeline(config)
 
-            # Create progress indicators
-            st.markdown("### Progresso do Pipeline")
+            # Reset state
+            st.session_state.pipeline_running = True
+            st.session_state.pipeline_done = False
+            st.session_state.pipeline_error = None
+            st.session_state.pipeline_result = None
+            st.session_state.pipeline_progress = 0.0
+            st.session_state.pipeline_message = "Iniciando..."
+            st.session_state.pipeline_stage = "Download"
+            st.session_state.pipeline_start_time = time.time()
 
-            progress_container = st.container()
-
-            with progress_container:
-                progress_bar = st.progress(0, text="Iniciando...")
-                status_text = st.empty()
-                stage_info = st.empty()
-
-            # Shared state for thread communication (thread-safe)
-            progress_state = {
-                "progress": 0.0,
-                "message": "Iniciando...",
-                "stage": "Download",
-                "done": False,
-                "error": None,
-                "result": None,
-            }
-            state_lock = threading.Lock()
-
-            # Stage tracking for display
-            stages = ["Download", "Conversao", "Carga", "Transformacao", "Exportacao"]
-
-            def get_stage_from_progress(pct: float, message: str) -> str:
-                """Determine current stage based on progress and message."""
+            # Progress callback updates session_state (thread-safe via GIL)
+            def progress_callback(pct: float, message: str = ""):
+                st.session_state.pipeline_progress = pct
+                st.session_state.pipeline_message = message
+                # Determine stage from progress/message
                 msg_lower = message.lower()
                 if "download" in msg_lower or pct < 0.20:
-                    return "Download"
+                    st.session_state.pipeline_stage = "Download"
                 elif "convers" in msg_lower or 0.20 <= pct < 0.30:
-                    return "Conversao"
+                    st.session_state.pipeline_stage = "Conversao"
                 elif "carga" in msg_lower or "stream" in msg_lower or 0.30 <= pct < 0.50:
-                    return "Carga"
+                    st.session_state.pipeline_stage = "Carga"
                 elif "transform" in msg_lower or "arquivos" in msg_lower or 0.50 <= pct < 0.95:
-                    return "Transformacao"
+                    st.session_state.pipeline_stage = "Transformacao"
                 else:
-                    return "Exportacao"
+                    st.session_state.pipeline_stage = "Exportacao"
 
-            def progress_callback(pct: float, message: str = ""):
-                """Callback function to receive progress updates from pipeline."""
-                with state_lock:
-                    progress_state["progress"] = pct
-                    progress_state["message"] = message
-                    progress_state["stage"] = get_stage_from_progress(pct, message)
-
-            def run_pipeline_thread():
-                """Run pipeline in background thread."""
-                try:
-                    result = pipeline.run()
-                    with state_lock:
-                        progress_state["result"] = result
-                        progress_state["done"] = True
-                except Exception as e:
-                    with state_lock:
-                        progress_state["error"] = e
-                        progress_state["done"] = True
-
-            # Connect progress callback to pipeline context
             pipeline.context.set_progress_callback(progress_callback)
 
-            # Start pipeline in background thread
-            start_time = time.time()
-            pipeline_thread = threading.Thread(target=run_pipeline_thread, daemon=True)
-            pipeline_thread.start()
+            # Run pipeline in background thread
+            def run_pipeline():
+                try:
+                    result = pipeline.run()
+                    st.session_state.pipeline_result = result
+                except Exception as e:
+                    st.session_state.pipeline_error = e
+                finally:
+                    st.session_state.pipeline_done = True
 
-            # Polling loop to update UI
-            while True:
-                time.sleep(0.5)  # Poll every 500ms
+            thread = threading.Thread(target=run_pipeline, daemon=True)
+            thread.start()
+            st.session_state.pipeline_thread = thread
 
-                with state_lock:
-                    current_progress = progress_state["progress"]
-                    current_message = progress_state["message"]
-                    current_stage = progress_state["stage"]
-                    is_done = progress_state["done"]
-                    error = progress_state["error"]
-                    result = progress_state["result"]
-
-                # Update progress bar
-                progress_bar.progress(current_progress, text=f"{int(current_progress*100)}%")
-
-                # Update status message
-                if current_message:
-                    status_text.text(current_message)
-
-                # Update stage indicators
-                stage_display = []
-                stage_reached = False
-                for s in stages:
-                    if s == current_stage:
-                        stage_display.append(f"🔄 {s}")
-                        stage_reached = True
-                    elif not stage_reached:
-                        stage_display.append(f"✅ {s}")
-                    else:
-                        stage_display.append(f"⏳ {s}")
-                stage_info.markdown(" → ".join(stage_display))
-
-                # Check if done
-                if is_done:
-                    break
-
-            # Handle completion
-            elapsed = time.time() - start_time
-
-            if error:
-                if isinstance(error, PipelineCancelled):
-                    st.warning("Pipeline cancelado pelo usuario.")
-                    status_text.text("Cancelado")
-                else:
-                    st.error(f"Erro no pipeline: {error}")
-                    progress_bar.progress(0, text="Erro!")
-            else:
-                # Mark all stages complete
-                progress_bar.progress(1.0, text="Completo!")
-                stage_display = [f"✅ {s}" for s in stages]
-                stage_info.markdown(" → ".join(stage_display))
-
-                # Show results
-                st.success(f"Pipeline concluido em {elapsed:.1f} segundos!")
-
-                col1, col2 = st.columns(2)
-                with col1:
-                    total_rows = result.get_metadata("total_rows_exported", 0) if result else 0
-                    st.metric("Linhas Exportadas", f"{total_rows:,}")
-                with col2:
-                    st.metric("Tempo Total", f"{elapsed:.1f}s")
-
-                st.info(f"Arquivos salvos em: {config.storage.parquet_dir}")
+            # Force rerun to enter polling mode
+            st.rerun()
 
         except ImportError as e:
             st.error(f"Erro de importacao: {e}")
         except Exception as e:
             st.error(f"Erro na configuracao: {e}")
+
+    # Show progress while pipeline is running (polling mode)
+    if st.session_state.pipeline_running and not st.session_state.pipeline_done:
+        st.markdown("### Progresso do Pipeline")
+
+        # Progress bar with current percentage
+        progress_pct = st.session_state.pipeline_progress
+        st.progress(progress_pct, text=f"{int(progress_pct * 100)}%")
+
+        # Status message
+        st.text(st.session_state.pipeline_message)
+
+        # Stage indicators
+        stages = ["Download", "Conversao", "Carga", "Transformacao", "Exportacao"]
+        current_stage = st.session_state.pipeline_stage
+        stage_display = []
+        stage_reached = False
+        for s in stages:
+            if s == current_stage:
+                stage_display.append(f"🔄 {s}")
+                stage_reached = True
+            elif not stage_reached:
+                stage_display.append(f"✅ {s}")
+            else:
+                stage_display.append(f"⏳ {s}")
+        st.markdown(" → ".join(stage_display))
+
+        # Elapsed time
+        elapsed = time.time() - st.session_state.pipeline_start_time
+        st.caption(f"Tempo decorrido: {elapsed:.0f}s")
+
+        # Poll every 1 second by sleeping then rerunning
+        time.sleep(1)
+        st.rerun()
+
+    # Handle pipeline completion
+    elif st.session_state.pipeline_running and st.session_state.pipeline_done:
+        from datasus_etl.exceptions import PipelineCancelled
+
+        st.markdown("### Progresso do Pipeline")
+
+        elapsed = time.time() - st.session_state.pipeline_start_time
+        error = st.session_state.pipeline_error
+        result = st.session_state.pipeline_result
+
+        if error:
+            if isinstance(error, PipelineCancelled):
+                st.warning("Pipeline cancelado pelo usuario.")
+                st.progress(st.session_state.pipeline_progress, text="Cancelado")
+            else:
+                st.error(f"Erro no pipeline: {error}")
+                st.progress(0, text="Erro!")
+        else:
+            # Mark all stages complete
+            st.progress(1.0, text="Completo!")
+            stages = ["Download", "Conversao", "Carga", "Transformacao", "Exportacao"]
+            stage_display = [f"✅ {s}" for s in stages]
+            st.markdown(" → ".join(stage_display))
+
+            # Show results
+            st.success(f"Pipeline concluido em {elapsed:.1f} segundos!")
+
+            col1, col2 = st.columns(2)
+            with col1:
+                total_rows = result.get_metadata("total_rows_exported", 0) if result else 0
+                st.metric("Linhas Exportadas", f"{total_rows:,}")
+            with col2:
+                st.metric("Tempo Total", f"{elapsed:.1f}s")
+
+            config = st.session_state.get("pipeline_config")
+            if config:
+                st.info(f"Arquivos salvos em: {config.storage.parquet_dir}")
+
+        # Reset running state (but keep results visible)
+        st.session_state.pipeline_running = False
 
 
 def page_query():
