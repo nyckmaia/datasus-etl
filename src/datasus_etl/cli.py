@@ -9,6 +9,7 @@ Usage:
 
 import logging
 import shutil
+import signal
 from pathlib import Path
 from typing import Optional
 
@@ -22,9 +23,28 @@ from rich.table import Table
 from datasus_etl import __version__
 from datasus_etl.config import PipelineConfig
 from datasus_etl.download.ftp_downloader import FTPDownloader
+from datasus_etl.exceptions import PipelineCancelled
 from datasus_etl.pipeline.sihsus_pipeline import SihsusPipeline
 from datasus_etl.pipeline.sim_pipeline import SIMPipeline
 from datasus_etl.transform.converters.dbc_to_dbf import DbcToDbfConverter
+
+
+# Global reference to current pipeline context for signal handling
+_current_context = None
+_original_sigint_handler = None
+
+
+def _handle_sigint(signum, frame):
+    """Handle Ctrl+C for graceful cancellation."""
+    global _current_context
+    if _current_context is not None:
+        console.print(
+            "\n[yellow]Cancelando... aguarde o arquivo atual terminar.[/yellow]"
+        )
+        _current_context.request_cancel()
+    else:
+        # No pipeline running, raise KeyboardInterrupt as usual
+        raise KeyboardInterrupt
 
 
 # Average DBC file sizes by subsystem (in MB)
@@ -403,7 +423,8 @@ def pipeline_cmd(
 
     # Run pipeline
     console.print()
-    console.print("[bold]Iniciando pipeline...[/bold]\n")
+    console.print("[bold]Iniciando pipeline...[/bold]")
+    console.print("[dim]Pressione Ctrl+C para cancelar graciosamente[/dim]\n")
 
     if source.lower() == "sihsus":
         pipeline_obj = SihsusPipeline(config)
@@ -414,23 +435,40 @@ def pipeline_cmd(
         console.print("[dim]Subsistemas disponiveis: sihsus, sim[/dim]")
         raise typer.Exit(1)
 
-    result = pipeline_obj.run()
+    # Set up signal handler for graceful cancellation
+    global _current_context, _original_sigint_handler
+    _current_context = pipeline_obj.context
+    _original_sigint_handler = signal.signal(signal.SIGINT, _handle_sigint)
 
-    # Print summary
-    console.print("\n[bold green]✓ Pipeline concluído com sucesso![/bold green]\n")
+    try:
+        result = pipeline_obj.run()
 
-    total_rows = result.get_metadata("total_rows_exported", 0)
-    exported_files = result.get("exported_parquet_files", [])
+        # Print summary
+        console.print("\n[bold green]✓ Pipeline concluído com sucesso![/bold green]\n")
 
-    summary = Table(title="[bold green]Resumo[/bold green]", border_style="green")
-    summary.add_column("Métrica", style="green")
-    summary.add_column("Valor", style="white")
+        total_rows = result.get_metadata("total_rows_exported", 0)
+        exported_files = result.get("exported_parquet_files", [])
 
-    summary.add_row("Total de linhas", f"{total_rows:,}")
-    summary.add_row("Arquivos Parquet", str(len(exported_files)))
-    summary.add_row("Diretório de saída", str(config.storage.parquet_dir))
+        summary = Table(title="[bold green]Resumo[/bold green]", border_style="green")
+        summary.add_column("Métrica", style="green")
+        summary.add_column("Valor", style="white")
 
-    console.print(summary)
+        summary.add_row("Total de linhas", f"{total_rows:,}")
+        summary.add_row("Arquivos Parquet", str(len(exported_files)))
+        summary.add_row("Diretório de saída", str(config.storage.parquet_dir))
+
+        console.print(summary)
+
+    except PipelineCancelled:
+        console.print("\n[yellow]Pipeline cancelado pelo usuário.[/yellow]")
+        console.print("[dim]Dados processados até o momento foram salvos.[/dim]")
+        raise typer.Exit(0)
+
+    finally:
+        # Restore original signal handler
+        _current_context = None
+        if _original_sigint_handler is not None:
+            signal.signal(signal.SIGINT, _original_sigint_handler)
 
 
 @app.command()
@@ -602,6 +640,7 @@ def update(
             raise typer.Exit(0)
 
     console.print("\n[bold]Iniciando atualizacao incremental...[/bold]")
+    console.print("[dim]Pressione Ctrl+C para cancelar graciosamente[/dim]\n")
 
     if source.lower() == "sihsus":
         pipeline_obj = SihsusPipeline(incremental_config)
@@ -611,13 +650,30 @@ def update(
         console.print(f"[red]Erro: Subsistema '{source}' ainda nao implementado.[/red]")
         raise typer.Exit(1)
 
-    result = pipeline_obj.run()
+    # Set up signal handler for graceful cancellation
+    global _current_context, _original_sigint_handler
+    _current_context = pipeline_obj.context
+    _original_sigint_handler = signal.signal(signal.SIGINT, _handle_sigint)
 
-    # Print summary
-    console.print("\n[bold green]Atualizacao concluida![/bold green]")
+    try:
+        result = pipeline_obj.run()
 
-    total_rows = result.get_metadata("total_rows_exported", 0)
-    console.print(f"Novas linhas adicionadas: {total_rows:,}")
+        # Print summary
+        console.print("\n[bold green]Atualizacao concluida![/bold green]")
+
+        total_rows = result.get_metadata("total_rows_exported", 0)
+        console.print(f"Novas linhas adicionadas: {total_rows:,}")
+
+    except PipelineCancelled:
+        console.print("\n[yellow]Atualizacao cancelada pelo usuário.[/yellow]")
+        console.print("[dim]Dados processados até o momento foram salvos.[/dim]")
+        raise typer.Exit(0)
+
+    finally:
+        # Restore original signal handler
+        _current_context = None
+        if _original_sigint_handler is not None:
+            signal.signal(signal.SIGINT, _original_sigint_handler)
 
 
 @app.command()

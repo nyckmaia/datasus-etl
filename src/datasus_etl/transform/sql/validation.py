@@ -2,6 +2,11 @@
 
 This module provides transforms for data validation:
 - CidValidationTransform: Validates ICD-10 (CID) code format
+
+The CID validation includes:
+1. Removal of '.' characters (e.g., 'J18.0' -> 'J180')
+2. Conversion to uppercase (e.g., 'j18' -> 'J18')
+3. Format validation: LNN or LNNN (Letter + 2-3 digits)
 """
 
 from typing import Optional
@@ -12,10 +17,14 @@ from datasus_etl.transform.sql.base import BaseTransform
 class CidValidationTransform(BaseTransform):
     """Transform that validates CID (ICD-10) code format.
 
+    Before validation, the transform:
+    1. Removes '.' characters (e.g., 'J18.0' -> 'J180')
+    2. Converts to uppercase (e.g., 'j18' -> 'J18')
+
     Valid CID format: Single uppercase letter followed by 2 or 3 digits
-    - Valid examples: A01, B123, Z999
+    - Valid examples: A01, B123, Z999, J18.0 (becomes J180)
     - Invalid examples: ABC (only letters), 123 (only numbers), A1 (too short),
-                       A1234 (too long), a01 (lowercase)
+                       A1234 (too long), J.1 (becomes J1, too short)
 
     Invalid values are converted to NULL.
 
@@ -25,7 +34,7 @@ class CidValidationTransform(BaseTransform):
     Example:
         >>> transform = CidValidationTransform(cid_columns=["cid_morte"])
         >>> sql = transform.get_sql("cid_morte", ["cid_morte", "sexo"])
-        >>> # Returns: CASE WHEN ... regexp_matches(...) THEN cid_morte ELSE NULL END AS cid_morte
+        >>> # Returns: CASE WHEN ... regexp_matches(...) THEN cleaned_cid ELSE NULL END AS cid_morte
     """
 
     def __init__(self, cid_columns: Optional[list[str]] = None) -> None:
@@ -54,6 +63,11 @@ class CidValidationTransform(BaseTransform):
     ) -> str:
         """Generate SQL for CID validation.
 
+        The validation process:
+        1. Removes '.' characters from the value
+        2. Converts to uppercase
+        3. Validates format: ^[A-Z][0-9]{2,3}$
+
         Args:
             column: Column name to validate
             columns: List of all available columns
@@ -73,10 +87,14 @@ class CidValidationTransform(BaseTransform):
         # - [A-Z] exactly one uppercase letter
         # - [0-9]{2,3} exactly 2 or 3 digits
         # - $ end of string
+        #
+        # Before validation:
+        # - REPLACE removes '.' (e.g., 'J18.0' -> 'J180')
+        # - UPPER converts to uppercase (e.g., 'j18' -> 'J18')
         return f"""CASE
             WHEN {col_lower} IS NOT NULL
-                 AND regexp_matches({col_lower}, '^[A-Z][0-9]{{2,3}}$')
-            THEN {col_lower}
+                 AND regexp_matches(REPLACE(UPPER({col_lower}), '.', ''), '^[A-Z][0-9]{{2,3}}$')
+            THEN REPLACE(UPPER({col_lower}), '.', '')
             ELSE NULL
         END AS {col_lower}"""
 
@@ -85,6 +103,11 @@ class CidValidationTransform(BaseTransform):
 
         This method is used when the validation is applied within
         a SELECT statement where the column alias is added separately.
+
+        The validation process:
+        1. Removes '.' characters from the value
+        2. Converts to uppercase
+        3. Validates format: ^[A-Z][0-9]{2,3}$
 
         Args:
             column: Column name to validate
@@ -95,7 +118,7 @@ class CidValidationTransform(BaseTransform):
         col_lower = column.lower()
         return f"""CASE
             WHEN {col_lower} IS NOT NULL
-                 AND regexp_matches({col_lower}, '^[A-Z][0-9]{{2,3}}$')
-            THEN {col_lower}
+                 AND regexp_matches(REPLACE(UPPER({col_lower}), '.', ''), '^[A-Z][0-9]{{2,3}}$')
+            THEN REPLACE(UPPER({col_lower}), '.', '')
             ELSE NULL
         END"""

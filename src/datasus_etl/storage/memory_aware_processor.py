@@ -9,20 +9,23 @@ Key features:
 - Automatically adjusts parallelism based on available RAM
 - Exports to Hive-partitioned Parquet (by UF)
 - Each DBC source generates one Parquet/CSV file
+- Supports graceful cancellation via context
 """
 
 import logging
 import tempfile
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Callable, Literal, Optional
 
 import duckdb
 import psutil
 from tqdm import tqdm
 
 from datasus_etl.config import PipelineConfig
+from datasus_etl.exceptions import PipelineCancelled
 
 
 @dataclass
@@ -75,6 +78,8 @@ class MemoryAwareProcessor:
         config: PipelineConfig,
         num_workers: int = 4,
         ibge_data_path: Optional[Path] = None,
+        cancel_check: Optional[Callable[[], bool]] = None,
+        progress_callback: Optional[Callable[[float, str], None]] = None,
     ) -> None:
         """Initialize the memory-aware processor.
 
@@ -82,15 +87,29 @@ class MemoryAwareProcessor:
             config: Pipeline configuration
             num_workers: Maximum number of parallel workers (default: 4)
             ibge_data_path: Optional path to IBGE data for municipality enrichment
+            cancel_check: Optional callback to check if cancellation was requested
+            progress_callback: Optional callback to report progress (progress: 0-1, message: str)
         """
         self.config = config
         self.num_workers = max(self.MIN_WORKERS, min(num_workers, self.MAX_WORKERS))
         self.ibge_data_path = ibge_data_path
         self.logger = logging.getLogger("datasus_etl.MemoryAwareProcessor")
+        self._cancel_check = cancel_check
+        self._progress_callback = progress_callback
+        self._cancelled = threading.Event()
 
         # Track results
         self._results: list[ProcessingResult] = []
         self._total_rows = 0
+
+    def _is_cancelled(self) -> bool:
+        """Check if processing should be cancelled."""
+        if self._cancelled.is_set():
+            return True
+        if self._cancel_check and self._cancel_check():
+            self._cancelled.set()
+            return True
+        return False
 
     def estimate_memory_usage(self, dbc_files: list[Path]) -> MemoryEstimate:
         """Estimate memory requirements and recommend worker count.
@@ -129,7 +148,7 @@ class MemoryAwareProcessor:
         else:
             processing_mode = "parallel"
 
-        self.logger.info(
+        self.logger.debug(
             f"Memory estimate: {available_ram_gb:.1f}GB available, "
             f"~{estimated_per_file_gb:.2f}GB per file, "
             f"recommending {recommended_workers} workers ({processing_mode} mode)"
@@ -165,15 +184,10 @@ class MemoryAwareProcessor:
 
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        tqdm.write(f"\n{'='*60}")
-        tqdm.write(f"Memory-Aware Processing: {len(dbc_files)} DBC files")
-        tqdm.write(f"{'='*60}")
-        tqdm.write(f"Available RAM: {estimate.available_ram_gb:.1f} GB")
-        tqdm.write(f"Est. RAM/file: {estimate.estimated_per_file_gb:.2f} GB")
-        tqdm.write(f"Workers: {estimate.recommended_workers} ({estimate.processing_mode} mode)")
-        tqdm.write(f"Output: {output_dir}")
-        tqdm.write(f"Format: {self.config.output_format.upper()}")
-        tqdm.write(f"{'='*60}\n")
+        tqdm.write(
+            f"       RAM: {estimate.available_ram_gb:.1f} GB disponível, "
+            f"{estimate.recommended_workers} workers ({estimate.processing_mode})"
+        )
 
         # Process based on mode
         if estimate.processing_mode == "serial":
@@ -186,13 +200,19 @@ class MemoryAwareProcessor:
         failed = sum(1 for r in results if not r.success)
         total_rows = sum(r.rows_exported for r in results if r.success)
 
-        tqdm.write(f"\n{'='*60}")
-        tqdm.write(f"Processing Complete")
-        tqdm.write(f"{'='*60}")
-        tqdm.write(f"Successful: {successful}/{len(dbc_files)} files")
-        tqdm.write(f"Failed: {failed}")
-        tqdm.write(f"Total rows: {total_rows:,}")
-        tqdm.write(f"{'='*60}\n")
+        # Calculate output size
+        format_ext = "*.csv" if self.config.output_format == "csv" else "*.parquet"
+        output_files = list(output_dir.rglob(format_ext))
+        total_size_mb = sum(f.stat().st_size for f in output_files) / (1024 * 1024)
+
+        format_name = self.config.output_format.upper()
+        tqdm.write(
+            f"       ✓ Processamento concluído: {total_rows:,} linhas, "
+            f"{len(output_files)} arquivos {format_name} ({total_size_mb:.1f} MB)"
+        )
+
+        if failed > 0:
+            tqdm.write(f"       [!] {failed} arquivos falharam")
 
         self._results = results
         self._total_rows = total_rows
@@ -214,18 +234,26 @@ class MemoryAwareProcessor:
             List of results
         """
         results = []
+        total_files = len(dbc_files)
 
-        for dbc_file in tqdm(dbc_files, desc="Processing DBC files (serial)"):
+        for i, dbc_file in enumerate(tqdm(dbc_files, desc="DBC→Parquet", leave=False)):
+            # Check for cancellation
+            if self._is_cancelled():
+                tqdm.write("\n[CANCELLED] Processamento cancelado pelo usuário")
+                break
+
             result = self._process_single_file(dbc_file, output_dir)
             results.append(result)
 
-            if result.success:
-                tqdm.write(
-                    f"[OK] {result.source_file} → uf={result.uf}: "
-                    f"{result.rows_exported:,} rows"
-                )
-            else:
+            # Report progress
+            if self._progress_callback:
+                progress = (i + 1) / total_files
+                self._progress_callback(progress, f"{i + 1}/{total_files} arquivos")
+
+            if not result.success:
                 tqdm.write(f"[ERROR] {result.source_file}: {result.error}")
+            else:
+                self.logger.debug(f"Processed {result.source_file}: {result.rows_exported:,} rows")
 
         return results
 
@@ -246,6 +274,8 @@ class MemoryAwareProcessor:
             List of results
         """
         results = []
+        total_files = len(dbc_files)
+        completed_count = 0
 
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
             # Submit all tasks
@@ -257,21 +287,35 @@ class MemoryAwareProcessor:
             # Process completed tasks
             for future in tqdm(
                 as_completed(future_to_file),
-                total=len(dbc_files),
-                desc=f"Processing DBC files ({num_workers} workers)",
+                total=total_files,
+                desc=f"DBC→Parquet ({num_workers}w)",
+                leave=False,
             ):
+                # Check for cancellation
+                if self._is_cancelled():
+                    tqdm.write("\n[CANCELLED] Processamento cancelado pelo usuário")
+                    # Cancel pending futures
+                    for f in future_to_file:
+                        f.cancel()
+                    break
+
                 dbc_file = future_to_file[future]
                 try:
                     result = future.result()
                     results.append(result)
+                    completed_count += 1
 
-                    if result.success:
-                        tqdm.write(
-                            f"[OK] {result.source_file} → uf={result.uf}: "
-                            f"{result.rows_exported:,} rows"
-                        )
-                    else:
+                    # Report progress
+                    if self._progress_callback:
+                        progress = completed_count / total_files
+                        self._progress_callback(progress, f"{completed_count}/{total_files} arquivos")
+
+                    if not result.success:
                         tqdm.write(f"[ERROR] {result.source_file}: {result.error}")
+                    else:
+                        self.logger.debug(
+                            f"Processed {result.source_file}: {result.rows_exported:,} rows"
+                        )
 
                 except Exception as e:
                     self.logger.error(f"Worker failed for {dbc_file.name}: {e}")
@@ -285,6 +329,12 @@ class MemoryAwareProcessor:
                             error=str(e),
                         )
                     )
+                    completed_count += 1
+
+                    # Report progress even on failure
+                    if self._progress_callback:
+                        progress = completed_count / total_files
+                        self._progress_callback(progress, f"{completed_count}/{total_files} arquivos")
 
         return results
 

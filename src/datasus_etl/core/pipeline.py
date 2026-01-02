@@ -7,7 +7,7 @@ from typing import Generic, TypeVar
 from datasus_etl.config import PipelineConfig
 from datasus_etl.core.context import PipelineContext
 from datasus_etl.core.stage import Stage
-from datasus_etl.exceptions import PyInmetError
+from datasus_etl.exceptions import PipelineCancelled, PyInmetError
 
 T = TypeVar("T", bound=PipelineConfig)
 
@@ -60,10 +60,6 @@ class Pipeline(ABC, Generic[T]):
         Raises:
             PyInmetError: If pipeline execution fails
         """
-        self.logger.info("=" * 60)
-        self.logger.info(f"Starting pipeline: {self.__class__.__name__}")
-        self.logger.info("=" * 60)
-
         try:
             # Setup stages (Template Method hook)
             self.setup_stages()
@@ -71,16 +67,22 @@ class Pipeline(ABC, Generic[T]):
             if not self._stages:
                 raise PyInmetError("No stages defined in pipeline")
 
+            total_stages = len(self._stages)
+
             # Execute stages sequentially
             for i, stage in enumerate(self._stages, 1):
-                self.logger.info(f"[{i}/{len(self._stages)}] Executing: {stage.name}")
+                # Check for cancellation before starting each stage
+                self.context.check_cancelled()
+
+                self.context.set_metadata("current_stage", i)
+                self.context.set_metadata("total_stages", total_stages)
                 self.context = stage.execute(self.context)
 
-            self.logger.info("=" * 60)
-            self.logger.info("Pipeline completed successfully!")
-            self.logger.info("=" * 60)
-
             return self.context
+
+        except PipelineCancelled:
+            self.logger.info("Pipeline cancelled by user")
+            raise
 
         except PyInmetError:
             self.logger.error("Pipeline failed")

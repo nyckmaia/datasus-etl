@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from typing import Optional
 
 from datasus_etl.core.context import PipelineContext
-from datasus_etl.exceptions import PyInmetError
+from datasus_etl.exceptions import PipelineCancelled, PyInmetError
 
 
 class Stage(ABC):
@@ -54,20 +54,28 @@ class Stage(ABC):
         Raises:
             PyInmetError: If stage execution fails critically
         """
-        self.logger.info(f"Starting stage: {self.name}")
+        # Get stage number for logging
+        current_stage = context.get_metadata("current_stage", 1)
+        total_stages = context.get_metadata("total_stages", 1)
+
+        self.logger.debug(f"[{current_stage}/{total_stages}] Starting: {self.name}")
 
         try:
             context = self._execute(context)
             context.mark_stage_completed(self.name)
-            self.logger.info(f"Stage completed successfully: {self.name}")
+            self.logger.debug(f"[{current_stage}/{total_stages}] Completed: {self.name}")
+
+        except PipelineCancelled:
+            self.logger.info(f"[{current_stage}/{total_stages}] Cancelled: {self.name}")
+            raise
 
         except PyInmetError as e:
-            self.logger.error(f"Stage failed: {self.name} - {e}")
+            self.logger.error(f"[{current_stage}/{total_stages}] Failed: {self.name} - {e}")
             context.add_error(f"{self.name}: {e}")
             raise
 
         except Exception as e:
-            self.logger.exception(f"Unexpected error in stage: {self.name}")
+            self.logger.exception(f"[{current_stage}/{total_stages}] Error in: {self.name}")
             context.add_error(f"{self.name}: Unexpected error - {e}")
             raise PyInmetError(f"Stage {self.name} failed: {e}") from e
 

@@ -88,6 +88,69 @@ class TestPipelineContext:
         assert context_dict["errors"] == ["Error 1"]
         assert context_dict["completed_stages"] == ["Stage 1"]
 
+    def test_context_cancellation(self):
+        """Test cancellation mechanism."""
+        from datasus_etl.exceptions import PipelineCancelled
+
+        context = PipelineContext()
+
+        # Initially not cancelled
+        assert not context.is_cancelled()
+
+        # Request cancellation
+        context.request_cancel()
+        assert context.is_cancelled()
+
+        # Check should raise
+        with pytest.raises(PipelineCancelled):
+            context.check_cancelled()
+
+    def test_context_progress_tracking(self):
+        """Test progress tracking mechanism."""
+        context = PipelineContext()
+
+        # Register stages with weights
+        context.register_stage("download", 0.20)
+        context.register_stage("processing", 0.80)
+
+        # Initial progress is 0
+        assert context.get_global_progress() == 0.0
+
+        # Update download progress to 50%
+        context.update_stage_progress("download", 0.5, "Downloading...")
+        assert context.get_global_progress() == pytest.approx(0.10, abs=0.01)
+
+        # Complete download (100%)
+        context.mark_stage_progress_complete("download")
+        assert context.get_global_progress() == pytest.approx(0.20, abs=0.01)
+
+        # Update processing to 50%
+        context.update_stage_progress("processing", 0.5, "Processing...")
+        assert context.get_global_progress() == pytest.approx(0.60, abs=0.01)
+
+        # Complete processing
+        context.mark_stage_progress_complete("processing")
+        assert context.get_global_progress() == pytest.approx(1.0, abs=0.01)
+
+    def test_context_progress_callback(self):
+        """Test progress callback mechanism."""
+        context = PipelineContext()
+        callback_calls = []
+
+        def track_progress(pct, msg):
+            callback_calls.append((pct, msg))
+
+        context.set_progress_callback(track_progress)
+        context.register_stage("test", 1.0)
+
+        # Update progress
+        context.update_stage_progress("test", 0.5, "Half done")
+
+        # Check callback was called
+        assert len(callback_calls) == 1
+        assert callback_calls[0][0] == pytest.approx(0.5, abs=0.01)
+        assert callback_calls[0][1] == "Half done"
+
 
 class MockStage(Stage):
     """Mock stage for testing."""

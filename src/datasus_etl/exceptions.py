@@ -55,5 +55,11 @@ class EnrichmentError(PyDataSUSError):
     pass
 
 
+class PipelineCancelled(PyDataSUSError):
+    """Raised when pipeline is cancelled by user (Ctrl+C)."""
+
+    pass
+
+
 # Legacy alias for backward compatibility
 PyInmetError = PyDataSUSError

@@ -36,13 +36,26 @@ class DownloadStage(Stage):
 
     def _execute(self, context: PipelineContext) -> PipelineContext:
         """Execute download stage."""
+        from tqdm import tqdm
+
+        current = context.get_metadata("current_stage", 1)
+        total = context.get_metadata("total_stages", 1)
+
+        tqdm.write(f"\n[{current}/{total}] Download: Baixando arquivos DBC do FTP...")
+
         downloader = FTPDownloader(self.config.download)
         files = downloader.download()
 
         context.set("downloaded_files", files)
         context.set_metadata("download_count", len(files))
 
-        self.logger.info(f"Downloaded {len(files)} files")
+        # Calculate total size
+        total_size_mb = sum(f.stat().st_size for f in files) / (1024 * 1024)
+        tqdm.write(f"       ✓ Download concluído: {len(files)} arquivos ({total_size_mb:.1f} MB)")
+
+        # Mark stage progress complete
+        context.mark_stage_progress_complete("download")
+
         return context
 
 
@@ -55,13 +68,24 @@ class DbcToDbfStage(Stage):
 
     def _execute(self, context: PipelineContext) -> PipelineContext:
         """Execute DBC to DBF conversion stage."""
+        from tqdm import tqdm
+
+        current = context.get_metadata("current_stage", 1)
+        total = context.get_metadata("total_stages", 1)
+
+        tqdm.write(f"\n[{current}/{total}] Conversão: DBC → DBF...")
+
         converter = DbcToDbfConverter(self.config.conversion)
         stats = converter.convert_directory()
 
         context.set("dbc_conversion_stats", stats)
         context.set_metadata("dbc_converted_count", stats["converted"])
 
-        self.logger.info(f"Converted {stats['converted']} DBC files to DBF")
+        tqdm.write(f"       ✓ Conversão concluída: {stats['converted']} arquivos")
+
+        # Mark stage progress complete
+        context.mark_stage_progress_complete("dbc_to_dbf")
+
         return context
 
 
@@ -77,6 +101,9 @@ class DbfToDbStage(Stage):
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
         from tqdm import tqdm
+
+        current = context.get_metadata("current_stage", 1)
+        total = context.get_metadata("total_stages", 1)
 
         # Get or create DuckDB manager (shared across stages)
         db_manager = context.get("db_manager")
@@ -102,14 +129,7 @@ class DbfToDbStage(Stage):
         total_rows = 0
         staging_tables = []
 
-        self.logger.info(f"Streaming {len(dbf_files)} DBF files using {max_workers} threads")
-
-        # Log all files to be processed
-        tqdm.write(f"\nStreaming {len(dbf_files)} DBF files using {max_workers} threads:")
-        for dbf_file in dbf_files:
-            file_size_mb = dbf_file.stat().st_size / (1024 * 1024)
-            tqdm.write(f"  - {dbf_file.name} ({file_size_mb:.1f}MB)")
-        tqdm.write("")  # Empty line before progress bar
+        tqdm.write(f"\n[{current}/{total}] Streaming: DBF → DuckDB ({len(dbf_files)} arquivos)...")
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             # Submit all tasks
@@ -122,14 +142,17 @@ class DbfToDbStage(Stage):
 
             # Process completed tasks with progress bar
             for future in tqdm(
-                as_completed(future_to_file), total=len(dbf_files), desc="Streaming DBF->DuckDB"
+                as_completed(future_to_file), total=len(dbf_files), desc="DBF→DuckDB", leave=False
             ):
+                # Check for cancellation before processing next result
+                context.check_cancelled()
+
                 dbf_file = future_to_file[future]
                 try:
                     rows = future.result()
                     total_rows += rows
                     staging_tables.append(f"staging_{dbf_file.stem}")
-                    tqdm.write(f"[OK] Completed {dbf_file.name}: {rows:,} rows")
+                    self.logger.debug(f"Streamed {dbf_file.name}: {rows:,} rows")
                 except Exception as e:
                     self.logger.error(f"Failed to stream {dbf_file.name}: {e}")
                     continue
@@ -137,7 +160,10 @@ class DbfToDbStage(Stage):
         context.set("staging_tables", staging_tables)
         context.set_metadata("total_rows_loaded", total_rows)
 
-        tqdm.write(f"\n[DONE] Streamed {total_rows:,} rows from {len(dbf_files)} DBF files\n")
+        tqdm.write(f"       ✓ Streaming concluído: {total_rows:,} linhas de {len(dbf_files)} arquivos")
+
+        # Mark stage progress complete
+        context.mark_stage_progress_complete("dbf_to_db")
 
         return context
 
@@ -275,6 +301,9 @@ class SqlTransformStage(Stage):
         """Transform and export to Hive-partitioned Parquet with canonical schema."""
         from tqdm import tqdm
 
+        current = context.get_metadata("current_stage", 1)
+        total = context.get_metadata("total_stages", 1)
+
         # Get shared DuckDB manager from context
         db_manager = context.get("db_manager")
         if db_manager is None:
@@ -292,29 +321,27 @@ class SqlTransformStage(Stage):
             self.logger.warning("No staging tables found")
             return context
 
-        tqdm.write(
-            f"\n[TRANSFORM] Transforming {len(staging_tables)} tables with canonical schema..."
-        )
-        tqdm.write(
-            f"[PARTITION] Exporting to Hive-partitioned Parquet "
-            f"(partition_by={self.config.storage.partition_cols})"
-        )
-
         # Ensure output directory exists
         parquet_dir = self.config.storage.parquet_dir
         parquet_dir.mkdir(parents=True, exist_ok=True)
 
         # Build partition columns string
         partition_cols = ", ".join(self.config.storage.partition_cols)
+        format_name = self.config.output_format.upper()
+
+        tqdm.write(
+            f"\n[{current}/{total}] Transformação + Export: "
+            f"{len(staging_tables)} tabelas → {format_name}..."
+        )
 
         total_rows_exported = 0
 
-        # Process each staging table
-        for i, staging_table in enumerate(staging_tables, 1):
+        # Process each staging table with progress bar
+        for staging_table in tqdm(staging_tables, desc="Transform+Export", leave=False):
+            # Check for cancellation before processing next table
+            context.check_cancelled()
+
             original_name = staging_table.replace("staging_", "")
-            tqdm.write(
-                f"\n[{i}/{len(staging_tables)}] Transforming {original_name} with canonical schema..."
-            )
 
             try:
                 # Transform using canonical schema
@@ -335,7 +362,6 @@ class SqlTransformStage(Stage):
 
                 # Export based on output format
                 if self.config.output_format == "csv":
-                    # CSV export: one file per DBC source
                     self._export_csv(
                         db_manager=db_manager,
                         view_name=view_name,
@@ -344,7 +370,6 @@ class SqlTransformStage(Stage):
                         order_col=order_col,
                     )
                 else:
-                    # Parquet export: one file per DBC source with partition structure
                     self._export_parquet(
                         db_manager=db_manager,
                         view_name=view_name,
@@ -354,16 +379,13 @@ class SqlTransformStage(Stage):
                     )
 
                 total_rows_exported += row_count
-                tqdm.write(
-                    f"[OK] Exported {original_name}: {row_count:,} rows "
-                    f"({self.config.output_format.upper()}, partitioned by {partition_cols})"
-                )
+                self.logger.debug(f"Exported {original_name}: {row_count:,} rows")
 
                 # Cleanup: drop the view to free memory
                 db_manager._conn.execute(f"DROP VIEW IF EXISTS {view_name}")
 
             except Exception as e:
-                tqdm.write(f"[ERROR] Failed to transform/export {original_name}: {e}")
+                tqdm.write(f"[ERROR] Failed: {original_name}: {e}")
                 self.logger.error(f"Failed to transform/export {staging_table}: {e}")
                 raise
 
@@ -382,17 +404,22 @@ class SqlTransformStage(Stage):
         context.set("file_count", len(output_files))
         context.set("exported_parquet_files", [str(f) for f in output_files])
 
-        format_name = self.config.output_format.upper()
-        tqdm.write(f"\n[DONE] {format_name} export complete:")
-        tqdm.write(f"  - Total rows: {total_rows_exported:,}")
-        tqdm.write(f"  - Partitions: {len(partition_dirs)} (by {partition_cols})")
-        tqdm.write(f"  - Files: {len(output_files)} ({total_size_mb:.1f}MB total)\n")
+        tqdm.write(
+            f"       ✓ Export concluído: {total_rows_exported:,} linhas, "
+            f"{len(output_files)} arquivos {format_name} ({total_size_mb:.1f} MB)"
+        )
+
+        # Mark stage progress complete
+        context.mark_stage_progress_complete("sql_transform")
 
         return context
 
     def _execute_individual(self, context: PipelineContext) -> PipelineContext:
         """Legacy mode: Transform and export one Parquet file per DBF."""
         from tqdm import tqdm
+
+        current = context.get_metadata("current_stage", 1)
+        total = context.get_metadata("total_stages", 1)
 
         db_manager = context.get("db_manager")
         if db_manager is None:
@@ -409,19 +436,22 @@ class SqlTransformStage(Stage):
             self.logger.warning("No staging tables found")
             return context
 
-        tqdm.write(
-            f"\n[TRANSFORM] Transforming {len(staging_tables)} tables with SQL (individual files)..."
-        )
-
         parquet_dir = self.config.storage.parquet_dir
         parquet_dir.mkdir(parents=True, exist_ok=True)
+
+        tqdm.write(
+            f"\n[{current}/{total}] Transformação + Export: "
+            f"{len(staging_tables)} tabelas → PARQUET (individual)..."
+        )
 
         total_rows_exported = 0
         exported_files = []
 
-        for i, staging_table in enumerate(staging_tables, 1):
+        for staging_table in tqdm(staging_tables, desc="Transform+Export", leave=False):
+            # Check for cancellation before processing next table
+            context.check_cancelled()
+
             original_name = staging_table.replace("staging_", "")
-            tqdm.write(f"\n[{i}/{len(staging_tables)}] Transforming {original_name}...")
 
             try:
                 view_name = f"transformed_{original_name}"
@@ -453,25 +483,30 @@ class SqlTransformStage(Stage):
                 ).fetchone()[0]
                 total_rows_exported += row_count
 
-                file_size_mb = parquet_file.stat().st_size / (1024 * 1024)
-                tqdm.write(
-                    f"[OK] Exported {original_name}.parquet: {row_count:,} rows ({file_size_mb:.1f}MB)"
-                )
+                self.logger.debug(f"Exported {original_name}: {row_count:,} rows")
 
                 exported_files.append(str(parquet_file))
 
             except Exception as e:
-                tqdm.write(f"[ERROR] Failed to transform/export {original_name}: {e}")
+                tqdm.write(f"[ERROR] Failed: {original_name}: {e}")
                 self.logger.error(f"Failed to transform/export {staging_table}: {e}")
                 raise
+
+        # Calculate total size
+        total_size_mb = sum(
+            Path(f).stat().st_size for f in exported_files
+        ) / (1024 * 1024)
 
         context.set_metadata("total_rows_exported", total_rows_exported)
         context.set("exported_parquet_files", exported_files)
 
         tqdm.write(
-            f"\n[DONE] Exported {len(exported_files)} Parquet files "
-            f"({total_rows_exported:,} total rows)\n"
+            f"       ✓ Export concluído: {total_rows_exported:,} linhas, "
+            f"{len(exported_files)} arquivos PARQUET ({total_size_mb:.1f} MB)"
         )
+
+        # Mark stage progress complete
+        context.mark_stage_progress_complete("sql_transform")
 
         return context
 
@@ -516,6 +551,9 @@ class MemoryAwareProcessingStage(Stage):
         """Execute memory-aware processing of all DBC files."""
         from tqdm import tqdm
 
+        current = context.get_metadata("current_stage", 1)
+        total = context.get_metadata("total_stages", 1)
+
         # Find all DBC files
         dbc_dir = self.config.download.output_dir
         dbc_files = list(dbc_dir.rglob("*.dbc")) + list(dbc_dir.rglob("*.DBC"))
@@ -524,13 +562,23 @@ class MemoryAwareProcessingStage(Stage):
             self.logger.warning(f"No DBC files found in {dbc_dir}")
             return context
 
-        self.logger.info(f"Found {len(dbc_files)} DBC files for memory-aware processing")
+        format_name = self.config.output_format.upper()
+        tqdm.write(
+            f"\n[{current}/{total}] Processamento Memory-Aware: "
+            f"{len(dbc_files)} arquivos DBC → {format_name}..."
+        )
+
+        # Create progress updater for memory-aware processing
+        def update_processing_progress(pct: float, msg: str = "") -> None:
+            context.update_stage_progress("memory_aware_processing", pct, msg)
 
         # Create processor with configured workers
         processor = MemoryAwareProcessor(
             config=self.config,
             num_workers=self.config.database.num_workers,
             ibge_data_path=self.ibge_data_path,
+            cancel_check=context.is_cancelled,
+            progress_callback=update_processing_progress,
         )
 
         # Process all files
@@ -554,6 +602,9 @@ class MemoryAwareProcessingStage(Stage):
         if failed:
             for r in failed:
                 context.add_error(f"Failed: {r.source_file}: {r.error}")
+
+        # Mark stage progress complete
+        context.mark_stage_progress_complete("memory_aware_processing")
 
         return context
 
@@ -600,97 +651,118 @@ class DatasusPipeline(Pipeline[PipelineConfig], ABC):
         Uses memory-aware mode if enabled in config, which processes
         one DBC file at a time with parallel workers to prevent RAM exhaustion.
         """
+        # Define stage weights for progress tracking
+        if self.config.database.memory_aware_mode:
+            # Memory-aware mode: 2 stages
+            stage_weights = {
+                "download": 0.20,
+                "memory_aware_processing": 0.80,
+            }
+        else:
+            # Standard mode: 4 stages
+            stage_weights = {
+                "download": 0.25,
+                "dbc_to_dbf": 0.10,
+                "dbf_to_db": 0.25,
+                "sql_transform": 0.40,
+            }
+
         # Always start with download
-        self.add_stage(DownloadStage(self.config, self.subsystem_name.upper()))
+        download_stage = DownloadStage(self.config, self.subsystem_name.upper())
+        self.add_stage(download_stage)
+        self.context.register_stage("download", stage_weights["download"])
 
         # Check if memory-aware mode is enabled
         if self.config.database.memory_aware_mode:
             # Memory-aware mode: single stage handles DBC→Parquet directly
-            self.logger.info(
-                f"Using memory-aware mode with {self.config.database.num_workers} workers"
+            processing_stage = MemoryAwareProcessingStage(
+                self.config,
+                self.ibge_data_path,
+                subsystem=self.subsystem_name,
             )
-            self.add_stage(
-                MemoryAwareProcessingStage(
-                    self.config,
-                    self.ibge_data_path,
-                    subsystem=self.subsystem_name,
-                )
+            self.add_stage(processing_stage)
+            self.context.register_stage(
+                "memory_aware_processing", stage_weights["memory_aware_processing"]
             )
         else:
             # Standard mode: separate stages
-            self.add_stage(DbcToDbfStage(self.config))
-            self.add_stage(DbfToDbStage(self.config))
-            self.add_stage(
-                SqlTransformStage(self.config, self.ibge_data_path, subsystem=self.subsystem_name)
-            )
+            dbc_stage = DbcToDbfStage(self.config)
+            self.add_stage(dbc_stage)
+            self.context.register_stage("dbc_to_dbf", stage_weights["dbc_to_dbf"])
 
-        self.logger.info(f"{self.subsystem_name.upper()} pipeline configured with {len(self._stages)} stages")
+            dbf_stage = DbfToDbStage(self.config)
+            self.add_stage(dbf_stage)
+            self.context.register_stage("dbf_to_db", stage_weights["dbf_to_db"])
+
+            transform_stage = SqlTransformStage(
+                self.config, self.ibge_data_path, subsystem=self.subsystem_name
+            )
+            self.add_stage(transform_stage)
+            self.context.register_stage("sql_transform", stage_weights["sql_transform"])
+
+        self.logger.debug(
+            f"{self.subsystem_name.upper()} pipeline configured with {len(self._stages)} stages"
+        )
 
     def _generate_completion_report(self, context: PipelineContext) -> None:
         """Generate and log pipeline completion statistics."""
-        self.logger.info("=" * 70)
-        self.logger.info(f"{self.subsystem_name.upper()} PIPELINE COMPLETION REPORT")
-        self.logger.info("=" * 70)
+        from tqdm import tqdm
 
-        # Files processed
-        staging_tables = context.get("staging_tables", [])
-        dbf_files = context.get("dbf_files", [])
-        num_files = len(dbf_files) or len(staging_tables)
-
-        self.logger.info(f"Files Processed: {num_files} DBC -> Parquet")
-
-        # Total rows
-        total_rows = context.get_metadata("total_rows_exported", 0)
-        if total_rows:
-            self.logger.info(f"Total Rows: {total_rows:,}")
-
-        # Output directory and size
-        parquet_dir = self.config.storage.parquet_dir
-
-        if parquet_dir.exists():
-            total_size = sum(f.stat().st_size for f in parquet_dir.rglob("*.parquet"))
-
-            if humanize:
-                size_human = humanize.naturalsize(total_size, binary=True)
-            else:
-                size_human = f"{total_size / (1024**3):.2f} GB"
-
-            self.logger.info(f"Output Directory: {parquet_dir}")
-            self.logger.info(f"Parquet Database Size: {size_human}")
-
-            # Count partition directories
-            partition_dirs = [d for d in parquet_dir.rglob("*") if d.is_dir() and "=" in d.name]
-            if partition_dirs:
-                self.logger.info(f"Partitions: {len(partition_dirs)} directories")
-
-        # Processing duration
+        # Calculate duration
         start_time = context.get_metadata("start_time")
         end_time = datetime.now()
+        duration_str = ""
 
         if start_time:
             duration = end_time - start_time
             if humanize:
-                duration_human = humanize.naturaldelta(duration)
+                duration_str = humanize.naturaldelta(duration)
             else:
-                duration_human = str(duration).split(".")[0]
-            self.logger.info(f"Duration: {duration_human}")
+                duration_str = str(duration).split(".")[0]
+
+        # Total rows
+        total_rows = context.get_metadata("total_rows_exported", 0)
+
+        # Output size
+        parquet_dir = self.config.storage.parquet_dir
+        format_ext = "*.csv" if self.config.output_format == "csv" else "*.parquet"
+        format_name = self.config.output_format.upper()
+
+        if parquet_dir.exists():
+            output_files = list(parquet_dir.rglob(format_ext))
+            total_size = sum(f.stat().st_size for f in output_files)
+
+            if humanize:
+                size_human = humanize.naturalsize(total_size, binary=True)
+            else:
+                size_human = f"{total_size / (1024**2):.1f} MB"
+        else:
+            output_files = []
+            size_human = "0 MB"
+
+        # Print summary
+        tqdm.write("")
+        tqdm.write(f"[PIPELINE] ✓ {self.subsystem_name.upper()} concluído em {duration_str}")
+        tqdm.write(f"           Linhas exportadas: {total_rows:,}")
+        tqdm.write(f"           Arquivos {format_name}: {len(output_files)} ({size_human})")
+        tqdm.write(f"           Diretório: {parquet_dir}")
 
         # Errors
         if context.has_errors:
-            self.logger.warning(f"Errors: {len(context.errors)} encountered")
-            for error in context.errors[:5]:
-                self.logger.warning(f"   - {error}")
+            tqdm.write(f"           [!] Erros: {len(context.errors)}")
+            for error in context.errors[:3]:
+                tqdm.write(f"               - {error}")
 
-        self.logger.info("=" * 70)
+        tqdm.write("")
 
     def _cleanup_temporary_files(self, success: bool = True) -> None:
         """Delete temporary DBC and DBF files and directories after successful Parquet export."""
         if self.config.keep_temp_files:
-            self.logger.info("Keeping temporary files (--keep-temp-files enabled)")
+            self.logger.debug("Keeping temporary files (--keep-temp-files enabled)")
             return
 
         if not success:
-            self.logger.info("Skipping cleanup due to pipeline failure")
+            self.logger.debug("Skipping cleanup due to pipeline failure")
             return
 
         deleted_dbc = 0
@@ -723,10 +795,9 @@ class DatasusPipeline(Pipeline[PipelineConfig], ABC):
             # Delete dbc directory and subdirectories if empty
             deleted_dirs += self._remove_empty_dirs(dbc_dir)
 
-        if deleted_dbc > 0 or deleted_dbf > 0 or deleted_dirs > 0:
-            self.logger.info(
-                f"Cleanup: deleted {deleted_dbc} DBC files, {deleted_dbf} DBF files, "
-                f"and {deleted_dirs} empty directories"
+        if deleted_dbc > 0 or deleted_dbf > 0:
+            self.logger.debug(
+                f"Cleanup: deleted {deleted_dbc} DBC, {deleted_dbf} DBF files"
             )
 
     def _remove_empty_dirs(self, root_dir: Path) -> int:
@@ -773,8 +844,29 @@ class DatasusPipeline(Pipeline[PipelineConfig], ABC):
 
     def run(self) -> "PipelineContext":
         """Run the pipeline and cleanup resources."""
+        from tqdm import tqdm
+
         start_time = datetime.now()
         self.context.set_metadata("start_time", start_time)
+
+        # Build UF list string
+        uf_list = getattr(self.config.download, "uf_list", None) or []
+        uf_str = ", ".join(uf_list[:5]) if uf_list else "todos"
+        if len(uf_list) > 5:
+            uf_str += f" (+{len(uf_list) - 5})"
+
+        # Date range
+        start_date = getattr(self.config.download, "start_date", "")
+        end_date = getattr(self.config.download, "end_date", "")
+        date_str = f"{start_date} a {end_date}" if start_date else ""
+
+        # Mode
+        mode_str = "memory-aware" if self.config.database.memory_aware_mode else "standard"
+
+        tqdm.write(f"\n[PIPELINE] Iniciando {self.subsystem_name.upper()} ({uf_str})")
+        if date_str:
+            tqdm.write(f"           Período: {date_str}")
+        tqdm.write(f"           Modo: {mode_str}")
 
         success = False
         try:

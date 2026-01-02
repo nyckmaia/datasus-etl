@@ -1,7 +1,21 @@
 """Pipeline context for sharing state between stages."""
 
+import threading
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Optional
+
+from datasus_etl.exceptions import PipelineCancelled
+
+
+@dataclass
+class StageProgress:
+    """Track progress of a single stage."""
+
+    name: str
+    weight: float  # Relative weight (0.0 to 1.0)
+    progress: float = 0.0  # Current progress (0.0 to 1.0)
+    status: str = "pending"  # pending, running, completed, cancelled
 
 
 class PipelineContext:
@@ -9,6 +23,9 @@ class PipelineContext:
 
     This context is passed between stages and accumulates results,
     metadata, and state information throughout the pipeline execution.
+
+    Supports graceful cancellation via request_cancel() method.
+    Supports progress tracking via register_stage() and update_stage_progress().
     """
 
     def __init__(self) -> None:
@@ -17,6 +34,11 @@ class PipelineContext:
         self._metadata: dict[str, Any] = {}
         self._errors: list[str] = []
         self._completed_stages: list[str] = []
+        self._cancelled = threading.Event()
+
+        # Progress tracking
+        self._stages_progress: dict[str, StageProgress] = {}
+        self._progress_callback: Optional[Callable[[float, str], None]] = None
 
     def set(self, key: str, value: Any) -> None:
         """Set a value in the context.
@@ -126,3 +148,105 @@ class PipelineContext:
             "errors": self._errors.copy(),
             "completed_stages": self._completed_stages.copy(),
         }
+
+    def request_cancel(self) -> None:
+        """Request graceful cancellation of the pipeline.
+
+        The pipeline will finish processing the current file/item
+        and then stop before the next one.
+        """
+        self._cancelled.set()
+
+    def is_cancelled(self) -> bool:
+        """Check if cancellation was requested.
+
+        Returns:
+            True if cancellation was requested, False otherwise
+        """
+        return self._cancelled.is_set()
+
+    def check_cancelled(self) -> None:
+        """Check if cancelled and raise exception if so.
+
+        Raises:
+            PipelineCancelled: If cancellation was requested
+        """
+        if self._cancelled.is_set():
+            raise PipelineCancelled("Pipeline cancelado pelo usuário")
+
+    # Progress tracking methods
+
+    def register_stage(self, name: str, weight: float) -> None:
+        """Register a stage for progress tracking.
+
+        Args:
+            name: Stage name
+            weight: Relative weight (0.0 to 1.0)
+        """
+        self._stages_progress[name] = StageProgress(name=name, weight=weight)
+
+    def update_stage_progress(
+        self, stage_name: str, progress: float, message: str = ""
+    ) -> None:
+        """Update progress for a stage and notify callback.
+
+        Args:
+            stage_name: Name of the stage
+            progress: Progress value (0.0 to 1.0)
+            message: Optional status message
+        """
+        if stage_name in self._stages_progress:
+            self._stages_progress[stage_name].progress = progress
+            self._stages_progress[stage_name].status = "running"
+
+        # Calculate global progress and notify callback
+        global_progress = self._calculate_global_progress()
+        if self._progress_callback:
+            self._progress_callback(global_progress, message)
+
+    def mark_stage_progress_complete(self, stage_name: str) -> None:
+        """Mark a stage as completed in progress tracking.
+
+        Args:
+            stage_name: Name of the stage
+        """
+        if stage_name in self._stages_progress:
+            self._stages_progress[stage_name].progress = 1.0
+            self._stages_progress[stage_name].status = "completed"
+
+        # Notify callback
+        global_progress = self._calculate_global_progress()
+        if self._progress_callback:
+            self._progress_callback(global_progress, f"[OK] {stage_name}")
+
+    def _calculate_global_progress(self) -> float:
+        """Calculate overall pipeline progress based on weighted stages.
+
+        Returns:
+            Global progress value (0.0 to 1.0)
+        """
+        if not self._stages_progress:
+            return 0.0
+
+        total = 0.0
+        for stage in self._stages_progress.values():
+            total += stage.weight * stage.progress
+        return min(total, 1.0)
+
+    def set_progress_callback(
+        self, callback: Callable[[float, str], None]
+    ) -> None:
+        """Set callback function to receive progress updates.
+
+        Args:
+            callback: Function that receives (progress: float, message: str)
+        """
+        self._progress_callback = callback
+
+    def get_global_progress(self) -> float:
+        """Get current global progress.
+
+        Returns:
+            Progress value (0.0 to 1.0)
+        """
+        return self._calculate_global_progress()
