@@ -43,7 +43,14 @@ class DownloadStage(Stage):
 
         tqdm.write(f"\n[{current}/{total}] Download: Baixando arquivos DBC do FTP...")
 
+        # Report start of download
+        context.update_stage_progress("download", 0.1, "Conectando ao FTP...")
+
         downloader = FTPDownloader(self.config.download)
+
+        # Report download in progress
+        context.update_stage_progress("download", 0.5, "Baixando arquivos...")
+
         files = downloader.download()
 
         context.set("downloaded_files", files)
