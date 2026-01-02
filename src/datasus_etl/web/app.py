@@ -319,17 +319,14 @@ _shared_pipeline_state = {
     "done": False,
     "error": None,
     "result": None,
-    "output_lines": [],  # Terminal output lines
+    "log_file": None,  # Path to log file
 }
-
-# Maximum lines to keep in terminal output
-_MAX_OUTPUT_LINES = 500
 
 
 def page_download():
     """Render download page with pipeline execution.
 
-    Shows a timer and terminal output during execution.
+    Shows a timer and reads log file for terminal output.
     """
     global _shared_pipeline_state
 
@@ -446,10 +443,10 @@ def page_download():
     if st.button("📥 Iniciar Download", type="primary", disabled=st.session_state.pipeline_running):
         try:
             import threading
-            import sys
-            import io
+            import subprocess
+            import tempfile
+            import os
             from datasus_etl.config import PipelineConfig
-            from datasus_etl.pipeline import SihsusPipeline, SIMPipeline
 
             config = PipelineConfig.create(
                 base_dir=data_dir,
@@ -464,90 +461,109 @@ def page_download():
             # Store config in session for later use
             st.session_state.pipeline_config = config
 
-            # Select pipeline based on subsystem
-            if subsystem == "sim":
-                pipeline = SIMPipeline(config)
-            else:
-                pipeline = SihsusPipeline(config)
+            # Create temporary log file
+            log_file = tempfile.NamedTemporaryFile(
+                mode='w',
+                suffix='.log',
+                prefix='datasus_pipeline_',
+                delete=False,
+                encoding='utf-8'
+            )
+            log_file_path = log_file.name
+            log_file.close()
 
-            # Reset shared state (module-level, thread-safe via GIL)
+            # Reset shared state
             _shared_pipeline_state["done"] = False
             _shared_pipeline_state["error"] = None
             _shared_pipeline_state["result"] = None
-            _shared_pipeline_state["output_lines"] = ["[PIPELINE] Iniciando..."]
+            _shared_pipeline_state["log_file"] = log_file_path
 
             # Reset session state
             st.session_state.pipeline_running = True
             st.session_state.pipeline_start_time = time.time()
 
-            # Custom stream to capture stdout/stderr
-            class OutputCapture:
-                """Captures output and stores in shared state."""
-                def __init__(self, original_stream):
-                    self.original = original_stream
-                    self.buffer = ""
+            # Build CLI command
+            uf_arg = ",".join(selected_ufs) if selected_ufs else ""
+            cmd = [
+                "datasus", "pipeline",
+                "--source", subsystem,
+                "--start-date", start_date.strftime("%Y-%m-%d"),
+                "--end-date", end_date.strftime("%Y-%m-%d"),
+                "--base-dir", str(data_dir),
+                "--compression", compression,
+                "--yes",  # Skip confirmation
+            ]
+            if uf_arg:
+                cmd.extend(["--uf", uf_arg])
 
-                def write(self, text):
-                    # Write to original stream
-                    if self.original:
-                        self.original.write(text)
-                        self.original.flush()
-
-                    # Capture text
-                    self.buffer += text
-
-                    # Process complete lines
-                    while "\n" in self.buffer:
-                        line, self.buffer = self.buffer.split("\n", 1)
-                        line = line.strip()
-                        if line:
-                            # Remove ANSI escape codes
-                            import re
-                            clean_line = re.sub(r'\x1b\[[0-9;]*m', '', line)
-                            # Remove carriage return progress bars
-                            clean_line = re.sub(r'\r.*', '', clean_line)
-                            if clean_line.strip():
-                                _shared_pipeline_state["output_lines"].append(clean_line)
-                                # Keep only last N lines
-                                if len(_shared_pipeline_state["output_lines"]) > _MAX_OUTPUT_LINES:
-                                    _shared_pipeline_state["output_lines"] = _shared_pipeline_state["output_lines"][-_MAX_OUTPUT_LINES:]
-
-                def flush(self):
-                    if self.original:
-                        self.original.flush()
-
-            # Run pipeline in background thread with output capture
-            def run_pipeline():
-                # Capture stdout and stderr
-                old_stdout = sys.stdout
-                old_stderr = sys.stderr
-                sys.stdout = OutputCapture(old_stdout)
-                sys.stderr = OutputCapture(old_stderr)
-
+            # Run pipeline as subprocess (captures all output including tqdm)
+            def run_pipeline_subprocess():
                 try:
-                    result = pipeline.run()
-                    _shared_pipeline_state["result"] = result
-                    _shared_pipeline_state["output_lines"].append("[PIPELINE] Concluido com sucesso!")
+                    with open(log_file_path, 'w', encoding='utf-8') as log:
+                        log.write(f"[COMANDO] {' '.join(cmd)}\n")
+                        log.write("[PIPELINE] Iniciando...\n")
+                        log.flush()
+
+                        # Run the CLI command
+                        process = subprocess.Popen(
+                            cmd,
+                            stdout=log,
+                            stderr=subprocess.STDOUT,
+                            text=True,
+                            bufsize=1,  # Line buffered
+                            env={**os.environ, "PYTHONUNBUFFERED": "1"},
+                        )
+
+                        # Wait for process to complete
+                        return_code = process.wait()
+
+                        if return_code == 0:
+                            log.write("\n[PIPELINE] Concluido com sucesso!\n")
+                            _shared_pipeline_state["result"] = {"success": True}
+                        else:
+                            log.write(f"\n[ERRO] Pipeline finalizou com codigo {return_code}\n")
+                            _shared_pipeline_state["error"] = f"Exit code: {return_code}"
+
                 except Exception as e:
-                    _shared_pipeline_state["error"] = e
-                    _shared_pipeline_state["output_lines"].append(f"[ERRO] {e}")
+                    _shared_pipeline_state["error"] = str(e)
+                    with open(log_file_path, 'a', encoding='utf-8') as log:
+                        log.write(f"\n[ERRO] {e}\n")
                 finally:
                     _shared_pipeline_state["done"] = True
-                    # Restore streams
-                    sys.stdout = old_stdout
-                    sys.stderr = old_stderr
 
-            thread = threading.Thread(target=run_pipeline, daemon=True)
+            thread = threading.Thread(target=run_pipeline_subprocess, daemon=True)
             thread.start()
             st.session_state.pipeline_thread = thread
 
             # Force rerun to enter polling mode
             st.rerun()
 
-        except ImportError as e:
-            st.error(f"Erro de importacao: {e}")
         except Exception as e:
             st.error(f"Erro na configuracao: {e}")
+
+    # Helper function to read log file
+    def read_log_file(max_lines=100):
+        """Read the last N lines from log file."""
+        log_path = _shared_pipeline_state.get("log_file")
+        if not log_path:
+            return "[Aguardando inicio...]"
+        try:
+            with open(log_path, 'r', encoding='utf-8', errors='replace') as f:
+                lines = f.readlines()
+                # Get last N lines
+                recent_lines = lines[-max_lines:] if len(lines) > max_lines else lines
+                # Clean ANSI codes
+                import re
+                clean_lines = []
+                for line in recent_lines:
+                    clean = re.sub(r'\x1b\[[0-9;]*m', '', line)
+                    clean = re.sub(r'\r', '', clean)
+                    clean_lines.append(clean.rstrip())
+                return "\n".join(clean_lines)
+        except FileNotFoundError:
+            return "[Arquivo de log nao encontrado]"
+        except Exception as e:
+            return f"[Erro ao ler log: {e}]"
 
     # Show status while pipeline is running (polling mode)
     if st.session_state.pipeline_running and not _shared_pipeline_state["done"]:
@@ -559,9 +575,9 @@ def page_download():
         seconds = int(elapsed % 60)
         st.metric("Tempo decorrido", f"{minutes:02d}:{seconds:02d}")
 
-        # Terminal output (read-only text area)
+        # Terminal output (read from log file)
         st.markdown("**Saida do Terminal:**")
-        output_text = "\n".join(_shared_pipeline_state["output_lines"][-50:])  # Show last 50 lines
+        output_text = read_log_file(max_lines=50)
         st.text_area(
             "Terminal",
             value=output_text,
@@ -578,23 +594,17 @@ def page_download():
 
     # Handle pipeline completion
     elif st.session_state.pipeline_running and _shared_pipeline_state["done"]:
-        from datasus_etl.exceptions import PipelineCancelled
-
         elapsed = time.time() - st.session_state.pipeline_start_time
         error = _shared_pipeline_state["error"]
         result = _shared_pipeline_state["result"]
 
         if error:
             st.markdown("### Pipeline Finalizado com Erro")
-
-            if isinstance(error, PipelineCancelled):
-                st.warning("Pipeline cancelado pelo usuario.")
-            else:
-                st.error(f"Erro no pipeline: {error}")
+            st.error(f"Erro no pipeline: {error}")
 
             # Show terminal output
             st.markdown("**Saida do Terminal:**")
-            output_text = "\n".join(_shared_pipeline_state["output_lines"][-100:])
+            output_text = read_log_file(max_lines=200)
             st.text_area(
                 "Terminal",
                 value=output_text,
@@ -604,6 +614,7 @@ def page_download():
             )
         else:
             st.markdown("### Pipeline Concluido com Sucesso!")
+            st.balloons()
 
             # Show results
             minutes = int(elapsed // 60)
@@ -611,10 +622,11 @@ def page_download():
 
             col1, col2 = st.columns(2)
             with col1:
-                total_rows = result.get_metadata("total_rows_exported", 0) if result else 0
-                st.metric("Linhas Exportadas", f"{total_rows:,}")
-            with col2:
                 st.metric("Tempo Total", f"{minutes:02d}:{seconds:02d}")
+            with col2:
+                config = st.session_state.get("pipeline_config")
+                if config:
+                    st.metric("Diretorio", str(config.storage.parquet_dir))
 
             config = st.session_state.get("pipeline_config")
             if config:
@@ -622,7 +634,7 @@ def page_download():
 
             # Show terminal output in expander
             with st.expander("Ver saida do terminal"):
-                output_text = "\n".join(_shared_pipeline_state["output_lines"])
+                output_text = read_log_file(max_lines=500)
                 st.text_area(
                     "Terminal",
                     value=output_text,
