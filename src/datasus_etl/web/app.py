@@ -315,24 +315,23 @@ def page_status():
 # Module-level shared state for thread communication
 # st.session_state is NOT thread-safe for writes from background threads
 # We use a regular dict that's shared via Python's GIL
-_shared_progress_state = {
-    "progress": 0.0,
-    "message": "Iniciando...",
-    "stage": "Download",
+_shared_pipeline_state = {
     "done": False,
     "error": None,
     "result": None,
+    "output_lines": [],  # Terminal output lines
 }
+
+# Maximum lines to keep in terminal output
+_MAX_OUTPUT_LINES = 500
 
 
 def page_download():
     """Render download page with pipeline execution.
 
-    Uses a module-level shared dict for thread communication, since
-    st.session_state is not thread-safe for writes from background threads.
-    The shared state is polled and copied to session_state on each rerun.
+    Shows a timer and terminal output during execution.
     """
-    global _shared_progress_state
+    global _shared_pipeline_state
 
     st.title("📥 Download de Dados")
 
@@ -447,6 +446,8 @@ def page_download():
     if st.button("📥 Iniciar Download", type="primary", disabled=st.session_state.pipeline_running):
         try:
             import threading
+            import sys
+            import io
             from datasus_etl.config import PipelineConfig
             from datasus_etl.pipeline import SihsusPipeline, SIMPipeline
 
@@ -470,45 +471,71 @@ def page_download():
                 pipeline = SihsusPipeline(config)
 
             # Reset shared state (module-level, thread-safe via GIL)
-            _shared_progress_state["progress"] = 0.0
-            _shared_progress_state["message"] = "Iniciando..."
-            _shared_progress_state["stage"] = "Download"
-            _shared_progress_state["done"] = False
-            _shared_progress_state["error"] = None
-            _shared_progress_state["result"] = None
+            _shared_pipeline_state["done"] = False
+            _shared_pipeline_state["error"] = None
+            _shared_pipeline_state["result"] = None
+            _shared_pipeline_state["output_lines"] = ["[PIPELINE] Iniciando..."]
 
             # Reset session state
             st.session_state.pipeline_running = True
             st.session_state.pipeline_start_time = time.time()
 
-            # Progress callback updates shared dict (NOT session_state)
-            def progress_callback(pct: float, message: str = ""):
-                _shared_progress_state["progress"] = pct
-                _shared_progress_state["message"] = message
-                # Determine stage from progress/message
-                msg_lower = message.lower()
-                if "download" in msg_lower or pct < 0.20:
-                    _shared_progress_state["stage"] = "Download"
-                elif "convers" in msg_lower or 0.20 <= pct < 0.30:
-                    _shared_progress_state["stage"] = "Conversao"
-                elif "carga" in msg_lower or "stream" in msg_lower or 0.30 <= pct < 0.50:
-                    _shared_progress_state["stage"] = "Carga"
-                elif "transform" in msg_lower or "arquivos" in msg_lower or 0.50 <= pct < 0.95:
-                    _shared_progress_state["stage"] = "Transformacao"
-                else:
-                    _shared_progress_state["stage"] = "Exportacao"
+            # Custom stream to capture stdout/stderr
+            class OutputCapture:
+                """Captures output and stores in shared state."""
+                def __init__(self, original_stream):
+                    self.original = original_stream
+                    self.buffer = ""
 
-            pipeline.context.set_progress_callback(progress_callback)
+                def write(self, text):
+                    # Write to original stream
+                    if self.original:
+                        self.original.write(text)
+                        self.original.flush()
 
-            # Run pipeline in background thread
+                    # Capture text
+                    self.buffer += text
+
+                    # Process complete lines
+                    while "\n" in self.buffer:
+                        line, self.buffer = self.buffer.split("\n", 1)
+                        line = line.strip()
+                        if line:
+                            # Remove ANSI escape codes
+                            import re
+                            clean_line = re.sub(r'\x1b\[[0-9;]*m', '', line)
+                            # Remove carriage return progress bars
+                            clean_line = re.sub(r'\r.*', '', clean_line)
+                            if clean_line.strip():
+                                _shared_pipeline_state["output_lines"].append(clean_line)
+                                # Keep only last N lines
+                                if len(_shared_pipeline_state["output_lines"]) > _MAX_OUTPUT_LINES:
+                                    _shared_pipeline_state["output_lines"] = _shared_pipeline_state["output_lines"][-_MAX_OUTPUT_LINES:]
+
+                def flush(self):
+                    if self.original:
+                        self.original.flush()
+
+            # Run pipeline in background thread with output capture
             def run_pipeline():
+                # Capture stdout and stderr
+                old_stdout = sys.stdout
+                old_stderr = sys.stderr
+                sys.stdout = OutputCapture(old_stdout)
+                sys.stderr = OutputCapture(old_stderr)
+
                 try:
                     result = pipeline.run()
-                    _shared_progress_state["result"] = result
+                    _shared_pipeline_state["result"] = result
+                    _shared_pipeline_state["output_lines"].append("[PIPELINE] Concluido com sucesso!")
                 except Exception as e:
-                    _shared_progress_state["error"] = e
+                    _shared_pipeline_state["error"] = e
+                    _shared_pipeline_state["output_lines"].append(f"[ERRO] {e}")
                 finally:
-                    _shared_progress_state["done"] = True
+                    _shared_pipeline_state["done"] = True
+                    # Restore streams
+                    sys.stdout = old_stdout
+                    sys.stderr = old_stderr
 
             thread = threading.Thread(target=run_pipeline, daemon=True)
             thread.start()
@@ -522,81 +549,87 @@ def page_download():
         except Exception as e:
             st.error(f"Erro na configuracao: {e}")
 
-    # Show progress while pipeline is running (polling mode)
-    # Read from shared state (module-level dict, updated by background thread)
-    if st.session_state.pipeline_running and not _shared_progress_state["done"]:
-        st.markdown("### Progresso do Pipeline")
+    # Show status while pipeline is running (polling mode)
+    if st.session_state.pipeline_running and not _shared_pipeline_state["done"]:
+        st.markdown("### Pipeline em Execucao")
 
-        # Read current values from shared state
-        progress_pct = _shared_progress_state["progress"]
-        current_message = _shared_progress_state["message"]
-        current_stage = _shared_progress_state["stage"]
-
-        # Progress bar with current percentage
-        st.progress(progress_pct, text=f"{int(progress_pct * 100)}%")
-
-        # Status message
-        st.text(current_message)
-
-        # Stage indicators
-        stages = ["Download", "Conversao", "Carga", "Transformacao", "Exportacao"]
-        stage_display = []
-        stage_reached = False
-        for s in stages:
-            if s == current_stage:
-                stage_display.append(f"🔄 {s}")
-                stage_reached = True
-            elif not stage_reached:
-                stage_display.append(f"✅ {s}")
-            else:
-                stage_display.append(f"⏳ {s}")
-        st.markdown(" → ".join(stage_display))
-
-        # Elapsed time
+        # Elapsed time (this updates correctly because it's calculated locally)
         elapsed = time.time() - st.session_state.pipeline_start_time
-        st.caption(f"Tempo decorrido: {elapsed:.0f}s")
+        minutes = int(elapsed // 60)
+        seconds = int(elapsed % 60)
+        st.metric("Tempo decorrido", f"{minutes:02d}:{seconds:02d}")
 
-        # Poll every 1 second by sleeping then rerunning
-        time.sleep(1)
+        # Terminal output (read-only text area)
+        st.markdown("**Saida do Terminal:**")
+        output_text = "\n".join(_shared_pipeline_state["output_lines"][-50:])  # Show last 50 lines
+        st.text_area(
+            "Terminal",
+            value=output_text,
+            height=300,
+            disabled=True,
+            label_visibility="collapsed"
+        )
+
+        st.info("Aguarde... O processo esta em andamento.")
+
+        # Poll every 2 seconds by sleeping then rerunning
+        time.sleep(2)
         st.rerun()
 
     # Handle pipeline completion
-    elif st.session_state.pipeline_running and _shared_progress_state["done"]:
+    elif st.session_state.pipeline_running and _shared_pipeline_state["done"]:
         from datasus_etl.exceptions import PipelineCancelled
 
-        st.markdown("### Progresso do Pipeline")
-
         elapsed = time.time() - st.session_state.pipeline_start_time
-        error = _shared_progress_state["error"]
-        result = _shared_progress_state["result"]
+        error = _shared_pipeline_state["error"]
+        result = _shared_pipeline_state["result"]
 
         if error:
+            st.markdown("### Pipeline Finalizado com Erro")
+
             if isinstance(error, PipelineCancelled):
                 st.warning("Pipeline cancelado pelo usuario.")
-                st.progress(_shared_progress_state["progress"], text="Cancelado")
             else:
                 st.error(f"Erro no pipeline: {error}")
-                st.progress(0, text="Erro!")
+
+            # Show terminal output
+            st.markdown("**Saida do Terminal:**")
+            output_text = "\n".join(_shared_pipeline_state["output_lines"][-100:])
+            st.text_area(
+                "Terminal",
+                value=output_text,
+                height=300,
+                disabled=True,
+                label_visibility="collapsed"
+            )
         else:
-            # Mark all stages complete
-            st.progress(1.0, text="Completo!")
-            stages = ["Download", "Conversao", "Carga", "Transformacao", "Exportacao"]
-            stage_display = [f"✅ {s}" for s in stages]
-            st.markdown(" → ".join(stage_display))
+            st.markdown("### Pipeline Concluido com Sucesso!")
 
             # Show results
-            st.success(f"Pipeline concluido em {elapsed:.1f} segundos!")
+            minutes = int(elapsed // 60)
+            seconds = int(elapsed % 60)
 
             col1, col2 = st.columns(2)
             with col1:
                 total_rows = result.get_metadata("total_rows_exported", 0) if result else 0
                 st.metric("Linhas Exportadas", f"{total_rows:,}")
             with col2:
-                st.metric("Tempo Total", f"{elapsed:.1f}s")
+                st.metric("Tempo Total", f"{minutes:02d}:{seconds:02d}")
 
             config = st.session_state.get("pipeline_config")
             if config:
-                st.info(f"Arquivos salvos em: {config.storage.parquet_dir}")
+                st.success(f"Arquivos salvos em: {config.storage.parquet_dir}")
+
+            # Show terminal output in expander
+            with st.expander("Ver saida do terminal"):
+                output_text = "\n".join(_shared_pipeline_state["output_lines"])
+                st.text_area(
+                    "Terminal",
+                    value=output_text,
+                    height=400,
+                    disabled=True,
+                    label_visibility="collapsed"
+                )
 
         # Reset running state (but keep results visible)
         st.session_state.pipeline_running = False
