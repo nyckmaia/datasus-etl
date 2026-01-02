@@ -8,8 +8,10 @@ Usage:
 """
 
 import logging
+import os
 import shutil
 import signal
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -19,6 +21,35 @@ from rich.console import Console
 from rich.logging import RichHandler
 from rich.panel import Panel
 from rich.table import Table
+
+
+def _can_use_unicode() -> bool:
+    """Check if the current environment supports Unicode output."""
+    # Check for NO_COLOR or TERM=dumb (set by Web Interface subprocess)
+    if os.environ.get("NO_COLOR") or os.environ.get("TERM") == "dumb":
+        return False
+
+    # Check if stdout is a terminal
+    if not sys.stdout.isatty():
+        return False
+
+    # On Windows, check encoding
+    if sys.platform == "win32":
+        try:
+            # Try to encode a Unicode character
+            "✓".encode(sys.stdout.encoding or "utf-8")
+            return True
+        except (UnicodeEncodeError, LookupError):
+            return False
+
+    return True
+
+
+# Unicode symbols with ASCII fallbacks
+USE_UNICODE = _can_use_unicode()
+SYM_CHECK = "✓" if USE_UNICODE else "[OK]"
+SYM_ARROW = "→" if USE_UNICODE else "->"
+SYM_FILE = "📄" if USE_UNICODE else "[FILE]"
 
 from datasus_etl import __version__
 from datasus_etl.config import PipelineConfig
@@ -444,7 +475,7 @@ def pipeline_cmd(
         result = pipeline_obj.run()
 
         # Print summary
-        console.print("\n[bold green]✓ Pipeline concluído com sucesso![/bold green]\n")
+        console.print(f"\n[bold green]{SYM_CHECK} Pipeline concluido com sucesso![/bold green]\n")
 
         total_rows = result.get_metadata("total_rows_exported", 0)
         exported_files = result.get("exported_parquet_files", [])
@@ -1000,7 +1031,7 @@ def download_only(
     downloader = FTPDownloader(config)
     files = downloader.download()
 
-    console.print(f"\n[green]✓ Download concluído: {len(files)} arquivos[/green]")
+    console.print(f"\n[green]{SYM_CHECK} Download concluido: {len(files)} arquivos[/green]")
 
 
 @app.command()
@@ -1042,7 +1073,7 @@ def convert(
         raise typer.Exit(1)
 
     format_upper = format.upper()
-    console.print(f"\n[bold cyan]DataSUS - Conversão DBC→{format_upper}[/bold cyan]\n")
+    console.print(f"\n[bold cyan]DataSUS - Conversao DBC{SYM_ARROW}{format_upper}[/bold cyan]\n")
 
     from datasus_etl.config import ConversionConfig
 
@@ -1056,7 +1087,7 @@ def convert(
     converter = DbcToDbfConverter(config)
     stats = converter.convert(input_path, output_dir)
 
-    console.print(f"\n[green]✓ Conversão concluída: {stats['converted']} arquivo(s) convertido(s)[/green]")
+    console.print(f"\n[green]{SYM_CHECK} Conversao concluida: {stats['converted']} arquivo(s) convertido(s)[/green]")
     if stats.get('skipped', 0) > 0:
         console.print(f"[yellow]  {stats['skipped']} arquivo(s) já existente(s) (use --override para reconverter)[/yellow]")
     if stats.get('errors', 0) > 0:

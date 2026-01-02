@@ -21,6 +21,13 @@ from datasus_etl.constants.general import (
     SEXO_MAP,
     SIHSUS_DIRS,
     SIM_DIRS,
+    # Unicode symbols with ASCII fallbacks
+    USE_UNICODE,
+    SYM_CHECK,
+    SYM_ARROW,
+    SYM_FILE,
+    SYM_CHART,
+    SYM_FOLDER,
 )
 
 from datasus_etl.constants.sihsus_schema import (
@@ -58,4 +65,11 @@ __all__ = [
     "DATE_FORMATS",
     "IBGE_7_DIGITS",
     "IBGE_6_DIGITS",
+    # Unicode symbols
+    "USE_UNICODE",
+    "SYM_CHECK",
+    "SYM_ARROW",
+    "SYM_FILE",
+    "SYM_CHART",
+    "SYM_FOLDER",
 ]

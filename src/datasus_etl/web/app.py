@@ -312,24 +312,16 @@ def page_status():
         st.error(f"Erro ao ler banco: {e}")
 
 
-# Module-level shared state for thread communication
-# st.session_state is NOT thread-safe for writes from background threads
-# We use a regular dict that's shared via Python's GIL
-_shared_pipeline_state = {
-    "done": False,
-    "error": None,
-    "result": None,
-    "log_file": None,  # Path to log file
-}
+# Note: Module-level dicts don't persist across Streamlit reruns
+# We'll use st.session_state for persistence and check for completion via log file
 
 
 def page_download():
     """Render download page with pipeline execution.
 
     Shows a timer and reads log file for terminal output.
+    Uses subprocess to run pipeline and capture all output including tqdm.
     """
-    global _shared_pipeline_state
-
     st.title("📥 Download de Dados")
 
     data_dir = get_data_dir()
@@ -339,8 +331,9 @@ def page_download():
     if "pipeline_running" not in st.session_state:
         st.session_state.pipeline_running = False
         st.session_state.pipeline_start_time = 0
-        st.session_state.pipeline_thread = None
         st.session_state.pipeline_config = None
+        st.session_state.pipeline_log_file = None
+        st.session_state.pipeline_process_pid = None
 
     st.markdown("""
     Configure os parametros de download abaixo.
@@ -439,13 +432,13 @@ def page_download():
             except Exception as e:
                 st.error(f"Erro: {e}")
 
-    # Download button - starts pipeline in background thread
+    # Download button - starts pipeline as subprocess
     if st.button("📥 Iniciar Download", type="primary", disabled=st.session_state.pipeline_running):
         try:
-            import threading
             import subprocess
             import tempfile
             import os
+            import sys
             from datasus_etl.config import PipelineConfig
 
             config = PipelineConfig.create(
@@ -461,90 +454,70 @@ def page_download():
             # Store config in session for later use
             st.session_state.pipeline_config = config
 
-            # Create temporary log file
-            log_file = tempfile.NamedTemporaryFile(
-                mode='w',
-                suffix='.log',
-                prefix='datasus_pipeline_',
-                delete=False,
-                encoding='utf-8'
-            )
-            log_file_path = log_file.name
-            log_file.close()
+            # Create log file in a known location (temp dir)
+            import tempfile
+            temp_dir = tempfile.gettempdir()
+            log_file_path = os.path.join(temp_dir, "datasus_pipeline.log")
 
-            # Reset shared state
-            _shared_pipeline_state["done"] = False
-            _shared_pipeline_state["error"] = None
-            _shared_pipeline_state["result"] = None
-            _shared_pipeline_state["log_file"] = log_file_path
-
-            # Reset session state
-            st.session_state.pipeline_running = True
-            st.session_state.pipeline_start_time = time.time()
-
-            # Build CLI command
+            # Build CLI command using sys.executable to ensure correct Python
             uf_arg = ",".join(selected_ufs) if selected_ufs else ""
             cmd = [
-                "datasus", "pipeline",
+                sys.executable, "-m", "datasus_etl.cli", "pipeline",
                 "--source", subsystem,
                 "--start-date", start_date.strftime("%Y-%m-%d"),
                 "--end-date", end_date.strftime("%Y-%m-%d"),
-                "--base-dir", str(data_dir),
+                "--data-dir", str(data_dir),
                 "--compression", compression,
                 "--yes",  # Skip confirmation
             ]
             if uf_arg:
                 cmd.extend(["--uf", uf_arg])
 
-            # Run pipeline as subprocess (captures all output including tqdm)
-            def run_pipeline_subprocess():
-                try:
-                    with open(log_file_path, 'w', encoding='utf-8') as log:
-                        log.write(f"[COMANDO] {' '.join(cmd)}\n")
-                        log.write("[PIPELINE] Iniciando...\n")
-                        log.flush()
+            # Write initial content to log file
+            with open(log_file_path, 'w', encoding='utf-8') as log:
+                log.write(f"[COMANDO] {' '.join(cmd)}\n")
+                log.write("[PIPELINE] Iniciando subprocess...\n")
 
-                        # Run the CLI command
-                        process = subprocess.Popen(
-                            cmd,
-                            stdout=log,
-                            stderr=subprocess.STDOUT,
-                            text=True,
-                            bufsize=1,  # Line buffered
-                            env={**os.environ, "PYTHONUNBUFFERED": "1"},
-                        )
+            # Start subprocess with output redirected to log file
+            # Set environment for proper Unicode handling on Windows
+            env = {
+                **os.environ,
+                "PYTHONUNBUFFERED": "1",
+                "PYTHONIOENCODING": "utf-8",
+                # Disable Rich features that cause encoding issues on Windows
+                "NO_COLOR": "1",  # Disable colored output
+                "TERM": "dumb",  # Disable terminal features
+            }
 
-                        # Wait for process to complete
-                        return_code = process.wait()
+            with open(log_file_path, 'a', encoding='utf-8') as log:
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=log,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,  # Line buffered
+                    env=env,
+                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
+                )
 
-                        if return_code == 0:
-                            log.write("\n[PIPELINE] Concluido com sucesso!\n")
-                            _shared_pipeline_state["result"] = {"success": True}
-                        else:
-                            log.write(f"\n[ERRO] Pipeline finalizou com codigo {return_code}\n")
-                            _shared_pipeline_state["error"] = f"Exit code: {return_code}"
-
-                except Exception as e:
-                    _shared_pipeline_state["error"] = str(e)
-                    with open(log_file_path, 'a', encoding='utf-8') as log:
-                        log.write(f"\n[ERRO] {e}\n")
-                finally:
-                    _shared_pipeline_state["done"] = True
-
-            thread = threading.Thread(target=run_pipeline_subprocess, daemon=True)
-            thread.start()
-            st.session_state.pipeline_thread = thread
+            # Store state in session_state (persists across reruns)
+            st.session_state.pipeline_running = True
+            st.session_state.pipeline_start_time = time.time()
+            st.session_state.pipeline_log_file = log_file_path
+            st.session_state.pipeline_process_pid = process.pid
 
             # Force rerun to enter polling mode
             st.rerun()
 
         except Exception as e:
             st.error(f"Erro na configuracao: {e}")
+            import traceback
+            st.code(traceback.format_exc())
 
     # Helper function to read log file
     def read_log_file(max_lines=100):
         """Read the last N lines from log file."""
-        log_path = _shared_pipeline_state.get("log_file")
+        log_path = st.session_state.get("pipeline_log_file")
         if not log_path:
             return "[Aguardando inicio...]"
         try:
@@ -565,86 +538,152 @@ def page_download():
         except Exception as e:
             return f"[Erro ao ler log: {e}]"
 
+    # Helper function to check if process is still running
+    def is_process_running(pid):
+        """Check if a process with given PID is running."""
+        if pid is None:
+            return False
+        try:
+            import psutil
+            return psutil.pid_exists(pid) and psutil.Process(pid).is_running()
+        except ImportError:
+            # Fallback without psutil - check via os
+            import os
+            try:
+                os.kill(pid, 0)
+                return True
+            except OSError:
+                return False
+        except Exception:
+            return False
+
+    # Helper to check if pipeline finished (look for markers in log)
+    def check_pipeline_finished():
+        """Check log file for completion markers."""
+        log_path = st.session_state.get("pipeline_log_file")
+        if not log_path:
+            return False, None
+
+        try:
+            with open(log_path, 'r', encoding='utf-8', errors='replace') as f:
+                content = f.read()
+
+            # Check for success marker
+            if "Pipeline concluído com sucesso" in content or "✓ Pipeline" in content:
+                return True, None
+
+            # Check for error markers
+            if "[ERRO]" in content:
+                # Extract last error
+                lines = content.split('\n')
+                for line in reversed(lines):
+                    if "[ERRO]" in line:
+                        return True, line
+
+            # Check for cancellation
+            if "cancelado pelo" in content.lower():
+                return True, "Pipeline cancelado"
+
+            return False, None
+        except Exception:
+            return False, None
+
     # Show status while pipeline is running (polling mode)
-    if st.session_state.pipeline_running and not _shared_pipeline_state["done"]:
-        st.markdown("### Pipeline em Execucao")
+    if st.session_state.pipeline_running:
+        # Check if process is still running or finished
+        pid = st.session_state.get("pipeline_process_pid")
+        process_running = is_process_running(pid)
+        finished, error = check_pipeline_finished()
 
-        # Elapsed time (this updates correctly because it's calculated locally)
-        elapsed = time.time() - st.session_state.pipeline_start_time
-        minutes = int(elapsed // 60)
-        seconds = int(elapsed % 60)
-        st.metric("Tempo decorrido", f"{minutes:02d}:{seconds:02d}")
+        if process_running and not finished:
+            # Pipeline still running - show progress
+            st.markdown("### Pipeline em Execucao")
 
-        # Terminal output (read from log file)
-        st.markdown("**Saida do Terminal:**")
-        output_text = read_log_file(max_lines=50)
-        st.text_area(
-            "Terminal",
-            value=output_text,
-            height=300,
-            disabled=True,
-            label_visibility="collapsed"
-        )
-
-        st.info("Aguarde... O processo esta em andamento.")
-
-        # Poll every 2 seconds by sleeping then rerunning
-        time.sleep(2)
-        st.rerun()
-
-    # Handle pipeline completion
-    elif st.session_state.pipeline_running and _shared_pipeline_state["done"]:
-        elapsed = time.time() - st.session_state.pipeline_start_time
-        error = _shared_pipeline_state["error"]
-        result = _shared_pipeline_state["result"]
-
-        if error:
-            st.markdown("### Pipeline Finalizado com Erro")
-            st.error(f"Erro no pipeline: {error}")
-
-            # Show terminal output
-            st.markdown("**Saida do Terminal:**")
-            output_text = read_log_file(max_lines=200)
-            st.text_area(
-                "Terminal",
-                value=output_text,
-                height=300,
-                disabled=True,
-                label_visibility="collapsed"
-            )
-        else:
-            st.markdown("### Pipeline Concluido com Sucesso!")
-            st.balloons()
-
-            # Show results
+            # Elapsed time (this updates correctly because it's calculated locally)
+            elapsed = time.time() - st.session_state.pipeline_start_time
             minutes = int(elapsed // 60)
             seconds = int(elapsed % 60)
+            st.metric("Tempo decorrido", f"{minutes:02d}:{seconds:02d}")
 
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Tempo Total", f"{minutes:02d}:{seconds:02d}")
-            with col2:
-                config = st.session_state.get("pipeline_config")
-                if config:
-                    st.metric("Diretorio", str(config.storage.parquet_dir))
+            # Terminal output (read from log file) with auto-scroll
+            st.markdown("**Saida do Terminal:**")
+            output_text = read_log_file(max_lines=50)
 
-            config = st.session_state.get("pipeline_config")
-            if config:
-                st.success(f"Arquivos salvos em: {config.storage.parquet_dir}")
+            # Use a container with custom key for auto-scroll
+            log_container = st.container()
+            with log_container:
+                st.code(output_text, language="text")
 
-            # Show terminal output in expander
-            with st.expander("Ver saida do terminal"):
-                output_text = read_log_file(max_lines=500)
+            # Inject JavaScript to auto-scroll to bottom of code block
+            st.markdown(
+                """
+                <script>
+                    const codeBlocks = window.parent.document.querySelectorAll('pre');
+                    if (codeBlocks.length > 0) {
+                        const lastBlock = codeBlocks[codeBlocks.length - 1];
+                        lastBlock.scrollTop = lastBlock.scrollHeight;
+                    }
+                </script>
+                """,
+                unsafe_allow_html=True
+            )
+
+            st.info("Aguarde... O processo esta em andamento.")
+
+            # Poll every 2 seconds by sleeping then rerunning
+            time.sleep(2)
+            st.rerun()
+
+        else:
+            # Pipeline finished (process ended or completion marker found)
+            elapsed = time.time() - st.session_state.pipeline_start_time
+
+            if error:
+                st.markdown("### Pipeline Finalizado com Erro")
+                st.error(f"Erro no pipeline: {error}")
+
+                # Show terminal output
+                st.markdown("**Saida do Terminal:**")
+                output_text = read_log_file(max_lines=200)
                 st.text_area(
                     "Terminal",
                     value=output_text,
-                    height=400,
+                    height=300,
                     disabled=True,
                     label_visibility="collapsed"
                 )
+            else:
+                st.markdown("### Pipeline Concluido com Sucesso!")
 
-        # Reset running state (but keep results visible)
-        st.session_state.pipeline_running = False
+                # Show results
+                minutes = int(elapsed // 60)
+                seconds = int(elapsed % 60)
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Tempo Total", f"{minutes:02d}:{seconds:02d}")
+                with col2:
+                    config = st.session_state.get("pipeline_config")
+                    if config:
+                        st.metric("Diretorio", str(config.storage.parquet_dir))
+
+                config = st.session_state.get("pipeline_config")
+                if config:
+                    st.success(f"Arquivos salvos em: {config.storage.parquet_dir}")
+
+                # Show terminal output in expander
+                with st.expander("Ver saida do terminal"):
+                    output_text = read_log_file(max_lines=500)
+                    st.text_area(
+                        "Terminal",
+                        value=output_text,
+                        height=400,
+                        disabled=True,
+                        label_visibility="collapsed"
+                    )
+
+            # Reset running state (but keep results visible)
+            st.session_state.pipeline_running = False
 
 
 def page_query():

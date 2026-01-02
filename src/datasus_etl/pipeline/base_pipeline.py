@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 
 from datasus_etl.config import PipelineConfig
+from datasus_etl.constants import SYM_CHECK, SYM_ARROW
 from datasus_etl.core.context import PipelineContext
 from datasus_etl.core.pipeline import Pipeline
 from datasus_etl.core.stage import Stage
@@ -58,7 +59,7 @@ class DownloadStage(Stage):
 
         # Calculate total size
         total_size_mb = sum(f.stat().st_size for f in files) / (1024 * 1024)
-        tqdm.write(f"       ✓ Download concluído: {len(files)} arquivos ({total_size_mb:.1f} MB)")
+        tqdm.write(f"       {SYM_CHECK} Download concluido: {len(files)} arquivos ({total_size_mb:.1f} MB)")
 
         # Mark stage progress complete
         context.mark_stage_progress_complete("download")
@@ -80,7 +81,7 @@ class DbcToDbfStage(Stage):
         current = context.get_metadata("current_stage", 1)
         total = context.get_metadata("total_stages", 1)
 
-        tqdm.write(f"\n[{current}/{total}] Conversão: DBC → DBF...")
+        tqdm.write(f"\n[{current}/{total}] Conversao: DBC {SYM_ARROW} DBF...")
 
         converter = DbcToDbfConverter(self.config.conversion)
         stats = converter.convert_directory()
@@ -88,7 +89,7 @@ class DbcToDbfStage(Stage):
         context.set("dbc_conversion_stats", stats)
         context.set_metadata("dbc_converted_count", stats["converted"])
 
-        tqdm.write(f"       ✓ Conversão concluída: {stats['converted']} arquivos")
+        tqdm.write(f"       {SYM_CHECK} Conversao concluida: {stats['converted']} arquivos")
 
         # Mark stage progress complete
         context.mark_stage_progress_complete("dbc_to_dbf")
@@ -136,7 +137,7 @@ class DbfToDbStage(Stage):
         total_rows = 0
         staging_tables = []
 
-        tqdm.write(f"\n[{current}/{total}] Streaming: DBF → DuckDB ({len(dbf_files)} arquivos)...")
+        tqdm.write(f"\n[{current}/{total}] Streaming: DBF {SYM_ARROW} DuckDB ({len(dbf_files)} arquivos)...")
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             # Submit all tasks
@@ -149,7 +150,7 @@ class DbfToDbStage(Stage):
 
             # Process completed tasks with progress bar
             for future in tqdm(
-                as_completed(future_to_file), total=len(dbf_files), desc="DBF→DuckDB", leave=False
+                as_completed(future_to_file), total=len(dbf_files), desc=f"DBF{SYM_ARROW}DuckDB", leave=False
             ):
                 # Check for cancellation before processing next result
                 context.check_cancelled()
@@ -167,7 +168,7 @@ class DbfToDbStage(Stage):
         context.set("staging_tables", staging_tables)
         context.set_metadata("total_rows_loaded", total_rows)
 
-        tqdm.write(f"       ✓ Streaming concluído: {total_rows:,} linhas de {len(dbf_files)} arquivos")
+        tqdm.write(f"       {SYM_CHECK} Streaming concluido: {total_rows:,} linhas de {len(dbf_files)} arquivos")
 
         # Mark stage progress complete
         context.mark_stage_progress_complete("dbf_to_db")
@@ -337,8 +338,8 @@ class SqlTransformStage(Stage):
         format_name = self.config.output_format.upper()
 
         tqdm.write(
-            f"\n[{current}/{total}] Transformação + Export: "
-            f"{len(staging_tables)} tabelas → {format_name}..."
+            f"\n[{current}/{total}] Transformacao + Export: "
+            f"{len(staging_tables)} tabelas {SYM_ARROW} {format_name}..."
         )
 
         total_rows_exported = 0
@@ -412,7 +413,7 @@ class SqlTransformStage(Stage):
         context.set("exported_parquet_files", [str(f) for f in output_files])
 
         tqdm.write(
-            f"       ✓ Export concluído: {total_rows_exported:,} linhas, "
+            f"       {SYM_CHECK} Export concluido: {total_rows_exported:,} linhas, "
             f"{len(output_files)} arquivos {format_name} ({total_size_mb:.1f} MB)"
         )
 
@@ -447,8 +448,8 @@ class SqlTransformStage(Stage):
         parquet_dir.mkdir(parents=True, exist_ok=True)
 
         tqdm.write(
-            f"\n[{current}/{total}] Transformação + Export: "
-            f"{len(staging_tables)} tabelas → PARQUET (individual)..."
+            f"\n[{current}/{total}] Transformacao + Export: "
+            f"{len(staging_tables)} tabelas {SYM_ARROW} PARQUET (individual)..."
         )
 
         total_rows_exported = 0
@@ -508,7 +509,7 @@ class SqlTransformStage(Stage):
         context.set("exported_parquet_files", exported_files)
 
         tqdm.write(
-            f"       ✓ Export concluído: {total_rows_exported:,} linhas, "
+            f"       {SYM_CHECK} Export concluido: {total_rows_exported:,} linhas, "
             f"{len(exported_files)} arquivos PARQUET ({total_size_mb:.1f} MB)"
         )
 
@@ -572,7 +573,7 @@ class MemoryAwareProcessingStage(Stage):
         format_name = self.config.output_format.upper()
         tqdm.write(
             f"\n[{current}/{total}] Processamento Memory-Aware: "
-            f"{len(dbc_files)} arquivos DBC → {format_name}..."
+            f"{len(dbc_files)} arquivos DBC {SYM_ARROW} {format_name}..."
         )
 
         # Create progress updater for memory-aware processing
@@ -749,7 +750,7 @@ class DatasusPipeline(Pipeline[PipelineConfig], ABC):
 
         # Print summary
         tqdm.write("")
-        tqdm.write(f"[PIPELINE] ✓ {self.subsystem_name.upper()} concluído em {duration_str}")
+        tqdm.write(f"[PIPELINE] {SYM_CHECK} {self.subsystem_name.upper()} concluido em {duration_str}")
         tqdm.write(f"           Linhas exportadas: {total_rows:,}")
         tqdm.write(f"           Arquivos {format_name}: {len(output_files)} ({size_human})")
         tqdm.write(f"           Diretório: {parquet_dir}")

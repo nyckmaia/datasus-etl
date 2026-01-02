@@ -4,6 +4,41 @@ This module contains general constants for the DataSUS ETL package.
 For SIHSUS Parquet schema definitions, see datasus_etl.constants.sihsus_schema.
 """
 
+import os
+import sys
+
+
+def _can_use_unicode() -> bool:
+    """Check if the current environment supports Unicode output."""
+    # Check for NO_COLOR or TERM=dumb (set by Web Interface subprocess)
+    if os.environ.get("NO_COLOR") or os.environ.get("TERM") == "dumb":
+        return False
+
+    # Check if stdout is a terminal
+    if not sys.stdout.isatty():
+        return False
+
+    # On Windows, check encoding
+    if sys.platform == "win32":
+        try:
+            # Try to encode a Unicode character
+            "✓".encode(sys.stdout.encoding or "utf-8")
+            return True
+        except (UnicodeEncodeError, LookupError):
+            return False
+
+    return True
+
+
+# Unicode symbols with ASCII fallbacks
+USE_UNICODE = _can_use_unicode()
+SYM_CHECK = "✓" if USE_UNICODE else "[OK]"
+SYM_ARROW = "→" if USE_UNICODE else "->"
+SYM_FILE = "📄" if USE_UNICODE else ""
+SYM_CHART = "📊" if USE_UNICODE else ""
+SYM_FOLDER = "📁" if USE_UNICODE else ""
+
+
 # DATASUS FTP Configuration
 DATASUS_FTP_HOST = "ftp.datasus.gov.br"
 DATASUS_FTP_USER = ""  # Anonymous

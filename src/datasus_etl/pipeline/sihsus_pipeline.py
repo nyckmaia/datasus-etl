@@ -5,6 +5,7 @@ from pathlib import Path
 from datetime import datetime
 
 from datasus_etl.config import PipelineConfig
+from datasus_etl.constants import SYM_CHECK, SYM_ARROW, SYM_FILE, SYM_CHART
 from datasus_etl.core.pipeline import Pipeline
 from datasus_etl.core.stage import Stage
 from datasus_etl.core.context import PipelineContext
@@ -555,12 +556,12 @@ class SihsusPipeline(Pipeline[PipelineConfig]):
         dbf_files = context.get("dbf_files", [])
         num_files = len(dbf_files) or len(staging_tables)
 
-        self.logger.info(f"📄 Files Processed: {num_files} DBC → Parquet")
+        self.logger.info(f"{SYM_FILE} Files Processed: {num_files} DBC {SYM_ARROW} Parquet")
 
         # 2. Total rows (from context metadata)
         total_rows = context.get_metadata("total_rows_exported", 0)
         if total_rows:
-            self.logger.info(f"📊 Total Rows: {total_rows:,}")
+            self.logger.info(f"{SYM_CHART} Total Rows: {total_rows:,}")
 
         # 3. Output directory and size
         parquet_dir = self.config.storage.parquet_dir
