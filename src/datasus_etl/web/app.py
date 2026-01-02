@@ -414,8 +414,10 @@ def page_download():
     # Download button with pipeline execution
     if st.button("📥 Iniciar Download", type="primary"):
         try:
+            import threading
             from datasus_etl.config import PipelineConfig
             from datasus_etl.pipeline import SihsusPipeline, SIMPipeline
+            from datasus_etl.exceptions import PipelineCancelled
 
             config = PipelineConfig.create(
                 base_dir=data_dir,
@@ -443,77 +445,110 @@ def page_download():
                 status_text = st.empty()
                 stage_info = st.empty()
 
+            # Shared state for thread communication (thread-safe)
+            progress_state = {
+                "progress": 0.0,
+                "message": "Iniciando...",
+                "stage": "Download",
+                "done": False,
+                "error": None,
+                "result": None,
+            }
+            state_lock = threading.Lock()
+
             # Stage tracking for display
             stages = ["Download", "Conversao", "Carga", "Transformacao", "Exportacao"]
-            stage_progress = {s: "pendente" for s in stages}
 
-            def update_stage_display():
-                """Update stage status display."""
-                stage_display = []
-                for s in stages:
-                    if stage_progress[s] == "completo":
-                        stage_display.append(f"✅ {s}")
-                    elif stage_progress[s] == "em_progresso":
-                        stage_display.append(f"🔄 {s}")
-                    else:
-                        stage_display.append(f"⏳ {s}")
-                stage_info.markdown(" → ".join(stage_display))
+            def get_stage_from_progress(pct: float, message: str) -> str:
+                """Determine current stage based on progress and message."""
+                msg_lower = message.lower()
+                if "download" in msg_lower or pct < 0.20:
+                    return "Download"
+                elif "convers" in msg_lower or 0.20 <= pct < 0.30:
+                    return "Conversao"
+                elif "carga" in msg_lower or "stream" in msg_lower or 0.30 <= pct < 0.50:
+                    return "Carga"
+                elif "transform" in msg_lower or "arquivos" in msg_lower or 0.50 <= pct < 0.95:
+                    return "Transformacao"
+                else:
+                    return "Exportacao"
 
             def progress_callback(pct: float, message: str = ""):
                 """Callback function to receive progress updates from pipeline."""
-                # Update progress bar
-                progress_bar.progress(pct, text=f"{int(pct*100)}%")
+                with state_lock:
+                    progress_state["progress"] = pct
+                    progress_state["message"] = message
+                    progress_state["stage"] = get_stage_from_progress(pct, message)
 
-                # Update status message
-                if message:
-                    status_text.text(message)
-
-                # Determine current stage based on message/progress
-                if "download" in message.lower() or pct < 0.25:
-                    stage_progress["Download"] = "em_progresso"
-                elif "convers" in message.lower() or 0.25 <= pct < 0.35:
-                    stage_progress["Download"] = "completo"
-                    stage_progress["Conversao"] = "em_progresso"
-                elif "carga" in message.lower() or "stream" in message.lower() or 0.35 <= pct < 0.60:
-                    stage_progress["Conversao"] = "completo"
-                    stage_progress["Carga"] = "em_progresso"
-                elif "transform" in message.lower() or 0.60 <= pct < 0.95:
-                    stage_progress["Carga"] = "completo"
-                    stage_progress["Transformacao"] = "em_progresso"
-                elif "export" in message.lower() or pct >= 0.95:
-                    stage_progress["Transformacao"] = "completo"
-                    stage_progress["Exportacao"] = "em_progresso"
-
-                # Handle stage completion markers
-                if "[OK]" in message:
-                    stage_name_lower = message.replace("[OK]", "").strip().lower()
-                    if "download" in stage_name_lower:
-                        stage_progress["Download"] = "completo"
-                    elif "memory_aware" in stage_name_lower or "processing" in stage_name_lower:
-                        stage_progress["Conversao"] = "completo"
-                        stage_progress["Carga"] = "completo"
-                        stage_progress["Transformacao"] = "completo"
-                        stage_progress["Exportacao"] = "completo"
-
-                update_stage_display()
+            def run_pipeline_thread():
+                """Run pipeline in background thread."""
+                try:
+                    result = pipeline.run()
+                    with state_lock:
+                        progress_state["result"] = result
+                        progress_state["done"] = True
+                except Exception as e:
+                    with state_lock:
+                        progress_state["error"] = e
+                        progress_state["done"] = True
 
             # Connect progress callback to pipeline context
             pipeline.context.set_progress_callback(progress_callback)
 
-            # Run pipeline
+            # Start pipeline in background thread
             start_time = time.time()
+            pipeline_thread = threading.Thread(target=run_pipeline_thread, daemon=True)
+            pipeline_thread.start()
 
-            try:
-                status_text.text("Conectando ao FTP...")
-                update_stage_display()
-                result = pipeline.run()
-                elapsed = time.time() - start_time
+            # Polling loop to update UI
+            while True:
+                time.sleep(0.5)  # Poll every 500ms
 
-                # Mark all stages complete
+                with state_lock:
+                    current_progress = progress_state["progress"]
+                    current_message = progress_state["message"]
+                    current_stage = progress_state["stage"]
+                    is_done = progress_state["done"]
+                    error = progress_state["error"]
+                    result = progress_state["result"]
+
+                # Update progress bar
+                progress_bar.progress(current_progress, text=f"{int(current_progress*100)}%")
+
+                # Update status message
+                if current_message:
+                    status_text.text(current_message)
+
+                # Update stage indicators
+                stage_display = []
+                stage_reached = False
                 for s in stages:
-                    stage_progress[s] = "completo"
-                progress_bar.progress(1.0, text="Completo!")
+                    if s == current_stage:
+                        stage_display.append(f"🔄 {s}")
+                        stage_reached = True
+                    elif not stage_reached:
+                        stage_display.append(f"✅ {s}")
+                    else:
+                        stage_display.append(f"⏳ {s}")
+                stage_info.markdown(" → ".join(stage_display))
 
+                # Check if done
+                if is_done:
+                    break
+
+            # Handle completion
+            elapsed = time.time() - start_time
+
+            if error:
+                if isinstance(error, PipelineCancelled):
+                    st.warning("Pipeline cancelado pelo usuario.")
+                    status_text.text("Cancelado")
+                else:
+                    st.error(f"Erro no pipeline: {error}")
+                    progress_bar.progress(0, text="Erro!")
+            else:
+                # Mark all stages complete
+                progress_bar.progress(1.0, text="Completo!")
                 stage_display = [f"✅ {s}" for s in stages]
                 stage_info.markdown(" → ".join(stage_display))
 
@@ -522,21 +557,12 @@ def page_download():
 
                 col1, col2 = st.columns(2)
                 with col1:
-                    total_rows = result.get_metadata("total_rows_exported", 0)
+                    total_rows = result.get_metadata("total_rows_exported", 0) if result else 0
                     st.metric("Linhas Exportadas", f"{total_rows:,}")
                 with col2:
                     st.metric("Tempo Total", f"{elapsed:.1f}s")
 
                 st.info(f"Arquivos salvos em: {config.storage.parquet_dir}")
-
-            except Exception as e:
-                from datasus_etl.exceptions import PipelineCancelled
-                if isinstance(e, PipelineCancelled):
-                    st.warning("Pipeline cancelado pelo usuario.")
-                    status_text.text("Cancelado")
-                else:
-                    st.error(f"Erro no pipeline: {e}")
-                    progress_bar.progress(0, text="Erro!")
 
         except ImportError as e:
             st.error(f"Erro de importacao: {e}")
