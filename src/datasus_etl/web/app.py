@@ -312,13 +312,28 @@ def page_status():
         st.error(f"Erro ao ler banco: {e}")
 
 
+# Module-level shared state for thread communication
+# st.session_state is NOT thread-safe for writes from background threads
+# We use a regular dict that's shared via Python's GIL
+_shared_progress_state = {
+    "progress": 0.0,
+    "message": "Iniciando...",
+    "stage": "Download",
+    "done": False,
+    "error": None,
+    "result": None,
+}
+
+
 def page_download():
     """Render download page with pipeline execution.
 
-    Uses st.session_state + st.rerun() pattern for real-time progress updates.
-    Streamlit only renders UI after script completes, so we use periodic reruns
-    to poll the pipeline progress from a background thread.
+    Uses a module-level shared dict for thread communication, since
+    st.session_state is not thread-safe for writes from background threads.
+    The shared state is polled and copied to session_state on each rerun.
     """
+    global _shared_progress_state
+
     st.title("📥 Download de Dados")
 
     data_dir = get_data_dir()
@@ -327,14 +342,9 @@ def page_download():
     # Initialize pipeline state in session_state
     if "pipeline_running" not in st.session_state:
         st.session_state.pipeline_running = False
-        st.session_state.pipeline_progress = 0.0
-        st.session_state.pipeline_message = "Iniciando..."
-        st.session_state.pipeline_stage = "Download"
-        st.session_state.pipeline_done = False
-        st.session_state.pipeline_error = None
-        st.session_state.pipeline_result = None
         st.session_state.pipeline_start_time = 0
         st.session_state.pipeline_thread = None
+        st.session_state.pipeline_config = None
 
     st.markdown("""
     Configure os parametros de download abaixo.
@@ -459,32 +469,34 @@ def page_download():
             else:
                 pipeline = SihsusPipeline(config)
 
-            # Reset state
+            # Reset shared state (module-level, thread-safe via GIL)
+            _shared_progress_state["progress"] = 0.0
+            _shared_progress_state["message"] = "Iniciando..."
+            _shared_progress_state["stage"] = "Download"
+            _shared_progress_state["done"] = False
+            _shared_progress_state["error"] = None
+            _shared_progress_state["result"] = None
+
+            # Reset session state
             st.session_state.pipeline_running = True
-            st.session_state.pipeline_done = False
-            st.session_state.pipeline_error = None
-            st.session_state.pipeline_result = None
-            st.session_state.pipeline_progress = 0.0
-            st.session_state.pipeline_message = "Iniciando..."
-            st.session_state.pipeline_stage = "Download"
             st.session_state.pipeline_start_time = time.time()
 
-            # Progress callback updates session_state (thread-safe via GIL)
+            # Progress callback updates shared dict (NOT session_state)
             def progress_callback(pct: float, message: str = ""):
-                st.session_state.pipeline_progress = pct
-                st.session_state.pipeline_message = message
+                _shared_progress_state["progress"] = pct
+                _shared_progress_state["message"] = message
                 # Determine stage from progress/message
                 msg_lower = message.lower()
                 if "download" in msg_lower or pct < 0.20:
-                    st.session_state.pipeline_stage = "Download"
+                    _shared_progress_state["stage"] = "Download"
                 elif "convers" in msg_lower or 0.20 <= pct < 0.30:
-                    st.session_state.pipeline_stage = "Conversao"
+                    _shared_progress_state["stage"] = "Conversao"
                 elif "carga" in msg_lower or "stream" in msg_lower or 0.30 <= pct < 0.50:
-                    st.session_state.pipeline_stage = "Carga"
+                    _shared_progress_state["stage"] = "Carga"
                 elif "transform" in msg_lower or "arquivos" in msg_lower or 0.50 <= pct < 0.95:
-                    st.session_state.pipeline_stage = "Transformacao"
+                    _shared_progress_state["stage"] = "Transformacao"
                 else:
-                    st.session_state.pipeline_stage = "Exportacao"
+                    _shared_progress_state["stage"] = "Exportacao"
 
             pipeline.context.set_progress_callback(progress_callback)
 
@@ -492,11 +504,11 @@ def page_download():
             def run_pipeline():
                 try:
                     result = pipeline.run()
-                    st.session_state.pipeline_result = result
+                    _shared_progress_state["result"] = result
                 except Exception as e:
-                    st.session_state.pipeline_error = e
+                    _shared_progress_state["error"] = e
                 finally:
-                    st.session_state.pipeline_done = True
+                    _shared_progress_state["done"] = True
 
             thread = threading.Thread(target=run_pipeline, daemon=True)
             thread.start()
@@ -511,19 +523,23 @@ def page_download():
             st.error(f"Erro na configuracao: {e}")
 
     # Show progress while pipeline is running (polling mode)
-    if st.session_state.pipeline_running and not st.session_state.pipeline_done:
+    # Read from shared state (module-level dict, updated by background thread)
+    if st.session_state.pipeline_running and not _shared_progress_state["done"]:
         st.markdown("### Progresso do Pipeline")
 
+        # Read current values from shared state
+        progress_pct = _shared_progress_state["progress"]
+        current_message = _shared_progress_state["message"]
+        current_stage = _shared_progress_state["stage"]
+
         # Progress bar with current percentage
-        progress_pct = st.session_state.pipeline_progress
         st.progress(progress_pct, text=f"{int(progress_pct * 100)}%")
 
         # Status message
-        st.text(st.session_state.pipeline_message)
+        st.text(current_message)
 
         # Stage indicators
         stages = ["Download", "Conversao", "Carga", "Transformacao", "Exportacao"]
-        current_stage = st.session_state.pipeline_stage
         stage_display = []
         stage_reached = False
         for s in stages:
@@ -545,19 +561,19 @@ def page_download():
         st.rerun()
 
     # Handle pipeline completion
-    elif st.session_state.pipeline_running and st.session_state.pipeline_done:
+    elif st.session_state.pipeline_running and _shared_progress_state["done"]:
         from datasus_etl.exceptions import PipelineCancelled
 
         st.markdown("### Progresso do Pipeline")
 
         elapsed = time.time() - st.session_state.pipeline_start_time
-        error = st.session_state.pipeline_error
-        result = st.session_state.pipeline_result
+        error = _shared_progress_state["error"]
+        result = _shared_progress_state["result"]
 
         if error:
             if isinstance(error, PipelineCancelled):
                 st.warning("Pipeline cancelado pelo usuario.")
-                st.progress(st.session_state.pipeline_progress, text="Cancelado")
+                st.progress(_shared_progress_state["progress"], text="Cancelado")
             else:
                 st.error(f"Erro no pipeline: {error}")
                 st.progress(0, text="Erro!")
