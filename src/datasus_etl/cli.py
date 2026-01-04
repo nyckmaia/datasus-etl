@@ -1549,6 +1549,255 @@ def export_cmd(
         raise typer.Exit(1)
 
 
+def _upload_full_database(
+    db_path: Path,
+    md_connection: str,
+    target_db: str,
+    overwrite: bool,
+    console_obj: Console,
+) -> None:
+    """Upload completo do banco DuckDB local para MotherDuck.
+
+    Args:
+        db_path: Path to local DuckDB database
+        md_connection: MotherDuck connection string
+        target_db: Target database name in MotherDuck
+        overwrite: Whether to overwrite existing database
+        console_obj: Rich console for output
+    """
+    # Conectar ao banco local
+    local_conn = duckdb.connect(str(db_path), read_only=True)
+
+    # Attach MotherDuck
+    local_conn.sql(f"ATTACH '{md_connection}'")
+
+    # Verificar tamanho do banco
+    size_mb = db_path.stat().st_size / (1024 * 1024)
+    console_obj.print(f"Tamanho do banco: [cyan]{size_mb:.1f} MB[/cyan]")
+
+    if size_mb > 10 * 1024:  # 10GB
+        console_obj.print("[yellow]Aviso: Banco excede 10GB do plano gratuito do MotherDuck.[/yellow]")
+
+    # Criar banco no MotherDuck
+    or_replace = "OR REPLACE " if overwrite else ""
+    console_obj.print("Enviando dados para MotherDuck...")
+
+    local_conn.sql(f"CREATE {or_replace}DATABASE {target_db} FROM CURRENT_DATABASE()")
+
+    local_conn.close()
+
+
+def _upload_filtered_data(
+    db_path: Path,
+    md_connection: str,
+    target_db: str,
+    source: str,
+    date_column: str,
+    start_date: str,
+    end_date: str,
+    overwrite: bool,
+    console_obj: Console,
+) -> None:
+    """Upload filtrado por periodo para MotherDuck.
+
+    Args:
+        db_path: Path to local DuckDB database
+        md_connection: MotherDuck connection string
+        target_db: Target database name in MotherDuck
+        source: Subsystem name (sihsus, sim)
+        date_column: Date column name for filtering
+        start_date: Start date (YYYY-MM-DD)
+        end_date: End date (YYYY-MM-DD)
+        overwrite: Whether to overwrite existing table
+        console_obj: Rich console for output
+    """
+    # Conectar ao MotherDuck
+    md_conn = duckdb.connect(md_connection)
+
+    # Criar banco se nao existir
+    or_replace = "OR REPLACE " if overwrite else ""
+    md_conn.sql(f"CREATE DATABASE IF NOT EXISTS {target_db}")
+    md_conn.sql(f"USE {target_db}")
+
+    # Attach banco local
+    md_conn.sql(f"ATTACH '{db_path}' AS local_db (READ_ONLY)")
+
+    # Contar registros a enviar
+    count_query = f"""
+        SELECT COUNT(*) FROM local_db.{source}_raw
+        WHERE {date_column} >= '{start_date}'
+          AND {date_column} <= '{end_date}'
+    """
+    row_count = md_conn.execute(count_query).fetchone()[0]
+    console_obj.print(f"Registros a enviar: [cyan]{row_count:,}[/cyan]")
+
+    if row_count == 0:
+        console_obj.print("[yellow]Nenhum registro encontrado no periodo especificado.[/yellow]")
+        md_conn.close()
+        return
+
+    # Criar tabela no MotherDuck com dados filtrados
+    console_obj.print("Enviando dados para MotherDuck...")
+
+    md_conn.sql(f"""
+        CREATE {or_replace}TABLE {source}_raw AS
+        SELECT * FROM local_db.{source}_raw
+        WHERE {date_column} >= '{start_date}'
+          AND {date_column} <= '{end_date}'
+    """)
+
+    md_conn.close()
+
+
+@app.command(name="upload")
+def upload_cmd(
+    source: str = typer.Option(
+        ...,
+        "--source",
+        "-s",
+        help="Subsistema: sihsus, sim",
+    ),
+    start_date: Optional[str] = typer.Option(
+        None,
+        "--start-date",
+        help="Data inicio (YYYY-MM-DD). Obrigatorio se --full nao for usado.",
+    ),
+    end_date: Optional[str] = typer.Option(
+        None,
+        "--end-date",
+        help="Data fim (YYYY-MM-DD). Obrigatorio se --full nao for usado.",
+    ),
+    full: bool = typer.Option(
+        False,
+        "--full",
+        help="Upload do banco completo (ignora filtros de data).",
+    ),
+    motherduck_token: Optional[str] = typer.Option(
+        None,
+        "--motherduck-token",
+        "-t",
+        help="Token de acesso MotherDuck. Se nao informado, abre browser para autenticacao.",
+    ),
+    db_name: Optional[str] = typer.Option(
+        None,
+        "--db-name",
+        help="Nome do banco no MotherDuck. Padrao: nome do subsistema.",
+    ),
+    overwrite: bool = typer.Option(
+        False,
+        "--overwrite",
+        help="Sobrescrever banco existente no MotherDuck.",
+    ),
+    data_dir: Path = typer.Option(
+        Path("./data"),
+        "--data-dir",
+        "-d",
+        help="Diretorio do banco DuckDB local.",
+    ),
+) -> None:
+    """Upload de banco DuckDB local para MotherDuck.
+
+    Envia dados do banco local para sua conta MotherDuck na nuvem.
+    O plano gratuito do MotherDuck oferece 10GB de armazenamento.
+
+    [bold]Autenticacao:[/bold]
+
+        # Via browser (padrao) - abre pagina de login
+        datasus upload -s sihsus --full
+
+        # Via token (sem browser) - ideal para automacao
+        datasus upload -s sihsus --full --motherduck-token "seu_token"
+
+    [bold]Exemplos de uso:[/bold]
+
+        # Upload filtrado por periodo
+        datasus upload -s sihsus --start-date 2023-01-01 --end-date 2023-12-31
+
+        # Upload do banco completo
+        datasus upload -s sihsus --full
+
+        # Com nome customizado
+        datasus upload -s sihsus --full --db-name meu_banco_sihsus
+
+        # Sobrescrever banco existente
+        datasus upload -s sihsus --full --overwrite
+    """
+    # 1. Validar parametros
+    if not full and (start_date is None or end_date is None):
+        console.print("[red bold]Erro: Parametros obrigatorios faltando:[/red bold]")
+        console.print("  [red]-[/red] --start-date")
+        console.print("  [red]-[/red] --end-date")
+        console.print()
+        console.print("[dim]Use --full para upload do banco completo sem filtro de datas.[/dim]")
+        raise typer.Exit(1)
+
+    # 2. Validar source
+    valid_sources = ["sihsus", "sim"]
+    source_lower = source.lower()
+    if source_lower not in valid_sources:
+        console.print(f"[red]Erro: Subsistema invalido '{source}'.[/red]")
+        console.print(f"[dim]Subsistemas validos: {', '.join(valid_sources)}[/dim]")
+        raise typer.Exit(1)
+
+    # 3. Verificar banco local existe
+    db_path = data_dir / f"{source_lower}.duckdb"
+    if not db_path.exists():
+        console.print(f"[red]Erro: Banco nao encontrado: {db_path}[/red]")
+        console.print("[dim]Execute 'datasus pipeline' primeiro para criar os dados.[/dim]")
+        raise typer.Exit(1)
+
+    # 4. Definir nome do banco no MotherDuck
+    target_db = db_name if db_name else source_lower
+
+    # 5. Montar connection string do MotherDuck
+    if motherduck_token:
+        md_connection = f"md:?motherduck_token={motherduck_token}"
+    else:
+        md_connection = "md:"
+        console.print("[yellow]Abrindo browser para autenticacao no MotherDuck...[/yellow]")
+
+    # 6. Mostrar configuracao
+    console.print()
+    console.print("[bold cyan]DataSUS Upload para MotherDuck[/bold cyan]")
+    console.print(f"Banco local: [green]{db_path.name}[/green]")
+    console.print(f"Banco destino: [green]md:{target_db}[/green]")
+    if full:
+        console.print("Modo: [green]Completo[/green]")
+    else:
+        console.print(f"Periodo: [green]{start_date}[/green] a [green]{end_date}[/green]")
+    console.print()
+
+    try:
+        if full:
+            # Upload completo
+            _upload_full_database(db_path, md_connection, target_db, overwrite, console)
+        else:
+            # Upload filtrado
+            date_column = _get_date_column(source_lower)
+            _upload_filtered_data(
+                db_path, md_connection, target_db, source_lower,
+                date_column, start_date, end_date, overwrite, console
+            )
+
+        console.print()
+        console.print(f"[bold green]{SYM_CHECK} Upload concluido![/bold green]")
+        console.print(f"  Banco: [cyan]md:{target_db}[/cyan]")
+        console.print()
+        console.print("[dim]Acesse https://app.motherduck.com para visualizar seus dados.[/dim]")
+
+    except Exception as e:
+        error_msg = str(e)
+        if "already exists" in error_msg.lower():
+            console.print(f"[red]Erro: Banco '{target_db}' ja existe no MotherDuck.[/red]")
+            console.print("[dim]Use --overwrite para sobrescrever.[/dim]")
+        elif "authentication" in error_msg.lower() or "token" in error_msg.lower():
+            console.print("[red]Erro: Falha na autenticacao com MotherDuck.[/red]")
+            console.print("[dim]Verifique seu token ou tente novamente via browser.[/dim]")
+        else:
+            console.print(f"[red]Erro durante upload: {e}[/red]")
+        raise typer.Exit(1)
+
+
 @app.command()
 def db(
     data_dir: Path = typer.Option(
