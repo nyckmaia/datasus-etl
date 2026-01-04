@@ -1,6 +1,8 @@
 """Complete SIHSUS data processing pipeline."""
 
 import logging
+import os
+import tempfile
 from pathlib import Path
 from datetime import datetime
 
@@ -252,24 +254,25 @@ class SqlTransformStage(Stage):
                             tqdm.write(f"[SKIP] {original_name} ja processado")
                             continue
 
-                    # Transfer data from staging to persistent DB
-                    # Use fetchall() + executemany() to avoid DuckDB lock conflicts
-                    data = staging_db_manager._conn.execute(
-                        f"SELECT * FROM {view_name}"
-                    ).fetchall()
+                    # Transfer data from staging to persistent DB using Parquet
+                    # This is much faster than fetchall() + executemany()
+                    with tempfile.NamedTemporaryFile(suffix='.parquet', delete=False) as tmp:
+                        tmp_path = tmp.name
 
-                    # Get column names for INSERT
-                    columns = [desc[0] for desc in staging_db_manager._conn.execute(
-                        f"SELECT * FROM {view_name} LIMIT 0"
-                    ).description]
+                    try:
+                        # Export from staging DB to parquet (fast bulk export)
+                        staging_db_manager._conn.execute(
+                            f"COPY (SELECT * FROM {view_name}) TO '{tmp_path}' (FORMAT PARQUET)"
+                        )
 
-                    # Insert into persistent connection
-                    placeholders = ", ".join(["?" for _ in columns])
-                    col_list = ", ".join(columns)
-                    persistent_conn.executemany(
-                        f"INSERT INTO {raw_table} ({col_list}) VALUES ({placeholders})",
-                        data
-                    )
+                        # Import from parquet to persistent DB (fast bulk insert)
+                        persistent_conn.execute(
+                            f"INSERT INTO {raw_table} SELECT * FROM read_parquet('{tmp_path}')"
+                        )
+                    finally:
+                        # Cleanup temp file
+                        if os.path.exists(tmp_path):
+                            os.remove(tmp_path)
 
                     total_rows_inserted += row_count
                     tqdm.write(f"[OK] Inserted {original_name}: {row_count:,} rows")
