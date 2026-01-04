@@ -1,1 +1,1 @@
-"""Unit tests for PyDataSUS."""
+"""Unit tests for DataSUS-ETL."""

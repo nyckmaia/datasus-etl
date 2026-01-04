@@ -4,7 +4,7 @@ This example demonstrates how to use the SIHSUS_PARQUET_SCHEMA constant
 to generate SQL transformations and validate data types.
 """
 
-from pydatasus.constants.sihsus_schema import (
+from datasus_etl.constants.sihsus_schema import (
     SIHSUS_PARQUET_SCHEMA,
     generate_column_cleaning_sql,
     generate_type_validation_sql,

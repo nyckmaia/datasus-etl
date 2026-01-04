@@ -8,15 +8,15 @@ This example demonstrates the new streaming-based pipeline that:
 """
 
 from pathlib import Path
-from pydatasus.config import (
+from datasus_etl.config import (
     PipelineConfig,
     DownloadConfig,
     ConversionConfig,
     StorageConfig,
     DatabaseConfig,
 )
-from pydatasus.pipeline import SihsusPipeline
-from pydatasus.storage import ParquetQueryEngine
+from datasus_etl.pipeline import SihsusPipeline
+from datasus_etl.storage import ParquetQueryEngine
 
 
 def run_optimized_pipeline():

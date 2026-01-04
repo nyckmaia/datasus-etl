@@ -82,8 +82,8 @@ docs = [
 ]
 
 [project.scripts]
-datasus = "datasus_etl.cli:app"
-pydatasus = "datasus_etl.cli:app"  # Alias for backward compatibility
+datasus = "datasus_etl.cli:app" # Alias
+datasus-etl = "datasus_etl.cli:app"  
 
 [project.urls]
 Homepage = "https://github.com/user/datasus-etl"

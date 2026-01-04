@@ -7,8 +7,7 @@ Key features:
 - Processes one DBC file at a time, exporting immediately
 - Uses independent DuckDB in-memory connections per worker
 - Automatically adjusts parallelism based on available RAM
-- Exports to Hive-partitioned Parquet (by UF)
-- Each DBC source generates one Parquet/CSV file
+- Exports to persistent DuckDB database (one file per subsystem)
 - Supports graceful cancellation via context
 """
 
@@ -60,7 +59,7 @@ class MemoryAwareProcessor:
     1. Decompress DBC → DBF (in temp directory)
     2. Stream DBF → DuckDB (in-memory, independent connection)
     3. Apply SQL transformations
-    4. Export to Parquet/CSV with Hive partitioning (by UF)
+    4. Export to persistent DuckDB database
     5. Clean up DBF and release memory
 
     Each worker uses its own DuckDB in-memory connection to avoid
@@ -170,7 +169,7 @@ class MemoryAwareProcessor:
 
         Args:
             dbc_files: List of DBC files to process
-            output_dir: Base output directory for Parquet/CSV files
+            output_dir: Base output directory for DuckDB database
 
         Returns:
             List of ProcessingResult for each file
@@ -201,14 +200,12 @@ class MemoryAwareProcessor:
         total_rows = sum(r.rows_exported for r in results if r.success)
 
         # Calculate output size
-        format_ext = "*.csv" if self.config.output_format == "csv" else "*.parquet"
-        output_files = list(output_dir.rglob(format_ext))
-        total_size_mb = sum(f.stat().st_size for f in output_files) / (1024 * 1024)
+        db_files = list(output_dir.rglob("*.duckdb"))
+        total_size_mb = sum(f.stat().st_size for f in db_files) / (1024 * 1024)
 
-        format_name = self.config.output_format.upper()
         tqdm.write(
-            f"       ✓ Processamento concluído: {total_rows:,} linhas, "
-            f"{len(output_files)} arquivos {format_name} ({total_size_mb:.1f} MB)"
+            f"       Processamento concluido: {total_rows:,} linhas, "
+            f"{len(db_files)} arquivo(s) DuckDB ({total_size_mb:.1f} MB)"
         )
 
         if failed > 0:
@@ -236,7 +233,7 @@ class MemoryAwareProcessor:
         results = []
         total_files = len(dbc_files)
 
-        for i, dbc_file in enumerate(tqdm(dbc_files, desc="DBC→Parquet", leave=False)):
+        for i, dbc_file in enumerate(tqdm(dbc_files, desc="DBC->DuckDB", leave=False)):
             # Check for cancellation
             if self._is_cancelled():
                 tqdm.write("\n[CANCELLED] Processamento cancelado pelo usuário")
@@ -288,7 +285,7 @@ class MemoryAwareProcessor:
             for future in tqdm(
                 as_completed(future_to_file),
                 total=total_files,
-                desc=f"DBC→Parquet ({num_workers}w)",
+                desc=f"DBC->DuckDB ({num_workers}w)",
                 leave=False,
             ):
                 # Check for cancellation
@@ -401,8 +398,8 @@ class MemoryAwareProcessor:
                     view_name = f"canonical_{source_name}"
                     self._apply_sql_transforms(conn, staging_table, view_name)
 
-                    # Step 5: Export to Parquet/CSV with Hive partitioning
-                    output_file = self._export_to_output(
+                    # Step 5: Export to persistent DuckDB database
+                    output_file = self._export_to_duckdb(
                         conn, view_name, source_name, uf, output_dir
                     )
 
@@ -557,7 +554,7 @@ class MemoryAwareProcessor:
             ibge_data_path=self.ibge_data_path,
         )
 
-    def _export_to_output(
+    def _export_to_duckdb(
         self,
         conn: duckdb.DuckDBPyConnection,
         view_name: str,
@@ -565,103 +562,82 @@ class MemoryAwareProcessor:
         uf: str,
         output_dir: Path,
     ) -> Path:
-        """Export data to Parquet or CSV with Hive partitioning.
-
-        Creates output in: output_dir/uf={UF}/{source_name}.{ext}
+        """Export data to persistent DuckDB database.
 
         Args:
-            conn: DuckDB connection
+            conn: In-memory DuckDB connection with transformed data
             view_name: View to export
             source_name: Original source file name (without extension)
-            uf: UF code for partition
+            uf: UF code
             output_dir: Base output directory
 
         Returns:
-            Path to exported file
+            Path to DuckDB database file
         """
-        # Create partition directory
-        partition_dir = output_dir / f"uf={uf}"
-        partition_dir.mkdir(parents=True, exist_ok=True)
+        import threading
 
-        # Determine output file
-        if self.config.output_format == "csv":
-            output_file = partition_dir / f"{source_name}.csv"
-            self._export_csv(conn, view_name, output_file)
-        else:
-            output_file = partition_dir / f"{source_name}.parquet"
-            self._export_parquet(conn, view_name, output_file)
+        # Get database path from config
+        db_path = self.config.get_database_path()
+        db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        return output_file
+        # Use a lock to prevent concurrent writes to the same database
+        lock_key = str(db_path)
+        if not hasattr(self, '_db_locks'):
+            self._db_locks = {}
+        if lock_key not in self._db_locks:
+            self._db_locks[lock_key] = threading.Lock()
 
-    def _export_csv(
-        self,
-        conn: duckdb.DuckDBPyConnection,
-        view_name: str,
-        output_file: Path,
-    ) -> None:
-        """Export view to CSV file.
+        with self._db_locks[lock_key]:
+            # Open persistent connection
+            persistent_conn = duckdb.connect(str(db_path))
 
-        Args:
-            conn: DuckDB connection
-            view_name: View to export
-            output_file: Output CSV file path
-        """
-        delimiter = self.config.csv_delimiter
-        encoding = self.config.csv_encoding
-        order_col = self._get_order_column()
+            try:
+                # Get schema for this subsystem
+                from datasus_etl.storage.sql_transformer import SUBSYSTEM_SCHEMAS
+                from datasus_etl.storage.duckdb_manager import DuckDBManager
+                from datasus_etl.config import DatabaseConfig
 
-        export_sql = f"""
-            COPY (
-                SELECT * FROM {view_name}
-                ORDER BY {order_col} ASC NULLS LAST
-            )
-            TO '{output_file}' (
-                FORMAT CSV,
-                HEADER true,
-                DELIMITER '{delimiter}',
-                ENCODING '{encoding}'
-            )
-        """
-        conn.execute(export_sql)
+                schema = SUBSYSTEM_SCHEMAS.get(self.config.subsystem, {})
+                raw_table = f"{self.config.subsystem}_raw"
 
-    def _export_parquet(
-        self,
-        conn: duckdb.DuckDBPyConnection,
-        view_name: str,
-        output_file: Path,
-    ) -> None:
-        """Export view to Parquet file.
+                # Initialize raw table if needed (thread-safe via lock)
+                temp_config = DatabaseConfig(db_path=db_path)
+                persistent_manager = DuckDBManager(temp_config)
+                persistent_manager._conn = persistent_conn
+                persistent_manager.initialize_raw_table(self.config.subsystem, schema)
 
-        Args:
-            conn: DuckDB connection
-            view_name: View to export
-            output_file: Output Parquet file path
-        """
-        compression = self.config.storage.compression
-        row_group_size = self.config.storage.row_group_size
-        order_col = self._get_order_column()
+                # Check if source file already exists
+                source_file = f"{source_name}.dbc"
+                existing = persistent_conn.execute(
+                    f"SELECT COUNT(*) FROM {raw_table} WHERE source_file = ?",
+                    [source_file]
+                ).fetchone()[0]
 
-        export_sql = f"""
-            COPY (
-                SELECT * FROM {view_name}
-                ORDER BY {order_col} ASC NULLS LAST
-            )
-            TO '{output_file}' (
-                FORMAT PARQUET,
-                COMPRESSION '{compression}',
-                ROW_GROUP_SIZE {row_group_size}
-            )
-        """
-        conn.execute(export_sql)
+                if existing > 0:
+                    self.logger.debug(f"Skipping {source_name} - already processed")
+                    return db_path
 
-    def _get_order_column(self) -> str:
-        """Get the date column to use for ordering based on subsystem."""
-        order_columns = {
-            "sihsus": "dt_inter",
-            "sim": "dtobito",
-            "siasus": "dt_atend",
-        }
-        return order_columns.get(self.config.subsystem, "uf")
+                # Transfer data from in-memory to persistent DB
+                # Use fetchall() + executemany() to avoid DuckDB lock conflicts
+                data = conn.execute(f"SELECT * FROM {view_name}").fetchall()
+
+                # Get column names for INSERT
+                columns = [desc[0] for desc in conn.execute(
+                    f"SELECT * FROM {view_name} LIMIT 0"
+                ).description]
+
+                # Insert into persistent connection
+                placeholders = ", ".join(["?" for _ in columns])
+                col_list = ", ".join(columns)
+                persistent_conn.executemany(
+                    f"INSERT INTO {raw_table} ({col_list}) VALUES ({placeholders})",
+                    data
+                )
+
+            finally:
+                persistent_conn.close()
+
+        return db_path
 
     @property
     def results(self) -> list[ProcessingResult]:

@@ -85,24 +85,24 @@ AVG_DBC_SIZES_MB = {
     "siasus": 30.0,
 }
 
-# Parquet compression ratio (typically ~60% of DBC size)
-PARQUET_COMPRESSION_RATIO = 0.6
+# DuckDB compression ratio (typically ~50% of DBC size)
+DUCKDB_COMPRESSION_RATIO = 0.5
 
 
 def estimate_download_size(file_count: int, subsystem: str) -> tuple[float, float]:
-    """Estimate download and parquet sizes in MB.
+    """Estimate download and DuckDB sizes in MB.
 
     Args:
         file_count: Number of files to download
         subsystem: Subsystem name (sihsus, sim, siasus)
 
     Returns:
-        Tuple of (download_size_mb, parquet_size_mb)
+        Tuple of (download_size_mb, duckdb_size_mb)
     """
     avg_mb = AVG_DBC_SIZES_MB.get(subsystem.lower(), 20.0)
     download_size = file_count * avg_mb
-    parquet_size = download_size * PARQUET_COMPRESSION_RATIO
-    return download_size, parquet_size
+    duckdb_size = download_size * DUCKDB_COMPRESSION_RATIO
+    return download_size, duckdb_size
 
 
 def check_disk_space(path: Path, required_mb: float) -> tuple[bool, float]:
@@ -211,22 +211,11 @@ def pipeline_cmd(
         "-d",
         help="Diretorio base para os dados",
     ),
-    compression: str = typer.Option(
-        "zstd",
-        "--compression",
-        "-c",
-        help="Compressao Parquet: snappy, gzip, brotli, zstd",
-    ),
-    output_format: str = typer.Option(
-        "parquet",
-        "--output-format",
-        "-f",
-        help="Formato de saida: parquet (padrao) ou csv",
-    ),
-    csv_delimiter: str = typer.Option(
-        ";",
-        "--csv-delimiter",
-        help="Delimitador CSV (padrao: ponto-e-virgula)",
+    write_mode: str = typer.Option(
+        "append",
+        "--write-mode",
+        "-w",
+        help="Modo de escrita: append (padrao, adiciona novos registros) ou replace (substitui todos)",
     ),
     chunk_size: int = typer.Option(
         10000,
@@ -252,18 +241,9 @@ def pipeline_cmd(
     num_workers: int = typer.Option(
         4,
         "--num-workers",
-        "-w",
+        "-n",
         help="Numero de workers paralelos (1-8, padrao: 4). "
-             "Usado no modo memory-aware para processar DBC files em paralelo.",
-    ),
-    memory_aware: bool = typer.Option(
-        False,
-        "--memory-aware",
-        "-m",
-        help="Ativar modo memory-aware para grandes datasets. "
-             "Processa 1 arquivo DBC por vez com workers paralelos, "
-             "exportando imediatamente para evitar estouro de RAM. "
-             "Recomendado para processar todos os 27 estados.",
+             "Usado para processar DBF files em paralelo.",
     ),
     verbose: bool = typer.Option(
         False,
@@ -294,12 +274,8 @@ def pipeline_cmd(
         # Executar sem confirmacao
         datasus pipeline -s sihsus --start-date 2023-01-01 -d ./data --yes
 
-        # MODO MEMORY-AWARE (recomendado para grandes datasets)
-        # Processa todos os 27 estados sem estourar a RAM
-        datasus pipeline -s sihsus --start-date 2023-01-01 -d ./data --memory-aware -w 4
-
-        # Memory-aware com mais workers (se tiver bastante RAM)
-        datasus pipeline -s sihsus --start-date 2023-01-01 -d ./data -m -w 8
+        # Substituir todos os dados existentes (ao inves de append)
+        datasus pipeline -s sihsus --start-date 2023-01-01 -d ./data --write-mode replace
     """
     # Validate required parameters
     missing_params = []
@@ -329,10 +305,10 @@ def pipeline_cmd(
         console.print(f"[red]Erro: --source deve ser um de: {', '.join(valid_sources)}[/red]")
         raise typer.Exit(1)
 
-    # Validate compression
-    valid_compressions = ["snappy", "gzip", "brotli", "zstd"]
-    if compression.lower() not in valid_compressions:
-        console.print(f"[red]Erro: --compression deve ser um de: {', '.join(valid_compressions)}[/red]")
+    # Validate write_mode
+    valid_write_modes = ["append", "replace"]
+    if write_mode.lower() not in valid_write_modes:
+        console.print(f"[red]Erro: --write-mode deve ser um de: {', '.join(valid_write_modes)}[/red]")
         raise typer.Exit(1)
 
     # Parse UF list
@@ -340,31 +316,24 @@ def pipeline_cmd(
 
     # Show configuration summary
     console.print()
-    table = Table(title="[bold cyan]Configuração do Pipeline[/bold cyan]", border_style="cyan")
-    table.add_column("Parâmetro", style="cyan")
+    table = Table(title="[bold cyan]Configuracao do Pipeline[/bold cyan]", border_style="cyan")
+    table.add_column("Parametro", style="cyan")
     table.add_column("Valor", style="white")
 
     table.add_row("Subsistema", source.upper())
     table.add_row("Data inicial", start_date)
     table.add_row("Data final", end_date or "hoje")
     table.add_row("Estados (UF)", uf or "todos")
-    table.add_row("Diretório", str(data_dir))
-    table.add_row("Formato saída", output_format.upper())
-    table.add_row("Compressão", compression if output_format == "parquet" else "N/A")
+    table.add_row("Diretorio", str(data_dir))
+    table.add_row("Formato saida", "DuckDB")
+    table.add_row("Database", f"{source.lower()}.duckdb")
+    table.add_row("Modo escrita", write_mode)
     table.add_row("Chunk size", f"{chunk_size:,}")
-    table.add_row("Manter temporários", "Sim" if keep_temp_files else "Não")
-    table.add_row("Modo raw", "Sim (sem conversões)" if raw else "Não (com tipos)")
-    if output_format == "csv":
-        table.add_row("Delimitador CSV", repr(csv_delimiter))
+    table.add_row("Manter temporarios", "Sim" if keep_temp_files else "Nao")
+    table.add_row("Modo raw", "Sim (sem conversoes)" if raw else "Nao (com tipos)")
 
     console.print(table)
     console.print()
-
-    # Validate output format
-    valid_formats = ["parquet", "csv"]
-    if output_format.lower() not in valid_formats:
-        console.print(f"[red]Erro: --output-format deve ser um de: {', '.join(valid_formats)}[/red]")
-        raise typer.Exit(1)
 
     # Validate num_workers
     if num_workers < 1 or num_workers > 8:
@@ -378,26 +347,13 @@ def pipeline_cmd(
         start_date=start_date,
         end_date=end_date,
         uf_list=uf_list,
-        compression=compression,  # type: ignore
         override=override,
         chunk_size=chunk_size,
         keep_temp_files=keep_temp_files,
         raw_mode=raw,
-        output_format=output_format.lower(),  # type: ignore
-        csv_delimiter=csv_delimiter,
         num_workers=num_workers,
-        memory_aware_mode=memory_aware,
+        write_mode=write_mode.lower(),  # type: ignore
     )
-
-    # Show memory-aware mode info if enabled
-    if memory_aware:
-        import psutil
-        available_ram_gb = psutil.virtual_memory().available / (1024**3)
-        console.print(f"[cyan]Modo memory-aware ativado:[/cyan]")
-        console.print(f"  - Workers: {num_workers}")
-        console.print(f"  - RAM disponivel: {available_ram_gb:.1f} GB")
-        console.print(f"  - Cada arquivo DBC sera processado independentemente")
-        console.print()
 
     # Pre-download report: get file count from FTP
     console.print("[dim]Consultando servidor FTP...[/dim]")
@@ -414,8 +370,8 @@ def pipeline_cmd(
         raise typer.Exit(0)
 
     # Estimate sizes
-    download_mb, parquet_mb = estimate_download_size(file_count, source.lower())
-    total_needed_mb = download_mb + parquet_mb
+    download_mb, duckdb_mb = estimate_download_size(file_count, source.lower())
+    total_needed_mb = download_mb + duckdb_mb
 
     # Check disk space
     has_space, available_mb = check_disk_space(data_dir, total_needed_mb)
@@ -428,7 +384,7 @@ def pipeline_cmd(
 
     report_table.add_row("Arquivos a baixar", f"{file_count}")
     report_table.add_row("Tamanho estimado (DBC)", format_size_mb(download_mb))
-    report_table.add_row("Tamanho final (Parquet)", format_size_mb(parquet_mb))
+    report_table.add_row("Tamanho final (DuckDB)", format_size_mb(duckdb_mb))
     report_table.add_row("Espaco necessario total", format_size_mb(total_needed_mb))
     report_table.add_row("Espaco livre no disco", format_size_mb(available_mb))
 
@@ -478,15 +434,14 @@ def pipeline_cmd(
         console.print(f"\n[bold green]{SYM_CHECK} Pipeline concluido com sucesso![/bold green]\n")
 
         total_rows = result.get_metadata("total_rows_exported", 0)
-        exported_files = result.get("exported_parquet_files", [])
+        database_path = result.get_metadata("database_path", str(config.get_database_path()))
 
         summary = Table(title="[bold green]Resumo[/bold green]", border_style="green")
         summary.add_column("Métrica", style="green")
         summary.add_column("Valor", style="white")
 
         summary.add_row("Total de linhas", f"{total_rows:,}")
-        summary.add_row("Arquivos Parquet", str(len(exported_files)))
-        summary.add_row("Diretório de saída", str(config.storage.parquet_dir))
+        summary.add_row("Database DuckDB", database_path)
 
         console.print(summary)
 
@@ -531,12 +486,6 @@ def update(
         "--uf",
         help="Estados (UF) separados por virgula. Ex: SP,RJ,MG",
     ),
-    compression: str = typer.Option(
-        "zstd",
-        "--compression",
-        "-c",
-        help="Compressao Parquet: snappy, gzip, brotli, zstd",
-    ),
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
@@ -557,7 +506,7 @@ def update(
 ) -> None:
     """Atualiza banco de dados com novos arquivos do FTP (update incremental).
 
-    Compara dados Parquet existentes com arquivos disponiveis no FTP
+    Compara dados DuckDB existentes com arquivos disponiveis no FTP
     e processa apenas arquivos novos que ainda nao foram importados.
 
     [bold]Exemplos de uso:[/bold]
@@ -605,7 +554,6 @@ def update(
         start_date=start_date,
         end_date=end_date,
         uf_list=uf_list,
-        compression=compression,  # type: ignore
     )
 
     console.print()
@@ -640,12 +588,12 @@ def update(
             console.print(f"  ... e mais {summary_data['new_count'] - 10}")
 
         # Show size estimates
-        download_mb, parquet_mb = estimate_download_size(summary_data["new_count"], source.lower())
-        total_needed_mb = download_mb + parquet_mb
+        download_mb, duckdb_mb = estimate_download_size(summary_data["new_count"], source.lower())
+        total_needed_mb = download_mb + duckdb_mb
         has_space, available_mb = check_disk_space(data_dir, total_needed_mb)
 
         console.print()
-        console.print(f"[dim]Tamanho estimado: {format_size_mb(download_mb)} (DBC) + {format_size_mb(parquet_mb)} (Parquet)[/dim]")
+        console.print(f"[dim]Tamanho estimado: {format_size_mb(download_mb)} (DBC) + {format_size_mb(duckdb_mb)} (DuckDB)[/dim]")
         console.print(f"[dim]Espaco livre: {format_size_mb(available_mb)}[/dim]")
 
         if not has_space:
@@ -722,7 +670,7 @@ def status(
         help="Diretorio base para os dados",
     ),
 ) -> None:
-    """Mostra status do banco de dados e atualizacoes disponiveis.
+    """Mostra status do banco de dados DuckDB.
 
     [bold]Exemplos de uso:[/bold]
 
@@ -749,53 +697,58 @@ def status(
 
     setup_logging("WARNING")
 
-    from datasus_etl.storage.parquet_query_engine import ParquetQueryEngine
+    from datasus_etl.storage.duckdb_query_engine import DuckDBQueryEngine
 
-    parquet_dir = data_dir / source / "parquet"
+    db_path = data_dir / f"{source.lower()}.duckdb"
 
     console.print()
     console.print("[bold cyan]DataSUS - Status do Banco[/bold cyan]")
     console.print()
 
-    if not parquet_dir.exists():
-        console.print(f"[yellow]Diretorio nao encontrado: {parquet_dir}[/yellow]")
+    if not db_path.exists():
+        console.print(f"[yellow]Database nao encontrado: {db_path}[/yellow]")
         console.print("Execute 'datasus pipeline' para criar o banco de dados.")
         return
 
-    parquet_files = list(parquet_dir.rglob("*.parquet"))
-    if not parquet_files:
-        console.print("[yellow]Nenhum arquivo Parquet encontrado.[/yellow]")
-        return
-
     try:
-        engine = ParquetQueryEngine(parquet_dir, view_name=source)
+        engine = DuckDBQueryEngine(db_path)
 
-        # Get statistics
-        total_rows = engine.count()
-        file_counts = engine.get_file_row_counts()
-        processed_files = engine.get_processed_source_files()
-
-        # Calculate total size
-        total_size = sum(f.stat().st_size for f in parquet_files)
-        total_size_mb = total_size / (1024 * 1024)
+        # Get database info
+        db_info = engine.get_database_info()
 
         # Show summary
         summary = Table(title="[bold green]Estatisticas[/bold green]", border_style="green")
         summary.add_column("Metrica", style="green")
         summary.add_column("Valor", style="white")
 
-        summary.add_row("Total de linhas", f"{total_rows:,}")
-        summary.add_row("Arquivos fonte", str(len(processed_files)))
-        summary.add_row("Arquivos Parquet", str(len(parquet_files)))
-        summary.add_row("Tamanho total", f"{total_size_mb:.1f} MB")
-        summary.add_row("Diretorio", str(parquet_dir))
+        summary.add_row("Total de linhas", f"{db_info['row_count']:,}")
+        summary.add_row("Arquivos fonte processados", str(len(engine.get_processed_source_files())))
+        summary.add_row("Tamanho do database", f"{db_info['size_mb']:.1f} MB")
+        summary.add_row("Tabelas", ", ".join(db_info["tables"]))
+        summary.add_row("Caminho", str(db_path))
 
         console.print(summary)
 
-        # Show per-file details if not too many
-        if len(file_counts) <= 20:
+        # Show dimension status
+        dim_status = db_info["dimensions"]
+        has_dimensions = any(count > 0 for count in dim_status.values())
+        if has_dimensions:
             console.print()
-            files_table = Table(title="[bold]Arquivos por Fonte[/bold]", border_style="blue")
+            dim_table = Table(title="[bold]Tabelas de Dimensao[/bold]", border_style="blue")
+            dim_table.add_column("Tabela", style="blue")
+            dim_table.add_column("Registros", style="white", justify="right")
+
+            for table_name, count in dim_status.items():
+                if count >= 0:
+                    dim_table.add_row(table_name, f"{count:,}" if count > 0 else "[dim]vazia[/dim]")
+
+            console.print(dim_table)
+
+        # Show file counts if not too many
+        file_counts = engine.get_file_row_counts()
+        if file_counts and len(file_counts) <= 20:
+            console.print()
+            files_table = Table(title="[bold]Registros por Arquivo Fonte[/bold]", border_style="blue")
             files_table.add_column("Arquivo", style="blue")
             files_table.add_column("Linhas", style="white", justify="right")
 
@@ -905,7 +858,7 @@ def download_estimate(
 
     file_count = info["file_count"]
     total_size = info["total_size_bytes"]
-    parquet_size = info["estimated_parquet_bytes"]
+    duckdb_size = info.get("estimated_duckdb_bytes", int(total_size * 0.6))
     csv_size = info["estimated_csv_bytes"]
 
     # Display results
@@ -920,7 +873,7 @@ def download_estimate(
     table.add_column("Observação", style="dim")
 
     table.add_row("DBC (comprimido)", _format_size(total_size), "Tamanho no FTP")  # type: ignore
-    table.add_row("Parquet", _format_size(parquet_size), "~60% do DBC")  # type: ignore
+    table.add_row("DuckDB", _format_size(duckdb_size), "~60% do DBC")  # type: ignore
     table.add_row("CSV", _format_size(csv_size), "~300% do DBC")  # type: ignore
 
     console.print(table)
@@ -1143,104 +1096,44 @@ def _check_duckdb_cli() -> Optional[str]:
 
 
 def _run_duckdb_cli(
-    data_dir: Path,
-    subsystems: list[str],
+    db_path: Path,
     console_obj: Console,
 ) -> None:
-    """Run native DuckDB CLI with pre-configured VIEWs.
-
-    Creates a temporary .duckdb file with VIEWs and opens the CLI.
+    """Run native DuckDB CLI on a database file.
 
     Args:
-        data_dir: Base data directory
-        subsystems: List of subsystem names to create VIEWs for
+        db_path: Path to the DuckDB database file
         console_obj: Rich console for output
     """
     import subprocess
-    import tempfile
 
-    # Create temporary database file path (don't create the file yet)
-    tmp_dir = tempfile.gettempdir()
-    tmp_db_path = Path(tmp_dir) / f"datasus_tmp_{id(subsystems)}.duckdb"
+    # Show info before launching CLI
+    console_obj.print()
+    console_obj.print("[bold cyan]DuckDB CLI[/bold cyan]")
+    console_obj.print(f"Database: [green]{db_path.name}[/green]")
+    console_obj.print("[dim]Digite .help para ver comandos do DuckDB CLI[/dim]")
+    console_obj.print("[dim]Digite .exit ou Ctrl+D para sair[/dim]")
+    console_obj.print()
 
-    # Remove if exists from previous run
-    if tmp_db_path.exists():
-        tmp_db_path.unlink()
-
-    try:
-        # Create database and register VIEWs
-        conn = duckdb.connect(str(tmp_db_path))
-
-        views_created = []
-        for subsystem in subsystems:
-            parquet_path = data_dir / subsystem / "parquet"
-            parquet_pattern = str(parquet_path / "**/*.parquet")
-
-            try:
-                conn.execute(f"""
-                    CREATE OR REPLACE VIEW {subsystem} AS
-                    SELECT * FROM read_parquet(
-                        '{parquet_pattern}',
-                        hive_partitioning=true,
-                        union_by_name=true
-                    )
-                """)
-                views_created.append(subsystem)
-            except Exception as e:
-                console_obj.print(f"[yellow]Aviso: Falha ao criar VIEW '{subsystem}': {e}[/yellow]")
-
-        conn.close()
-
-        if not views_created:
-            console_obj.print("[red]Erro: Nenhuma VIEW criada com sucesso.[/red]")
-            return
-
-        # Show info before launching CLI
-        console_obj.print()
-        console_obj.print("[bold cyan]DuckDB CLI[/bold cyan]")
-        console_obj.print(f"VIEWs disponiveis: [green]{', '.join(views_created)}[/green]")
-        console_obj.print("[dim]Digite .help para ver comandos do DuckDB CLI[/dim]")
-        console_obj.print("[dim]Digite .exit ou Ctrl+D para sair[/dim]")
-        console_obj.print()
-
-        # Launch DuckDB CLI
-        subprocess.run(["duckdb", str(tmp_db_path)])
-
-    finally:
-        # Cleanup temporary files
-        try:
-            tmp_db_path.unlink()
-        except Exception:
-            pass
-        # Also remove .wal file if exists
-        wal_path = tmp_db_path.with_suffix(".duckdb.wal")
-        try:
-            if wal_path.exists():
-                wal_path.unlink()
-        except Exception:
-            pass
+    # Launch DuckDB CLI in read-only mode
+    subprocess.run(["duckdb", "-readonly", str(db_path)])
 
 
 def _discover_subsystems(data_dir: Path) -> list[str]:
-    """Discover available subsystems by scanning for parquet directories.
+    """Discover available subsystems by scanning for .duckdb files.
 
     Args:
         data_dir: Base data directory
 
     Returns:
-        List of subsystem names that have parquet files
+        List of subsystem names that have DuckDB database files
     """
     subsystems = []
     if not data_dir.exists():
         return subsystems
 
-    for subdir in data_dir.iterdir():
-        if subdir.is_dir():
-            parquet_dir = subdir / "parquet"
-            if parquet_dir.exists():
-                parquet_files = list(parquet_dir.rglob("*.parquet"))
-                if parquet_files:
-                    subsystems.append(subdir.name)
+    for db_file in data_dir.glob("*.duckdb"):
+        subsystems.append(db_file.stem)
 
     return sorted(subsystems)
 
@@ -1266,14 +1159,14 @@ def _show_db_help(console_obj: Console, max_rows: int) -> None:
 
 def _run_interactive_shell(
     conn: duckdb.DuckDBPyConnection,
-    views: list[str],
+    tables: list[str],
     console_obj: Console,
 ) -> None:
     """Run interactive DuckDB shell.
 
     Args:
-        conn: DuckDB connection with registered views
-        views: List of available view names
+        conn: DuckDB connection
+        tables: List of available table/view names
         console_obj: Rich console for output
     """
     import polars as pl
@@ -1286,7 +1179,7 @@ def _run_interactive_shell(
 
     console_obj.print()
     console_obj.print("[bold cyan]DataSUS DuckDB Shell[/bold cyan] [dim](REPL Python)[/dim]")
-    console_obj.print(f"VIEWs disponiveis: [green]{', '.join(views)}[/green]")
+    console_obj.print(f"Tabelas/VIEWs disponiveis: [green]{', '.join(tables)}[/green]")
     console_obj.print("[dim]Digite .help para ver comandos disponiveis[/dim]")
     console_obj.print()
     console_obj.print(
@@ -1312,47 +1205,47 @@ def _run_interactive_shell(
                 continue
 
             if query_lower == ".tables":
-                console_obj.print(f"VIEWs: [green]{', '.join(views)}[/green]")
+                console_obj.print(f"Tabelas/VIEWs: [green]{', '.join(tables)}[/green]")
                 continue
 
             if query_lower.startswith(".schema"):
                 parts = query.split()
-                view = parts[1] if len(parts) > 1 else (views[0] if views else None)
-                if view is None:
-                    console_obj.print("[yellow]Nenhuma VIEW disponivel[/yellow]")
+                table = parts[1] if len(parts) > 1 else (tables[0] if tables else None)
+                if table is None:
+                    console_obj.print("[yellow]Nenhuma tabela disponivel[/yellow]")
                     continue
-                if view not in views:
-                    console_obj.print(f"[red]VIEW '{view}' nao encontrada. Disponiveis: {', '.join(views)}[/red]")
+                if table not in tables:
+                    console_obj.print(f"[red]Tabela '{table}' nao encontrada. Disponiveis: {', '.join(tables)}[/red]")
                     continue
-                result = conn.execute(f"DESCRIBE {view}").pl()
+                result = conn.execute(f"DESCRIBE {table}").pl()
                 console_obj.print(result)
                 continue
 
             if query_lower.startswith(".count"):
                 parts = query.split()
-                view = parts[1] if len(parts) > 1 else (views[0] if views else None)
-                if view is None:
-                    console_obj.print("[yellow]Nenhuma VIEW disponivel[/yellow]")
+                table = parts[1] if len(parts) > 1 else (tables[0] if tables else None)
+                if table is None:
+                    console_obj.print("[yellow]Nenhuma tabela disponivel[/yellow]")
                     continue
-                if view not in views:
-                    console_obj.print(f"[red]VIEW '{view}' nao encontrada. Disponiveis: {', '.join(views)}[/red]")
+                if table not in tables:
+                    console_obj.print(f"[red]Tabela '{table}' nao encontrada. Disponiveis: {', '.join(tables)}[/red]")
                     continue
-                result = conn.execute(f"SELECT COUNT(*) as total FROM {view}").pl()
+                result = conn.execute(f"SELECT COUNT(*) as total FROM {table}").pl()
                 total = result["total"][0]
-                console_obj.print(f"Total de registros em [cyan]{view}[/cyan]: [bold]{total:,}[/bold]")
+                console_obj.print(f"Total de registros em [cyan]{table}[/cyan]: [bold]{total:,}[/bold]")
                 continue
 
             if query_lower.startswith(".sample"):
                 parts = query.split()
-                view = parts[1] if len(parts) > 1 else (views[0] if views else None)
+                table = parts[1] if len(parts) > 1 else (tables[0] if tables else None)
                 n = int(parts[2]) if len(parts) > 2 else 10
-                if view is None:
-                    console_obj.print("[yellow]Nenhuma VIEW disponivel[/yellow]")
+                if table is None:
+                    console_obj.print("[yellow]Nenhuma tabela disponivel[/yellow]")
                     continue
-                if view not in views:
-                    console_obj.print(f"[red]VIEW '{view}' nao encontrada. Disponiveis: {', '.join(views)}[/red]")
+                if table not in tables:
+                    console_obj.print(f"[red]Tabela '{table}' nao encontrada. Disponiveis: {', '.join(tables)}[/red]")
                     continue
-                result = conn.execute(f"SELECT * FROM {view} USING SAMPLE {n} ROWS").pl()
+                result = conn.execute(f"SELECT * FROM {table} USING SAMPLE {n} ROWS").pl()
                 last_result = result
                 console_obj.print(result)
                 continue
@@ -1404,7 +1297,7 @@ def db(
         None,
         "--data-dir",
         "-d",
-        help="Diretorio base dos dados (contendo subpastas como sihsus/, sim/, etc)",
+        help="Diretorio base dos dados (contendo arquivos .duckdb)",
     ),
     source: Optional[str] = typer.Option(
         None,
@@ -1413,25 +1306,25 @@ def db(
         help="Filtrar por subsistema especifico (sihsus, sim, siasus)",
     ),
 ) -> None:
-    """Abre shell interativo DuckDB com VIEWs para dados Parquet.
+    """Abre shell interativo DuckDB para consultar dados.
 
-    Detecta automaticamente subpastas com dados Parquet e cria VIEWs
-    correspondentes para consultas SQL.
+    Abre o arquivo DuckDB do subsistema especificado ou lista
+    databases disponiveis para selecao.
 
     [bold]Exemplos de uso:[/bold]
 
-        # Detecta todos os subsistemas e cria VIEWs
-        datasus db --data-dir ./data/datasus
-
-        # Cria apenas VIEW para sihsus
+        # Abre o database SIHSUS
         datasus db --data-dir ./data/datasus --source sihsus
+
+        # Lista databases disponiveis
+        datasus db --data-dir ./data/datasus
 
     [bold]Comandos do shell:[/bold]
 
-        .tables          Lista VIEWs disponiveis
-        .schema <view>   Mostra colunas da VIEW
-        .count <view>    Conta registros
-        .sample <view>   Mostra amostra de 10 registros
+        .tables          Lista tabelas/VIEWs disponiveis
+        .schema <table>  Mostra colunas da tabela
+        .count <table>   Conta registros
+        .sample <table>  Mostra amostra de 10 registros
         .csv <arquivo>   Exporta ultimo resultado para CSV
         .maxrows [n]     Define max linhas exibidas (padrao: 50)
         .exit            Sai do shell
@@ -1442,7 +1335,7 @@ def db(
         console.print("  [red]-[/red] --data-dir (-d)")
         console.print()
         console.print("[bold]Exemplo de uso:[/bold]")
-        console.print("  datasus db --data-dir ./data/datasus")
+        console.print("  datasus db --data-dir ./data/datasus --source sihsus")
         console.print()
         console.print("[dim]Use 'datasus db --help' para ver todas as opcoes.[/dim]")
         raise typer.Exit(1)
@@ -1451,65 +1344,60 @@ def db(
         console.print(f"[red]Erro: Diretorio nao encontrado: {data_dir}[/red]")
         raise typer.Exit(1)
 
-    # Discover available subsystems
+    # Discover available databases
+    available_dbs = _discover_subsystems(data_dir)
+
+    if not available_dbs:
+        console.print(f"[yellow]Nenhum database DuckDB encontrado em: {data_dir}[/yellow]")
+        console.print("[dim]Execute 'datasus pipeline' primeiro para criar os dados.[/dim]")
+        raise typer.Exit(1)
+
+    # Determine which database to open
     if source:
-        # User specified a specific source
         source_lower = source.lower()
-        parquet_dir = data_dir / source_lower / "parquet"
-        if not parquet_dir.exists():
-            console.print(f"[red]Erro: Diretorio Parquet nao encontrado: {parquet_dir}[/red]")
-            console.print(f"[dim]Verifique se o subsistema '{source_lower}' foi processado.[/dim]")
+        db_path = data_dir / f"{source_lower}.duckdb"
+        if not db_path.exists():
+            console.print(f"[red]Erro: Database nao encontrado: {db_path}[/red]")
+            console.print(f"[dim]Databases disponiveis: {', '.join(available_dbs)}[/dim]")
             raise typer.Exit(1)
-        parquet_files = list(parquet_dir.rglob("*.parquet"))
-        if not parquet_files:
-            console.print(f"[red]Erro: Nenhum arquivo Parquet em: {parquet_dir}[/red]")
-            raise typer.Exit(1)
-        subsystems = [source_lower]
     else:
-        # Auto-discover subsystems
-        subsystems = _discover_subsystems(data_dir)
-        if not subsystems:
-            console.print(f"[yellow]Nenhum dado Parquet encontrado em: {data_dir}[/yellow]")
-            console.print("[dim]Execute 'datasus pipeline' primeiro para criar os dados.[/dim]")
-            raise typer.Exit(1)
+        # If only one database, use it; otherwise ask user to specify
+        if len(available_dbs) == 1:
+            source_lower = available_dbs[0]
+            db_path = data_dir / f"{source_lower}.duckdb"
+        else:
+            console.print("[bold cyan]Databases disponiveis:[/bold cyan]")
+            for db_name in available_dbs:
+                db_file = data_dir / f"{db_name}.duckdb"
+                size_mb = db_file.stat().st_size / (1024 * 1024)
+                console.print(f"  - [green]{db_name}[/green] ({size_mb:.1f} MB)")
+            console.print()
+            console.print("[dim]Use --source para especificar o database.[/dim]")
+            console.print("[dim]Exemplo: datasus db -d ./data/datasus -s sihsus[/dim]")
+            return
 
     # Check if DuckDB CLI is available
     duckdb_cli_path = _check_duckdb_cli()
 
     if duckdb_cli_path:
         # Use native DuckDB CLI for better performance
-        _run_duckdb_cli(data_dir, subsystems, console)
+        _run_duckdb_cli(db_path, console)
     else:
         # Fallback to Python REPL
-        conn = duckdb.connect(":memory:")
+        conn = duckdb.connect(str(db_path), read_only=True)
 
-        # Register VIEWs for each subsystem
-        views_created = []
-        for subsystem in subsystems:
-            parquet_path = data_dir / subsystem / "parquet"
-            parquet_pattern = str(parquet_path / "**/*.parquet")
-
-            try:
-                conn.execute(f"""
-                    CREATE OR REPLACE VIEW {subsystem} AS
-                    SELECT * FROM read_parquet(
-                        '{parquet_pattern}',
-                        hive_partitioning=true,
-                        union_by_name=true
-                    )
-                """)
-                views_created.append(subsystem)
-            except Exception as e:
-                console.print(f"[yellow]Aviso: Falha ao criar VIEW '{subsystem}': {e}[/yellow]")
-
-        if not views_created:
-            console.print("[red]Erro: Nenhuma VIEW criada com sucesso.[/red]")
-            conn.close()
-            raise typer.Exit(1)
-
-        # Run interactive shell
+        # Get available tables/views
         try:
-            _run_interactive_shell(conn, views_created, console)
+            result = conn.execute("SHOW TABLES").fetchall()
+            tables = [row[0] for row in result]
+
+            if not tables:
+                console.print("[yellow]Nenhuma tabela encontrada no database.[/yellow]")
+                conn.close()
+                raise typer.Exit(1)
+
+            # Run interactive shell
+            _run_interactive_shell(conn, tables, console)
         finally:
             conn.close()
 

@@ -2,14 +2,14 @@
 
 ## Overview
 
-Analysis of renaming the package from `pydatasus` to `datasus` on PyPI.
+Analysis of renaming the package from `datasus_etl` to `datasus` on PyPI.
 
 ## Current State
 
-- **Package name**: `pydatasus`
-- **PyPI URL**: https://pypi.org/project/pydatasus/
-- **Install**: `pip install pydatasus`
-- **Import**: `from pydatasus import ...`
+- **Package name**: `datasus_etl`
+- **PyPI URL**: https://pypi.org/project/datasus_etl/
+- **Install**: `pip install datasus_etl`
+- **Import**: `from datasus_etl import ...`
 
 ## Target State
 
@@ -39,14 +39,14 @@ Or visit: https://pypi.org/project/datasus/
 Options:
 - Contact current owner about transfer
 - Use alternative names: `datasus-etl`, `datasus-pipeline`, `py-datasus`
-- Keep current name `pydatasus`
+- Keep current name `datasus_etl`
 
 ## Migration Strategy
 
 ### Option A: Clean Break
 
 1. Publish new package `datasus`
-2. Deprecate `pydatasus` (keep on PyPI with warning)
+2. Deprecate `datasus_etl` (keep on PyPI with warning)
 3. Users migrate to new package
 
 **Pros**:
@@ -59,14 +59,14 @@ Options:
 
 ### Option B: Dual Publishing
 
-1. Publish both `datasus` and `pydatasus`
-2. `pydatasus` becomes a thin wrapper
+1. Publish both `datasus` and `datasus_etl`
+2. `datasus_etl` becomes a thin wrapper
 
 ```python
-# pydatasus/__init__.py (wrapper)
+# datasus_etl/__init__.py (wrapper)
 import warnings
 warnings.warn(
-    "pydatasus is deprecated, use 'datasus' instead",
+    "datasus_etl is deprecated, use 'datasus' instead",
     DeprecationWarning
 )
 from datasus import *
@@ -83,12 +83,12 @@ from datasus import *
 ### Option C: Alias Package
 
 1. Main package: `datasus`
-2. Install alias: `pip install pydatasus` installs `datasus`
+2. Install alias: `pip install datasus_etl` installs `datasus`
 
 ```toml
-# pyproject.toml for pydatasus (alias)
+# pyproject.toml for datasus_etl (alias)
 [project]
-name = "pydatasus"
+name = "datasus_etl"
 version = "2.0.0"
 dependencies = ["datasus>=2.0.0"]
 ```
@@ -106,15 +106,15 @@ dependencies = ["datasus>=2.0.0"]
 ### 1. Directory Rename
 
 ```
-src/pydatasus/ → src/datasus/
+src/datasus_etl/ → src/datasus/
 ```
 
 ### 2. Import Updates (all files)
 
 ```python
 # Before
-from pydatasus.config import PipelineConfig
-from pydatasus.pipeline import SihsusPipeline
+from datasus_etl.config import PipelineConfig
+from datasus_etl.pipeline import SihsusPipeline
 
 # After
 from datasus.config import PipelineConfig
@@ -152,7 +152,7 @@ No change needed (already using `datasus` command).
 | File | Changes |
 |------|---------|
 | `pyproject.toml` | name, scripts, packages |
-| `src/pydatasus/` → `src/datasus/` | Rename directory |
+| `src/datasus_etl/` → `src/datasus/` | Rename directory |
 | All `*.py` files | Update imports |
 | `README.md` | Update package name |
 | `examples/*.py` | Update imports |
@@ -164,8 +164,8 @@ No change needed (already using `datasus` command).
 ### Grep for Import Count
 
 ```bash
-grep -r "from pydatasus" --include="*.py" | wc -l
-grep -r "import pydatasus" --include="*.py" | wc -l
+grep -r "from datasus_etl" --include="*.py" | wc -l
+grep -r "import datasus_etl" --include="*.py" | wc -l
 ```
 
 ### Automated Migration Script
@@ -177,7 +177,7 @@ from pathlib import Path
 def migrate_imports(root: Path):
     for py_file in root.rglob("*.py"):
         content = py_file.read_text()
-        new_content = content.replace("pydatasus", "datasus")
+        new_content = content.replace("datasus_etl", "datasus")
         if new_content != content:
             py_file.write_text(new_content)
             print(f"Updated: {py_file}")
@@ -189,12 +189,12 @@ def migrate_imports(root: Path):
 
 1. **Do the rename** - shorter, cleaner name
 2. Use **Option A (Clean Break)** for simplicity
-3. Keep `pydatasus` on PyPI with deprecation warning
+3. Keep `datasus_etl` on PyPI with deprecation warning
 4. Bump major version (1.x → 2.0.0) to signal breaking change
 
 ### If `datasus` is taken:
 
-1. **Keep `pydatasus`** - it's already established
+1. **Keep `datasus_etl`** - it's already established
 2. Consider alternatives only if current owner is inactive
 3. Focus on other improvements instead
 

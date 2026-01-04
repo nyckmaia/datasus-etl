@@ -5,8 +5,8 @@ SIM data includes death certificates with ICD-10 cause of death codes.
 """
 
 from pathlib import Path
-from pydatasus.config import PipelineConfig
-from pydatasus.pipeline import SIMPipeline
+from datasus_etl.config import PipelineConfig
+from datasus_etl.pipeline import SIMPipeline
 
 
 def main():
@@ -24,7 +24,7 @@ def main():
     )
 
     print("=" * 60)
-    print("PyDataSUS - SIM Pipeline Example")
+    print("DataSUS-ETL - SIM Pipeline Example")
     print("=" * 60)
     print(f"Subsystem: {config.subsystem.upper()}")
     print(f"Processing: {config.download.start_date} to {config.download.end_date}")

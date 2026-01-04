@@ -8,7 +8,7 @@ Demonstrates various SQL query patterns for analyzing SIHSUS data:
 """
 
 from pathlib import Path
-from pydatasus.storage import ParquetQueryEngine
+from datasus_etl.storage import ParquetQueryEngine
 
 
 def main():
@@ -22,7 +22,7 @@ def main():
         return
 
     print("="*60)
-    print("PyDataSUS - Query Examples")
+    print("DataSUS-ETL - Query Examples")
     print("="*60)
 
     engine = ParquetQueryEngine(parquet_dir)

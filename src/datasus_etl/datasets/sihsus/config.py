@@ -7,7 +7,7 @@ the SIHSUS (Sistema de Informacoes Hospitalares) subsystem.
 from typing import ClassVar, Optional
 
 from datasus_etl.datasets.base import DatasetConfig, DatasetRegistry
-from datasus_etl.datasets.sihsus.schema import SIHSUS_PARQUET_SCHEMA
+from datasus_etl.datasets.sihsus.schema import SIHSUS_DUCKDB_SCHEMA
 
 
 @DatasetRegistry.register
@@ -50,13 +50,13 @@ class SIHSUSConfig(DatasetConfig):
         return cls.FTP_DIRS
 
     @classmethod
-    def get_parquet_schema(cls) -> dict[str, str]:
-        """Get Parquet schema for SIHSUS.
+    def get_schema(cls) -> dict[str, str]:
+        """Get DuckDB schema for SIHSUS.
 
         Returns:
             Dictionary mapping column name (lowercase) to DuckDB SQL type
         """
-        return SIHSUS_PARQUET_SCHEMA
+        return SIHSUS_DUCKDB_SCHEMA
 
     @classmethod
     def parse_filename(cls, filename: str) -> Optional[dict]:

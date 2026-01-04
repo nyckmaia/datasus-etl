@@ -1,4 +1,4 @@
-"""Type definitions for PyDataSUS."""
+"""Type definitions for DataSUS-ETL."""
 
 from pathlib import Path
 from typing import Any, TypeAlias

@@ -2,11 +2,11 @@
 
 ## Overview
 
-Melhorias implementadas na interface web PyDataSUS para pesquisadores da saude.
+Melhorias implementadas na interface web DataSUS-ETL para pesquisadores da saude.
 
 ## Estado Atual (Implementado)
 
-A interface web existe em `src/pydatasus/web/app.py` (Streamlit).
+A interface web existe em `src/datasus_etl/web/app.py` (Streamlit).
 
 **Paginas:**
 - **Inicio** - Documentacao e instrucoes
@@ -34,7 +34,7 @@ Download → Conversao → Carga → Transformacao → Exportacao
 
 ### 2. Templates SQL Prontos (Auto-Preenchimento)
 
-Arquivo: `src/pydatasus/web/templates.py`
+Arquivo: `src/datasus_etl/web/templates.py`
 
 Ao selecionar um template no dropdown, a caixa de texto SQL e atualizada automaticamente (sem necessidade de clicar em botao separado).
 
@@ -60,7 +60,7 @@ Templates disponiveis para SIM:
 
 ### 3. Dicionario de Dados (Tabela Fixa)
 
-Arquivo: `src/pydatasus/web/dictionary.py`
+Arquivo: `src/datasus_etl/web/dictionary.py`
 
 O dicionario de dados e exibido como uma tabela fixa no final da pagina "Consultar", facilitando a visualizacao durante a escrita de queries.
 
@@ -148,7 +148,7 @@ Icone de pasta (📁) ao lado do campo "Diretorio de Dados" que abre o dialogo n
 ## Estrutura de Arquivos
 
 ```
-src/pydatasus/web/
+src/datasus_etl/web/
 ├── __init__.py      # Exports
 ├── app.py           # Interface Streamlit principal
 ├── templates.py     # SQL templates por subsistema
@@ -174,10 +174,10 @@ dependencies = [
 datasus ui
 
 # Metodo 2: Direto com Streamlit
-streamlit run src/pydatasus/web/app.py
+streamlit run src/datasus_etl/web/app.py
 ```
 
-Todas as dependencias, incluindo Plotly para graficos, sao instaladas automaticamente com `pip install pydatasus`.
+Todas as dependencias, incluindo Plotly para graficos, sao instaladas automaticamente com `pip install datasus_etl`.
 
 ## Proximas Melhorias Possiveis
 

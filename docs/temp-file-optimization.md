@@ -2,7 +2,7 @@
 
 ## Overview
 
-Analysis of temporary file handling in PyDataSUS pipeline and optimization opportunities.
+Analysis of temporary file handling in DataSUS-ETL pipeline and optimization opportunities.
 
 ## Current Behavior
 
@@ -199,6 +199,6 @@ Current cleanup already deletes temp files after successful export. Main improve
 
 ## Related Files
 
-- `src/pydatasus/pipeline/base_pipeline.py` - cleanup logic
-- `src/pydatasus/download/` - FTP download
-- `src/pydatasus/convert/` - DBC→DBF conversion
+- `src/datasus_etl/pipeline/base_pipeline.py` - cleanup logic
+- `src/datasus_etl/download/` - FTP download
+- `src/datasus_etl/convert/` - DBC→DBF conversion

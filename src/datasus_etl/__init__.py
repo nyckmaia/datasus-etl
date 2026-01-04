@@ -1,6 +1,6 @@
-"""PyDataSUS - Pipeline profissional para dados do DATASUS.
+"""DataSUS-ETL - Pipeline profissional para dados do DATASUS.
 
-PyDataSUS é um pacote Python para download, conversão e processamento
+DataSUS-ETL é um pacote Python para download, conversão e processamento
 de dados do DATASUS (Sistema de Informações Hospitalares do SUS).
 """
 

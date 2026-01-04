@@ -16,16 +16,16 @@ from typing import Optional
 
 import duckdb
 
-from datasus_etl.constants.sihsus_schema import SIHSUS_PARQUET_SCHEMA
-from datasus_etl.datasets.sim.schema import SIM_PARQUET_SCHEMA
+from datasus_etl.constants.sihsus_schema import SIHSUS_DUCKDB_SCHEMA
+from datasus_etl.datasets.sim.schema import SIM_DUCKDB_SCHEMA
 from datasus_etl.exceptions import PyInmetError
 from datasus_etl.transform.sql import TransformPipeline
 from datasus_etl.utils.ibge_loader import create_ibge_lookup_csv
 
 # Schema mapping by subsystem
 SUBSYSTEM_SCHEMAS = {
-    "sihsus": SIHSUS_PARQUET_SCHEMA,
-    "sim": SIM_PARQUET_SCHEMA,
+    "sihsus": SIHSUS_DUCKDB_SCHEMA,
+    "sim": SIM_DUCKDB_SCHEMA,
 }
 
 # Date columns by subsystem (for row filtering)
@@ -73,7 +73,7 @@ class SQLTransformer:
         """
         self.conn = conn
         self.subsystem = subsystem.lower()
-        self.schema = SUBSYSTEM_SCHEMAS.get(self.subsystem, SIHSUS_PARQUET_SCHEMA)
+        self.schema = SUBSYSTEM_SCHEMAS.get(self.subsystem, SIHSUS_DUCKDB_SCHEMA)
         self.date_columns = SUBSYSTEM_DATE_COLUMNS.get(self.subsystem, ["dt_inter", "dt_saida"])
         self.raw_mode = raw_mode
         self.logger = logging.getLogger(__name__)
@@ -544,7 +544,7 @@ FROM typed{ibge_join_clause}
     def _generate_canonical_column_sql(self, actual_columns: list[str], ibge_loaded: bool = False) -> str:
         """Generate SQL SELECT with ALL columns from the canonical schema.
 
-        This ensures a consistent schema across all Parquet files, regardless of
+        This ensures a consistent schema across all DuckDB tables, regardless of
         which columns exist in the source DBF. Missing columns are filled with
         NULL cast to the appropriate type, or from IBGE JOIN if available.
 
@@ -612,7 +612,7 @@ FROM typed{ibge_join_clause}
         Uses the modular TransformPipeline for all transformations.
         Ensures the output view has ALL columns from the canonical schema,
         with missing columns as NULL. This enables consistent schema across
-        all Parquet files when using partitioned writes with APPEND.
+        all DuckDB tables when using INSERT with ATTACH.
 
         Args:
             source_table: Name of source table/view in DuckDB
@@ -661,6 +661,125 @@ FROM typed{ibge_join_clause}
         except Exception as e:
             self.logger.error(f"Canonical transformation failed: {e}")
             raise PyInmetError(f"SQL canonical transformation failed: {e}") from e
+
+    # =========================================================================
+    # DuckDB Persistent Storage Methods
+    # =========================================================================
+
+    def insert_to_table(
+        self,
+        source_view: str,
+        target_table: str,
+        deduplicate_by: str = "source_file",
+    ) -> int:
+        """Insert transformed data from a view into a persistent DuckDB table.
+
+        Uses deduplication to avoid inserting rows from files that have
+        already been processed. This enables incremental updates.
+
+        Args:
+            source_view: Name of the transformed view (source data)
+            target_table: Name of the target table (e.g., sihsus_raw)
+            deduplicate_by: Column to use for deduplication (default: source_file)
+
+        Returns:
+            Number of rows inserted
+
+        Raises:
+            PyInmetError: If insertion fails
+
+        Example:
+            >>> transformer.transform_to_canonical_view("staging", "transformed")
+            >>> rows = transformer.insert_to_table("transformed", "sihsus_raw")
+            >>> print(f"Inserted {rows} rows")
+        """
+        try:
+            from tqdm import tqdm
+
+            tqdm.write(f"[INSERT] Inserting data from {source_view} into {target_table}...")
+            self.logger.info(f"Inserting data from {source_view} into {target_table}")
+
+            # Get column names from source view
+            columns_result = self.conn.execute(
+                f"SELECT column_name FROM information_schema.columns "
+                f"WHERE table_name = '{source_view}' ORDER BY ordinal_position"
+            ).fetchall()
+            column_names = [col[0] for col in columns_result]
+
+            if not column_names:
+                raise PyInmetError(f"Source view {source_view} has no columns")
+
+            cols_str = ", ".join(column_names)
+
+            # Check how many source files are in the view
+            source_files_in_view = self.conn.execute(
+                f"SELECT DISTINCT {deduplicate_by} FROM {source_view}"
+            ).fetchall()
+            source_files_count = len(source_files_in_view)
+
+            # Check which source files are already in the target table
+            try:
+                existing_files = self.conn.execute(
+                    f"SELECT DISTINCT {deduplicate_by} FROM {target_table}"
+                ).fetchall()
+                existing_set = {row[0] for row in existing_files}
+            except duckdb.CatalogException:
+                # Table doesn't exist yet
+                existing_set = set()
+
+            # Filter to only new source files
+            new_files = [f[0] for f in source_files_in_view if f[0] not in existing_set]
+
+            if not new_files:
+                tqdm.write(f"[INSERT] No new files to insert (all {source_files_count} already processed)")
+                self.logger.info(f"No new files to insert (all {source_files_count} already processed)")
+                return 0
+
+            tqdm.write(f"[INSERT] Found {len(new_files)} new files to insert (skipping {len(existing_set)} already processed)")
+            self.logger.info(f"Found {len(new_files)} new files to insert")
+
+            # Build INSERT with deduplication filter
+            new_files_str = ", ".join([f"'{f}'" for f in new_files])
+            insert_sql = f"""
+                INSERT INTO {target_table} ({cols_str})
+                SELECT {cols_str}
+                FROM {source_view}
+                WHERE {deduplicate_by} IN ({new_files_str})
+            """
+
+            # Execute insert
+            self.conn.execute(insert_sql)
+
+            # Get count of inserted rows
+            # DuckDB doesn't return affected rows directly, so we count
+            inserted_count = self.conn.execute(
+                f"SELECT COUNT(*) FROM {target_table} WHERE {deduplicate_by} IN ({new_files_str})"
+            ).fetchone()[0]
+
+            tqdm.write(f"[INSERT] Inserted {inserted_count} rows from {len(new_files)} files into {target_table}")
+            self.logger.info(f"Inserted {inserted_count} rows into {target_table}")
+
+            return inserted_count
+
+        except Exception as e:
+            self.logger.error(f"Insert to table failed: {e}")
+            raise PyInmetError(f"Insert to table failed: {e}") from e
+
+    def get_view_row_count(self, view_name: str) -> int:
+        """Get the row count of a view.
+
+        Args:
+            view_name: Name of the view
+
+        Returns:
+            Number of rows in the view
+        """
+        try:
+            result = self.conn.execute(f"SELECT COUNT(*) FROM {view_name}").fetchone()
+            return result[0] if result else 0
+        except Exception as e:
+            self.logger.warning(f"Failed to count rows in {view_name}: {e}")
+            return 0
 
     # =========================================================================
     # Legacy methods - kept for backward compatibility

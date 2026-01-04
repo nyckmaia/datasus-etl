@@ -2,15 +2,16 @@
 
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
+import duckdb
 import polars as pl
 
 from datasus_etl.exceptions import PyInmetError
 
 
 class DataExporter:
-    """Export data to various formats (CSV, Excel, JSON).
+    """Export data to various formats (CSV, JSON) from DuckDB databases.
 
     Provides flexible data export capabilities with customizable
     options for delimiters, encoding, and format-specific settings.
@@ -65,20 +66,22 @@ class DataExporter:
             self.logger.error(f"CSV export failed: {e}")
             raise PyInmetError(f"Failed to export to CSV: {e}") from e
 
-    def export_parquet_to_csv(
+    def export_duckdb_to_csv(
         self,
-        parquet_path: Path,
+        db_path: Union[str, Path],
         output_file: Path,
+        table_name: Optional[str] = None,
+        query: Optional[str] = None,
         delimiter: str = ";",
-        filter_expr: Optional[str] = None,
     ) -> Path:
-        """Export Parquet file(s) to CSV.
+        """Export DuckDB table or query results to CSV.
 
         Args:
-            parquet_path: Path to Parquet file or directory
+            db_path: Path to DuckDB database file
             output_file: Output CSV file path
+            table_name: Table name to export (uses enriched VIEW by default)
+            query: Custom SQL query (overrides table_name if provided)
             delimiter: CSV delimiter
-            filter_expr: Optional Polars filter expression
 
         Returns:
             Path to exported file
@@ -86,30 +89,47 @@ class DataExporter:
         Raises:
             PyInmetError: If export fails
         """
-        self.logger.info(f"Exporting Parquet to CSV: {parquet_path} -> {output_file}")
+        db_path = Path(db_path)
+        self.logger.info(f"Exporting DuckDB to CSV: {db_path} -> {output_file}")
 
         try:
-            # Read Parquet
-            if parquet_path.is_file():
-                df = pl.read_parquet(parquet_path)
-            else:
-                # Read all parquet files in directory
-                parquet_files = list(parquet_path.glob("**/*.parquet"))
-                if not parquet_files:
-                    raise PyInmetError(f"No Parquet files found in {parquet_path}")
+            conn = duckdb.connect(str(db_path), read_only=True)
 
-                df = pl.concat([pl.read_parquet(f) for f in parquet_files])
+            try:
+                # Determine what to export
+                if query:
+                    sql = query
+                elif table_name:
+                    sql = f"SELECT * FROM {table_name}"
+                else:
+                    # Default to enriched VIEW (subsystem name derived from db file)
+                    subsystem = db_path.stem
+                    sql = f"SELECT * FROM {subsystem}"
 
-            # Apply filter if provided
-            if filter_expr:
-                df = df.filter(filter_expr)
+                # Ensure parent directory exists
+                output_file.parent.mkdir(parents=True, exist_ok=True)
 
-            # Export to CSV
-            return self.export_to_csv(df, output_file, delimiter)
+                # Export directly from DuckDB
+                conn.execute(f"""
+                    COPY ({sql})
+                    TO '{output_file}' (
+                        FORMAT CSV,
+                        HEADER true,
+                        DELIMITER '{delimiter}'
+                    )
+                """)
+
+                file_size = output_file.stat().st_size
+                self.logger.info(f"Exported to {output_file} ({file_size / 1024:.2f} KB)")
+
+                return output_file
+
+            finally:
+                conn.close()
 
         except Exception as e:
-            self.logger.error(f"Parquet to CSV export failed: {e}")
-            raise PyInmetError(f"Failed to export Parquet to CSV: {e}") from e
+            self.logger.error(f"DuckDB to CSV export failed: {e}")
+            raise PyInmetError(f"Failed to export DuckDB to CSV: {e}") from e
 
     def export_to_json(
         self,
@@ -156,18 +176,20 @@ class DataExporter:
 
     def export_sample(
         self,
-        parquet_path: Path,
+        db_path: Union[str, Path],
         output_file: Path,
         n_rows: int = 1000,
         delimiter: str = ";",
+        table_name: Optional[str] = None,
     ) -> Path:
-        """Export sample of data from Parquet to CSV.
+        """Export sample of data from DuckDB to CSV.
 
         Args:
-            parquet_path: Path to Parquet file or directory
+            db_path: Path to DuckDB database file
             output_file: Output CSV file path
             n_rows: Number of rows to sample
             delimiter: CSV delimiter
+            table_name: Table name (uses enriched VIEW by default)
 
         Returns:
             Path to exported file
@@ -175,22 +197,16 @@ class DataExporter:
         Raises:
             PyInmetError: If export fails
         """
+        db_path = Path(db_path)
         self.logger.info(f"Exporting {n_rows} sample rows to {output_file}")
 
         try:
-            # Read Parquet (just sample)
-            if parquet_path.is_file():
-                df = pl.read_parquet(parquet_path, n_rows=n_rows)
-            else:
-                # Read from first available file
-                parquet_files = list(parquet_path.glob("**/*.parquet"))
-                if not parquet_files:
-                    raise PyInmetError(f"No Parquet files found in {parquet_path}")
+            # Determine table name
+            if not table_name:
+                table_name = db_path.stem  # Default to enriched VIEW
 
-                df = pl.read_parquet(parquet_files[0], n_rows=n_rows)
-
-            # Export to CSV
-            return self.export_to_csv(df, output_file, delimiter)
+            query = f"SELECT * FROM {table_name} USING SAMPLE {n_rows} ROWS"
+            return self.export_duckdb_to_csv(db_path, output_file, query=query, delimiter=delimiter)
 
         except Exception as e:
             self.logger.error(f"Sample export failed: {e}")
@@ -198,14 +214,16 @@ class DataExporter:
 
     def export_summary(
         self,
-        parquet_path: Path,
+        db_path: Union[str, Path],
         output_file: Path,
+        table_name: Optional[str] = None,
     ) -> Path:
         """Export data summary statistics to CSV.
 
         Args:
-            parquet_path: Path to Parquet file or directory
+            db_path: Path to DuckDB database file
             output_file: Output CSV file path
+            table_name: Table name (uses raw table by default)
 
         Returns:
             Path to exported file
@@ -213,24 +231,25 @@ class DataExporter:
         Raises:
             PyInmetError: If export fails
         """
-        self.logger.info(f"Generating summary statistics for {parquet_path}")
+        db_path = Path(db_path)
+        self.logger.info(f"Generating summary statistics for {db_path}")
 
         try:
-            # Read Parquet
-            if parquet_path.is_file():
-                df = pl.read_parquet(parquet_path)
-            else:
-                parquet_files = list(parquet_path.glob("**/*.parquet"))
-                if not parquet_files:
-                    raise PyInmetError(f"No Parquet files found in {parquet_path}")
+            conn = duckdb.connect(str(db_path), read_only=True)
 
-                df = pl.concat([pl.read_parquet(f) for f in parquet_files])
+            try:
+                # Determine table name
+                if not table_name:
+                    table_name = f"{db_path.stem}_raw"
 
-            # Generate summary statistics
-            summary = df.describe()
+                # Get summary using DuckDB's SUMMARIZE
+                result = conn.execute(f"SUMMARIZE {table_name}").pl()
 
-            # Export to CSV
-            return self.export_to_csv(summary, output_file)
+                # Export to CSV
+                return self.export_to_csv(result, output_file)
+
+            finally:
+                conn.close()
 
         except Exception as e:
             self.logger.error(f"Summary export failed: {e}")

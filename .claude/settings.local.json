@@ -37,7 +37,8 @@
       "Bash(datasus:*)",
       "Bash(pip uninstall:*)",
       "Bash(grep:*)",
-      "Bash(where:*)"
+      "Bash(where:*)",
+      "Bash(cd:*)"
     ]
   }
 }

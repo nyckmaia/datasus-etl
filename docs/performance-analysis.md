@@ -2,7 +2,7 @@
 
 ## Overview
 
-Analysis of parallelization opportunities in the PyDataSUS pipeline.
+Analysis of parallelization opportunities in the DataSUS-ETL pipeline.
 
 ## Current Architecture
 

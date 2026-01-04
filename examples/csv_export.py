@@ -8,8 +8,8 @@ CSV is useful for:
 """
 
 from pathlib import Path
-from pydatasus.config import PipelineConfig
-from pydatasus.pipeline import SihsusPipeline
+from datasus_etl.config import PipelineConfig
+from datasus_etl.pipeline import SihsusPipeline
 
 
 def main():
@@ -28,7 +28,7 @@ def main():
     )
 
     print("=" * 60)
-    print("PyDataSUS - CSV Export Example")
+    print("DataSUS-ETL - CSV Export Example")
     print("=" * 60)
     print(f"Output format: {config.output_format.upper()}")
     print(f"CSV delimiter: {repr(config.csv_delimiter)}")

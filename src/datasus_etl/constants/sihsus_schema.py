@@ -1,21 +1,20 @@
 """Schema definition for SIHSUS data (SIH - Sistema de Informações Hospitalares).
 
-This module defines the formal schema for SIHSUS Parquet output files.
-Column types are specified using DuckDB SQL types, as all transformations
-are performed in DuckDB before Parquet export.
+This module defines the formal schema for SIHSUS DuckDB output tables.
+Column types are specified using DuckDB SQL types.
 
 Important Notes:
 -----------------
 1. All columns are initially read as TEXT/VARCHAR during DBF import
 2. Transformations and type validation are applied in DuckDB SQL queries
 3. This schema defines the FINAL types after all transformations
-4. Column names in output Parquet are lowercase (transformed during SQL processing)
+4. Column names in output are lowercase (transformed during SQL processing)
 5. Some columns have data quality issues in source files, requiring validation
 """
 
-# DuckDB SQL type mapping for SIHSUS Parquet schema
+# DuckDB SQL type mapping for SIHSUS schema
 # Maps column name (lowercase) -> DuckDB SQL type
-SIHSUS_PARQUET_SCHEMA: dict[str, str] = {
+SIHSUS_DUCKDB_SCHEMA: dict[str, str] = {
     # ========================================================================
     # Source identification
     # ========================================================================
@@ -33,10 +32,8 @@ SIHSUS_PARQUET_SCHEMA: dict[str, str] = {
     "ident": "TINYINT",  # Identification
     "cep": "VARCHAR",  # ZIP code
     "munic_res": "INTEGER",  # Residence municipality code (IBGE)
-    "municipio_res": "VARCHAR",  # Residence municipality name
-    "uf_res": "VARCHAR",  # Residence state (abbreviation)
-    "rg_imediata_res": "VARCHAR",  # Immediate residence region
-    "rg_intermediaria_res": "VARCHAR",  # Intermediate residence region
+    # Note: municipio_res, uf_res, rg_imediata_res, rg_intermediaria_res
+    # are added via LEFT JOIN in the enrichment VIEW (sihsus), not in sihsus_raw
     # ========================================================================
     # Personal data
     # ========================================================================
@@ -213,10 +210,10 @@ def get_sql_cast_expression(column_name: str) -> str:
         >>> get_sql_cast_expression("unknown_col")
         'unknown_col'
     """
-    if column_name not in SIHSUS_PARQUET_SCHEMA:
+    if column_name not in SIHSUS_DUCKDB_SCHEMA:
         return column_name  # Return as-is if not in schema (stays VARCHAR)
 
-    sql_type = SIHSUS_PARQUET_SCHEMA[column_name]
+    sql_type = SIHSUS_DUCKDB_SCHEMA[column_name]
 
     # Special handling for DATE columns (need TRY_CAST for validation)
     if sql_type == "DATE":
@@ -228,39 +225,6 @@ def get_sql_cast_expression(column_name: str) -> str:
 
     # Regular CAST for numeric types
     return f"CAST({column_name} AS {sql_type})"
-
-
-# Mapping from DuckDB types to Polars types (for Parquet export compatibility)
-DUCKDB_TO_POLARS_TYPE_MAP = {
-    "TINYINT": "Int8",
-    "SMALLINT": "Int16",
-    "INTEGER": "Int32",
-    "BIGINT": "Int64",
-    "FLOAT": "Float32",
-    "DOUBLE": "Float64",
-    "BOOLEAN": "Boolean",
-    "DATE": "Date",
-    "VARCHAR": "Utf8",
-}
-
-
-def get_polars_schema() -> dict[str, str]:
-    """Convert DuckDB schema to Polars schema for Parquet export.
-
-    Returns:
-        Dictionary mapping column name -> Polars type string
-
-    Example:
-        >>> schema = get_polars_schema()
-        >>> schema["idade"]
-        'Int8'
-        >>> schema["nasc"]
-        'Date'
-    """
-    return {
-        col: DUCKDB_TO_POLARS_TYPE_MAP.get(dtype, "Utf8")
-        for col, dtype in SIHSUS_PARQUET_SCHEMA.items()
-    }
 
 
 def generate_column_cleaning_sql() -> str:
@@ -280,7 +244,7 @@ def generate_column_cleaning_sql() -> str:
         ...
     """
     cleaned = []
-    for col in SIHSUS_PARQUET_SCHEMA.keys():
+    for col in SIHSUS_DUCKDB_SCHEMA.keys():
         col_upper = col.upper()  # DBF columns are uppercase initially
 
         # Build nested REPLACE operations for invisible character removal
@@ -325,7 +289,7 @@ def generate_type_validation_sql(suffix: str = "_typed") -> str:
         ...
     """
     conversions = []
-    for col, dtype in SIHSUS_PARQUET_SCHEMA.items():
+    for col, dtype in SIHSUS_DUCKDB_SCHEMA.items():
         col_upper = col.upper()
         target_name = f"{col_upper}{suffix}" if suffix else col_upper
 
@@ -361,7 +325,7 @@ def get_columns_by_type(sql_type: str) -> list[str]:
         >>> get_columns_by_type("DATE")
         ['nasc', 'dt_inter', 'dt_saida', 'gestor_dt']
     """
-    return [col for col, dtype in SIHSUS_PARQUET_SCHEMA.items() if dtype == sql_type]
+    return [col for col, dtype in SIHSUS_DUCKDB_SCHEMA.items() if dtype == sql_type]
 
 
 def get_numeric_columns() -> list[str]:
@@ -382,5 +346,5 @@ def get_numeric_columns() -> list[str]:
     """
     numeric_types = {"TINYINT", "SMALLINT", "INTEGER", "BIGINT", "FLOAT", "DOUBLE"}
     return [
-        col for col, dtype in SIHSUS_PARQUET_SCHEMA.items() if dtype in numeric_types
+        col for col, dtype in SIHSUS_DUCKDB_SCHEMA.items() if dtype in numeric_types
     ]

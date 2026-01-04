@@ -11,15 +11,15 @@ This approach:
 """
 
 from pathlib import Path
-from pydatasus.config import (
+from datasus_etl.config import (
     PipelineConfig,
     DownloadConfig,
     ConversionConfig,
     StorageConfig,
     DatabaseConfig,
 )
-from pydatasus.pipeline import SihsusPipeline
-from pydatasus.constants import ALL_UFS
+from datasus_etl.pipeline import SihsusPipeline
+from datasus_etl.constants import ALL_UFS
 
 
 def main():
@@ -41,7 +41,7 @@ def main():
             print(f"Already processed states: {already_processed}")
 
     print("="*60)
-    print("PyDataSUS - Batch Processing by State")
+    print("DataSUS-ETL - Batch Processing by State")
     print("="*60)
     print(f"Total states to process: {len(states_to_process)}")
     print(f"Output directory: {parquet_dir}")

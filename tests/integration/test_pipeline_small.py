@@ -1,4 +1,4 @@
-"""Integration tests for PyDataSUS pipeline with small dataset.
+"""Integration tests for DataSUS-ETL pipeline with small dataset.
 
 These tests use minimal downloads to verify the complete pipeline works
 end-to-end. They require network access to the DATASUS FTP server.

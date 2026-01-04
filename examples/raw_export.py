@@ -9,8 +9,8 @@ Raw mode is useful for:
 """
 
 from pathlib import Path
-from pydatasus.config import PipelineConfig
-from pydatasus.pipeline import SihsusPipeline
+from datasus_etl.config import PipelineConfig
+from datasus_etl.pipeline import SihsusPipeline
 
 
 def main():
@@ -28,7 +28,7 @@ def main():
     )
 
     print("=" * 60)
-    print("PyDataSUS - Raw Export Example")
+    print("DataSUS-ETL - Raw Export Example")
     print("=" * 60)
     print(f"Raw mode: ENABLED")
     print(f"Output: {config.storage.parquet_dir}")

@@ -1,4 +1,4 @@
-"""Pipeline components for PyDataSUS.
+"""Pipeline components for DataSUS-ETL.
 
 This module provides pipeline classes for processing DataSUS subsystem data:
 
@@ -11,7 +11,7 @@ Each pipeline handles the complete data processing workflow:
 2. Convert DBC to DBF (decompression)
 3. Stream DBF to DuckDB
 4. Transform and enrich data using SQL
-5. Export to Hive-partitioned Parquet
+5. Export to persistent DuckDB database
 
 Example:
     ```python

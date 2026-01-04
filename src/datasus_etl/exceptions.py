@@ -1,65 +1,65 @@
-"""Custom exceptions for PyDataSUS."""
+"""Custom exceptions for DataSUS-ETL."""
 
 
-class PyDataSUSError(Exception):
-    """Base exception for all PyDataSUS errors."""
+class DataSUS_ETLError(Exception):
+    """Base exception for all DataSUS-ETL errors."""
 
     pass
 
 
-class DownloadError(PyDataSUSError):
+class DownloadError(DataSUS_ETLError):
     """Raised when FTP download fails."""
 
     pass
 
 
-class ConversionError(PyDataSUSError):
+class ConversionError(DataSUS_ETLError):
     """Raised when file conversion fails (DBC/DBF/CSV)."""
 
     pass
 
 
-class TransformError(PyDataSUSError):
+class TransformError(DataSUS_ETLError):
     """Raised when data transformation fails."""
 
     pass
 
 
-class ValidationError(PyDataSUSError):
+class ValidationError(DataSUS_ETLError):
     """Raised when data validation fails."""
 
     pass
 
 
-class ConfigurationError(PyDataSUSError):
+class ConfigurationError(DataSUS_ETLError):
     """Raised when configuration is invalid."""
 
     pass
 
 
-class StorageError(PyDataSUSError):
+class StorageError(DataSUS_ETLError):
     """Raised when storage operation fails."""
 
     pass
 
 
-class DatabaseError(PyDataSUSError):
+class DatabaseError(DataSUS_ETLError):
     """Raised when database operation fails."""
 
     pass
 
 
-class EnrichmentError(PyDataSUSError):
+class EnrichmentError(DataSUS_ETLError):
     """Raised when data enrichment fails."""
 
     pass
 
 
-class PipelineCancelled(PyDataSUSError):
+class PipelineCancelled(DataSUS_ETLError):
     """Raised when pipeline is cancelled by user (Ctrl+C)."""
 
     pass
 
 
 # Legacy alias for backward compatibility
-PyInmetError = PyDataSUSError
+PyInmetError = DataSUS_ETLError

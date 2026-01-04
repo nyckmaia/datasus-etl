@@ -1,4 +1,4 @@
-"""Transform module for PyDataSUS.
+"""Transform module for DataSUS-ETL.
 
 This module provides modular SQL transformations for DataSUS data processing.
 """

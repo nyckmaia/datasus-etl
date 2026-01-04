@@ -1,10 +1,10 @@
 """Constants and schema definitions for DataSUS ETL.
 
-This module provides backward-compatible access to constants and schemas.
+This module provides access to constants and schemas.
 For new code, prefer using the datasus_etl.datasets module directly:
 
     from datasus_etl.datasets import SIHSUSConfig, SIMConfig
-    schema = SIHSUSConfig.get_parquet_schema()
+    schema = SIHSUSConfig.get_schema()
 """
 
 # Import general constants
@@ -31,23 +31,19 @@ from datasus_etl.constants.general import (
 )
 
 from datasus_etl.constants.sihsus_schema import (
-    DUCKDB_TO_POLARS_TYPE_MAP,
-    SIHSUS_PARQUET_SCHEMA,
+    SIHSUS_DUCKDB_SCHEMA,
     generate_column_cleaning_sql,
     generate_type_validation_sql,
     get_columns_by_type,
     get_numeric_columns,
-    get_polars_schema,
     get_sql_cast_expression,
 )
 
 __all__ = [
     # Schema constants
-    "SIHSUS_PARQUET_SCHEMA",
-    "DUCKDB_TO_POLARS_TYPE_MAP",
+    "SIHSUS_DUCKDB_SCHEMA",
     # Schema helper functions
     "get_sql_cast_expression",
-    "get_polars_schema",
     "generate_column_cleaning_sql",
     "generate_type_validation_sql",
     "get_columns_by_type",

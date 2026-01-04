@@ -5,7 +5,7 @@ helping health researchers understand the data structure.
 """
 
 # SIHSUS - Hospital Information System Column Descriptions
-# Based on SIHSUS_PARQUET_SCHEMA from constants/sihsus_schema.py
+# Based on SIHSUS_DUCKDB_SCHEMA from constants/sihsus_schema.py
 SIHSUS_COLUMNS = {
     # Source identification
     "uf": "UF de internacao (sigla do estado)",

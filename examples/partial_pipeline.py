@@ -5,20 +5,20 @@ useful for debugging, testing, or resuming interrupted pipelines.
 """
 
 from pathlib import Path
-from pydatasus.config import (
+from datasus_etl.config import (
     PipelineConfig,
     DownloadConfig,
     ConversionConfig,
     StorageConfig,
     DatabaseConfig,
 )
-from pydatasus.pipeline.sihsus_pipeline import (
+from datasus_etl.pipeline.sihsus_pipeline import (
     DownloadStage,
     DbcToDbfStage,
     DbfToDbStage,
     SqlTransformStage,
 )
-from pydatasus.core.context import PipelineContext
+from datasus_etl.core.context import PipelineContext
 
 
 def main():
@@ -48,7 +48,7 @@ def main():
     )
 
     print("="*60)
-    print("PyDataSUS - Partial Pipeline Example")
+    print("DataSUS-ETL - Partial Pipeline Example")
     print("="*60)
 
     # Initialize context

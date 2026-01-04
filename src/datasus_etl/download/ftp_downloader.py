@@ -259,7 +259,7 @@ class FTPDownloader:
             - file_count: Number of files
             - files: List of (filename, uf, size_bytes)
             - total_size_bytes: Total size in bytes
-            - estimated_parquet_bytes: Estimated Parquet size (~60% of DBC)
+            - estimated_duckdb_bytes: Estimated DuckDB size (~60% of DBC)
             - estimated_csv_bytes: Estimated CSV size (~300% of DBC)
         """
         self.logger.info("Fetching file information from DATASUS FTP")
@@ -289,6 +289,6 @@ class FTPDownloader:
             "file_count": len(files),
             "files": file_list,
             "total_size_bytes": total_size,
-            "estimated_parquet_bytes": int(total_size * 0.6),
+            "estimated_duckdb_bytes": int(total_size * 0.6),
             "estimated_csv_bytes": int(total_size * 3.0),
         }

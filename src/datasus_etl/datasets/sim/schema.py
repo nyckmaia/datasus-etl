@@ -1,17 +1,16 @@
 """Schema definition for SIM data (Sistema de Informacoes sobre Mortalidade).
 
-This module defines the formal schema for SIM Parquet output files.
+This module defines the formal schema for SIM DuckDB output tables.
 SIM contains death/mortality records from death certificates (DO - Declaracao de Obito).
 
-Column types are specified using DuckDB SQL types, as all transformations
-are performed in DuckDB before Parquet export.
+Column types are specified using DuckDB SQL types.
 
 Important Notes:
 -----------------
 1. All columns are initially read as TEXT/VARCHAR during DBF import
 2. Transformations and type validation are applied in DuckDB SQL queries
 3. This schema defines the FINAL types after all transformations
-4. Column names in output Parquet are lowercase
+4. Column names in output are lowercase
 5. SIM files have yearly data (not monthly like SIHSUS)
 
 References:
@@ -19,9 +18,9 @@ References:
 - DATASUS SIM documentation
 """
 
-# DuckDB SQL type mapping for SIM Parquet schema
+# DuckDB SQL type mapping for SIM schema
 # Maps column name (lowercase) -> DuckDB SQL type
-SIM_PARQUET_SCHEMA: dict[str, str] = {
+SIM_DUCKDB_SCHEMA: dict[str, str] = {
     # ========================================================================
     # Source identification
     # ========================================================================
@@ -124,29 +123,3 @@ SIM_PARQUET_SCHEMA: dict[str, str] = {
     "ufinform": "VARCHAR",  # Informing state
     "nudissam": "VARCHAR",  # Dissemination number
 }
-
-
-# Mapping from DuckDB types to Polars types (for Parquet export compatibility)
-DUCKDB_TO_POLARS_TYPE_MAP = {
-    "TINYINT": "Int8",
-    "SMALLINT": "Int16",
-    "INTEGER": "Int32",
-    "BIGINT": "Int64",
-    "FLOAT": "Float32",
-    "DOUBLE": "Float64",
-    "BOOLEAN": "Boolean",
-    "DATE": "Date",
-    "VARCHAR": "Utf8",
-}
-
-
-def get_polars_schema() -> dict[str, str]:
-    """Convert DuckDB schema to Polars schema for Parquet export.
-
-    Returns:
-        Dictionary mapping column name -> Polars type string
-    """
-    return {
-        col: DUCKDB_TO_POLARS_TYPE_MAP.get(dtype, "Utf8")
-        for col, dtype in SIM_PARQUET_SCHEMA.items()
-    }

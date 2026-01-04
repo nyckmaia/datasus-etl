@@ -22,7 +22,7 @@ class DatasetConfig(ABC):
         description: Human-readable description
         ftp_dirs: List of FTP directory configurations
         file_prefix: Prefix for data files (e.g., "RD" for SIHSUS)
-        parquet_schema: Dictionary mapping column names to DuckDB types
+        schema: Dictionary mapping column names to DuckDB types
     """
 
     # Class-level constants (to be overridden in subclasses)
@@ -42,8 +42,8 @@ class DatasetConfig(ABC):
 
     @classmethod
     @abstractmethod
-    def get_parquet_schema(cls) -> dict[str, str]:
-        """Get Parquet schema mapping column names to DuckDB types.
+    def get_schema(cls) -> dict[str, str]:
+        """Get DuckDB schema mapping column names to types.
 
         Returns:
             Dictionary mapping column name (lowercase) to DuckDB SQL type
@@ -69,7 +69,7 @@ class DatasetConfig(ABC):
         numeric_types = {"TINYINT", "SMALLINT", "INTEGER", "BIGINT", "FLOAT", "DOUBLE"}
         return [
             col
-            for col, dtype in cls.get_parquet_schema().items()
+            for col, dtype in cls.get_schema().items()
             if dtype in numeric_types
         ]
 
@@ -81,7 +81,7 @@ class DatasetConfig(ABC):
             List of column names that are DATE type
         """
         return [
-            col for col, dtype in cls.get_parquet_schema().items() if dtype == "DATE"
+            col for col, dtype in cls.get_schema().items() if dtype == "DATE"
         ]
 
     @classmethod

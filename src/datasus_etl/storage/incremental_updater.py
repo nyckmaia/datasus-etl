@@ -1,6 +1,6 @@
-"""Incremental update support for PyDataSUS datasets.
+"""Incremental update support for DataSUS-ETL datasets.
 
-This module provides functionality to update existing Parquet datasets
+This module provides functionality to update existing DuckDB databases
 by processing only new files from the FTP server, avoiding reprocessing
 of already-imported data.
 """
@@ -10,13 +10,13 @@ from pathlib import Path
 from typing import Optional
 
 from datasus_etl.config import PipelineConfig
-from datasus_etl.storage.parquet_query_engine import ParquetQueryEngine
+from datasus_etl.storage.duckdb_query_engine import DuckDBQueryEngine
 
 
 class IncrementalUpdater:
-    """Manages incremental updates for a Parquet dataset.
+    """Manages incremental updates for a DuckDB database.
 
-    Compares source files in existing Parquet data with files available
+    Compares source files in existing DuckDB database with files available
     on the FTP server to determine which files need to be processed.
 
     Example:
@@ -30,16 +30,16 @@ class IncrementalUpdater:
     def __init__(
         self,
         config: PipelineConfig,
-        parquet_dir: Optional[Path] = None,
+        database_path: Optional[Path] = None,
     ) -> None:
         """Initialize incremental updater.
 
         Args:
             config: Pipeline configuration
-            parquet_dir: Path to Parquet directory (default: from config)
+            database_path: Path to DuckDB database file (default: from config)
         """
         self.config = config
-        self.parquet_dir = parquet_dir or config.storage.parquet_dir
+        self.database_path = database_path or config.get_database_path()
         self.logger = logging.getLogger(__name__)
 
         # Track state
@@ -47,29 +47,20 @@ class IncrementalUpdater:
         self._available_files: set[str] = set()
 
     def get_processed_files(self) -> set[str]:
-        """Get list of files already in Parquet dataset.
+        """Get list of files already in DuckDB database.
 
         Returns:
-            Set of source_file values from existing Parquet data
+            Set of source_file values from existing database
         """
         if self._processed_files:
             return self._processed_files
 
-        if not self.parquet_dir.exists():
-            self.logger.info("Parquet directory doesn't exist yet - full import needed")
-            return set()
-
-        # Check if there are any Parquet files
-        parquet_files = list(self.parquet_dir.rglob("*.parquet"))
-        if not parquet_files:
-            self.logger.info("No Parquet files found - full import needed")
+        if not self.database_path.exists():
+            self.logger.info("Database doesn't exist yet - full import needed")
             return set()
 
         try:
-            engine = ParquetQueryEngine(
-                self.parquet_dir,
-                view_name=self.config.subsystem,
-            )
+            engine = DuckDBQueryEngine(self.database_path, read_only=True)
             self._processed_files = engine.get_processed_source_files()
             engine.close()
 
@@ -181,7 +172,7 @@ class IncrementalUpdater:
         """Get list of new files that need to be downloaded and processed.
 
         Returns:
-            Set of filenames that exist on FTP but not in Parquet
+            Set of filenames that exist on FTP but not in DuckDB
         """
         processed = self.get_processed_files()
         available = self.get_available_files_from_ftp()

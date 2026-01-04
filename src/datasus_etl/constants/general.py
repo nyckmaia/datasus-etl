@@ -1,7 +1,7 @@
 """Constants for DataSUS ETL.
 
 This module contains general constants for the DataSUS ETL package.
-For SIHSUS Parquet schema definitions, see datasus_etl.constants.sihsus_schema.
+For SIHSUS schema definitions, see datasus_etl.constants.sihsus_schema.
 """
 
 import os

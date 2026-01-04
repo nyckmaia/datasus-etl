@@ -1,12 +1,12 @@
 """Basic usage example: Process 1 month of SIHSUS data from 1 state.
 
-This is the simplest way to use PyDataSUS optimized pipeline.
+This is the simplest way to use DataSUS-ETL optimized pipeline.
 Perfect for testing and small-scale data processing.
 """
 
 from pathlib import Path
-from pydatasus.config import PipelineConfig
-from pydatasus.pipeline import SihsusPipeline
+from datasus_etl.config import PipelineConfig
+from datasus_etl.pipeline import SihsusPipeline
 
 
 def main():
@@ -25,7 +25,7 @@ def main():
 
     # Create and run pipeline
     print("=" * 60)
-    print("PyDataSUS - Basic Usage Example")
+    print("DataSUS-ETL - Basic Usage Example")
     print("=" * 60)
     print(f"Subsystem: {config.subsystem.upper()}")
     print(f"Processing: {config.download.start_date} to {config.download.end_date}")

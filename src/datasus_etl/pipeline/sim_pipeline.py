@@ -2,8 +2,8 @@
 
 This pipeline processes death/mortality records from the Brazilian
 SIM system. It downloads DBC files from DATASUS FTP, converts them
-to DBF, loads into DuckDB, applies transformations, and exports
-to Parquet format.
+to DBF, loads into DuckDB, applies SQL transformations, and exports
+to persistent DuckDB database.
 
 SIM data includes:
 - Death certificates (Declaracao de Obito - DO)
@@ -19,7 +19,7 @@ File naming pattern: DOUFYYYY.dbc (e.g., DOSP2023.dbc)
 from pathlib import Path
 
 from datasus_etl.config import PipelineConfig
-from datasus_etl.datasets.sim.schema import SIM_PARQUET_SCHEMA
+from datasus_etl.datasets.sim.schema import SIM_DUCKDB_SCHEMA
 from datasus_etl.pipeline.base_pipeline import DatasusPipeline
 
 
@@ -62,5 +62,5 @@ class SIMPipeline(DatasusPipeline):
 
     @property
     def schema(self) -> dict[str, str]:
-        """Return Parquet schema for SIM."""
-        return SIM_PARQUET_SCHEMA
+        """Return DuckDB schema for SIM."""
+        return SIM_DUCKDB_SCHEMA

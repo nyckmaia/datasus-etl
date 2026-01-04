@@ -7,7 +7,7 @@ the SIM (Sistema de Informacoes sobre Mortalidade) subsystem.
 from typing import ClassVar, Optional
 
 from datasus_etl.datasets.base import DatasetConfig, DatasetRegistry
-from datasus_etl.datasets.sim.schema import SIM_PARQUET_SCHEMA
+from datasus_etl.datasets.sim.schema import SIM_DUCKDB_SCHEMA
 
 
 @DatasetRegistry.register
@@ -53,13 +53,13 @@ class SIMConfig(DatasetConfig):
         return cls.FTP_DIRS
 
     @classmethod
-    def get_parquet_schema(cls) -> dict[str, str]:
-        """Get Parquet schema for SIM.
+    def get_schema(cls) -> dict[str, str]:
+        """Get DuckDB schema for SIM.
 
         Returns:
             Dictionary mapping column name (lowercase) to DuckDB SQL type
         """
-        return SIM_PARQUET_SCHEMA
+        return SIM_DUCKDB_SCHEMA
 
     @classmethod
     def parse_filename(cls, filename: str) -> Optional[dict]:

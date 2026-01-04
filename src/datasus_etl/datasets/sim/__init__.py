@@ -7,6 +7,6 @@ Example: DOSP2023.dbc for Sao Paulo, year 2023
 """
 
 from datasus_etl.datasets.sim.config import SIMConfig
-from datasus_etl.datasets.sim.schema import SIM_PARQUET_SCHEMA
+from datasus_etl.datasets.sim.schema import SIM_DUCKDB_SCHEMA
 
-__all__ = ["SIMConfig", "SIM_PARQUET_SCHEMA"]
+__all__ = ["SIMConfig", "SIM_DUCKDB_SCHEMA"]

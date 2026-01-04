@@ -136,7 +136,7 @@ def page_home():
 
     Esta ferramenta permite:
     - 📥 **Download**: Baixar dados do DATASUS via FTP
-    - 🔄 **Processamento**: Converter DBC → DBF → Parquet
+    - 🔄 **Processamento**: Converter DBC → DBF → DuckDB
     - 🔍 **Consultas**: Consultar dados via SQL com templates prontos
     - 📊 **Exportacao**: Exportar para CSV/Excel
     - 📈 **Visualizacao**: Graficos e estatisticas dos dados
@@ -167,32 +167,25 @@ def page_status():
 
     data_dir = get_data_dir()
     subsystem = st.session_state.get("subsystem", "sihsus")
-    parquet_dir = data_dir / subsystem / "parquet"
+    db_path = data_dir / f"{subsystem}.duckdb"
 
-    if not parquet_dir.exists():
-        st.warning(f"Diretorio nao encontrado: {parquet_dir}")
+    if not db_path.exists():
+        st.warning(f"Database nao encontrado: {db_path}")
         st.info("Execute 'Download' para criar o banco de dados.")
         return
 
-    parquet_files = list(parquet_dir.rglob("*.parquet"))
-    if not parquet_files:
-        st.warning("Nenhum arquivo Parquet encontrado.")
-        return
-
     try:
-        from datasus_etl.storage.parquet_query_engine import ParquetQueryEngine
+        from datasus_etl.storage.duckdb_query_engine import DuckDBQueryEngine
         from datasus_etl.web.dictionary import get_column_descriptions
         import pandas as pd
 
-        engine = ParquetQueryEngine(parquet_dir, view_name=subsystem)
+        engine = DuckDBQueryEngine(db_path)
 
-        # Get statistics
-        total_rows = engine.count()
+        # Get database info
+        db_info = engine.get_database_info()
+        total_rows = db_info["row_count"]
         processed_files = engine.get_processed_source_files()
-
-        # Calculate total size
-        total_size = sum(f.stat().st_size for f in parquet_files)
-        total_size_mb = total_size / (1024 * 1024)
+        total_size_mb = db_info["size_mb"]
 
         # Display metrics in columns
         col1, col2, col3, col4 = st.columns(4)
@@ -204,7 +197,7 @@ def page_status():
             st.metric("Arquivos Fonte", len(processed_files))
 
         with col3:
-            st.metric("Arquivos Parquet", len(parquet_files))
+            st.metric("Tabelas", len(db_info["tables"]))
 
         with col4:
             st.metric("Tamanho", f"{total_size_mb:.1f} MB")
@@ -256,9 +249,9 @@ def page_status():
 
                 # Get type mapping from schema files
                 if subsystem == "sim":
-                    from datasus_etl.datasets.sim.schema import SIM_PARQUET_SCHEMA as TYPE_SCHEMA
+                    from datasus_etl.datasets.sim.schema import SIM_DUCKDB_SCHEMA as TYPE_SCHEMA
                 else:
-                    from datasus_etl.constants.sihsus_schema import SIHSUS_PARQUET_SCHEMA as TYPE_SCHEMA
+                    from datasus_etl.constants.sihsus_schema import SIHSUS_DUCKDB_SCHEMA as TYPE_SCHEMA
 
                 # Build statistics query for all columns
                 stats_parts = []
@@ -374,18 +367,22 @@ def page_download():
     col3, col4 = st.columns(2)
 
     with col3:
-        compression = st.selectbox(
-            "Compressao Parquet",
-            options=["zstd", "snappy", "gzip", "brotli"],
-            help="Algoritmo de compressao para arquivos Parquet",
+        write_mode = st.selectbox(
+            "Modo de Escrita",
+            options=["append", "replace"],
+            format_func=lambda x: {
+                "append": "Append (adiciona novos registros)",
+                "replace": "Replace (substitui todos os dados)"
+            }.get(x, x),
+            help="Modo de escrita no DuckDB",
             disabled=st.session_state.pipeline_running
         )
 
     with col4:
-        output_format = st.selectbox(
-            "Formato de Saida",
-            options=["parquet", "csv"],
-            help="Formato dos arquivos de saida",
+        keep_temp_files = st.checkbox(
+            "Manter arquivos temporarios (DBC/DBF)",
+            value=False,
+            help="Por padrao, arquivos DBC e DBF sao deletados apos processamento",
             disabled=st.session_state.pipeline_running
         )
 
@@ -404,7 +401,6 @@ def page_download():
                     start_date=start_date.strftime("%Y-%m-%d"),
                     end_date=end_date.strftime("%Y-%m-%d"),
                     uf_list=selected_ufs if selected_ufs else None,
-                    compression=compression,
                 )
 
                 updater = IncrementalUpdater(config)
@@ -447,8 +443,8 @@ def page_download():
                 start_date=start_date.strftime("%Y-%m-%d"),
                 end_date=end_date.strftime("%Y-%m-%d"),
                 uf_list=selected_ufs if selected_ufs else None,
-                compression=compression,
-                output_format=output_format,
+                write_mode=write_mode,
+                keep_temp_files=keep_temp_files,
             )
 
             # Store config in session for later use
@@ -467,11 +463,13 @@ def page_download():
                 "--start-date", start_date.strftime("%Y-%m-%d"),
                 "--end-date", end_date.strftime("%Y-%m-%d"),
                 "--data-dir", str(data_dir),
-                "--compression", compression,
+                "--write-mode", write_mode,
                 "--yes",  # Skip confirmation
             ]
             if uf_arg:
                 cmd.extend(["--uf", uf_arg])
+            if keep_temp_files:
+                cmd.append("--keep-temp-files")
 
             # Write initial content to log file
             with open(log_file_path, 'w', encoding='utf-8') as log:
@@ -665,11 +663,11 @@ def page_download():
                 with col2:
                     config = st.session_state.get("pipeline_config")
                     if config:
-                        st.metric("Diretorio", str(config.storage.parquet_dir))
+                        st.metric("Database", str(config.storage.get_database_path(subsystem)))
 
                 config = st.session_state.get("pipeline_config")
                 if config:
-                    st.success(f"Arquivos salvos em: {config.storage.parquet_dir}")
+                    st.success(f"Dados salvos em: {config.storage.get_database_path(subsystem)}")
 
                 # Show terminal output in expander
                 with st.expander("Ver saida do terminal"):
@@ -692,20 +690,20 @@ def page_query():
 
     data_dir = get_data_dir()
     subsystem = st.session_state.get("subsystem", "sihsus")
-    parquet_dir = data_dir / subsystem / "parquet"
+    db_path = data_dir / f"{subsystem}.duckdb"
 
-    if not parquet_dir.exists():
+    if not db_path.exists():
         st.warning("Banco de dados nao encontrado. Execute 'Download' primeiro.")
         return
 
     try:
-        from datasus_etl.storage.parquet_query_engine import ParquetQueryEngine
+        from datasus_etl.storage.duckdb_query_engine import DuckDBQueryEngine
         from datasus_etl.web.templates import get_templates
         from datasus_etl.web.dictionary import get_column_descriptions
         from streamlit_ace import st_ace
         import pandas as pd
 
-        engine = ParquetQueryEngine(parquet_dir, view_name=subsystem)
+        engine = DuckDBQueryEngine(db_path)
 
         # Get templates for this subsystem
         templates = get_templates(subsystem)
@@ -827,9 +825,9 @@ LIMIT 10"""
 
             # Get type schema
             if subsystem == "sim":
-                from datasus_etl.datasets.sim.schema import SIM_PARQUET_SCHEMA as TYPE_SCHEMA
+                from datasus_etl.datasets.sim.schema import SIM_DUCKDB_SCHEMA as TYPE_SCHEMA
             else:
-                from datasus_etl.constants.sihsus_schema import SIHSUS_PARQUET_SCHEMA as TYPE_SCHEMA
+                from datasus_etl.constants.sihsus_schema import SIHSUS_DUCKDB_SCHEMA as TYPE_SCHEMA
 
             # Get actual columns from the engine schema
             schema_result = engine.schema()
@@ -908,9 +906,9 @@ def page_export():
 
     data_dir = get_data_dir()
     subsystem = st.session_state.get("subsystem", "sihsus")
-    parquet_dir = data_dir / subsystem / "parquet"
+    db_path = data_dir / f"{subsystem}.duckdb"
 
-    if not parquet_dir.exists():
+    if not db_path.exists():
         st.warning("Banco de dados nao encontrado. Execute 'Download' primeiro.")
         return
 
@@ -920,10 +918,10 @@ def page_export():
     """)
 
     try:
-        from datasus_etl.storage.parquet_query_engine import ParquetQueryEngine
+        from datasus_etl.storage.duckdb_query_engine import DuckDBQueryEngine
         from datasus_etl.web.dictionary import get_column_descriptions
 
-        engine = ParquetQueryEngine(parquet_dir, view_name=subsystem)
+        engine = DuckDBQueryEngine(db_path)
 
         # Get schema for column selection
         schema = engine.schema()

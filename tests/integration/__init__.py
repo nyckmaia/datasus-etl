@@ -1,1 +1,1 @@
-"""Integration tests for PyDataSUS."""
+"""Integration tests for DataSUS-ETL."""

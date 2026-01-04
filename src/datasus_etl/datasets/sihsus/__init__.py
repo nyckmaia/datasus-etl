@@ -5,6 +5,6 @@ Data files are prefixed with "RD" (e.g., RDSP2301.dbc for Sao Paulo, January 202
 """
 
 from datasus_etl.datasets.sihsus.config import SIHSUSConfig
-from datasus_etl.datasets.sihsus.schema import SIHSUS_PARQUET_SCHEMA
+from datasus_etl.datasets.sihsus.schema import SIHSUS_DUCKDB_SCHEMA
 
-__all__ = ["SIHSUSConfig", "SIHSUS_PARQUET_SCHEMA"]
+__all__ = ["SIHSUSConfig", "SIHSUS_DUCKDB_SCHEMA"]

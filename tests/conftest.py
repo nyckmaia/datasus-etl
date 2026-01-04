@@ -1,4 +1,4 @@
-"""Shared test fixtures for PyDataSUS."""
+"""Shared test fixtures for DataSUS-ETL."""
 
 import tempfile
 from pathlib import Path
