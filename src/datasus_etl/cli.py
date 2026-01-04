@@ -1565,12 +1565,6 @@ def _upload_full_database(
         overwrite: Whether to overwrite existing database
         console_obj: Rich console for output
     """
-    # Conectar ao banco local
-    local_conn = duckdb.connect(str(db_path), read_only=True)
-
-    # Attach MotherDuck
-    local_conn.sql(f"ATTACH '{md_connection}'")
-
     # Verificar tamanho do banco
     size_mb = db_path.stat().st_size / (1024 * 1024)
     console_obj.print(f"Tamanho do banco: [cyan]{size_mb:.1f} MB[/cyan]")
@@ -1578,13 +1572,24 @@ def _upload_full_database(
     if size_mb > 10 * 1024:  # 10GB
         console_obj.print("[yellow]Aviso: Banco excede 10GB do plano gratuito do MotherDuck.[/yellow]")
 
-    # Criar banco no MotherDuck
-    or_replace = "OR REPLACE " if overwrite else ""
+    # Conectar ao MotherDuck primeiro
+    md_conn = duckdb.connect(md_connection)
+
+    # Verificar se banco ja existe no MotherDuck
+    existing_dbs = [row[0] for row in md_conn.execute("SHOW DATABASES").fetchall()]
+    if target_db in existing_dbs:
+        if not overwrite:
+            md_conn.close()
+            raise Exception(f"Database '{target_db}' already exists in MotherDuck")
+        else:
+            console_obj.print(f"[yellow]Removendo banco existente '{target_db}'...[/yellow]")
+            md_conn.execute(f"DROP DATABASE IF EXISTS {target_db}")
+
+    # Criar banco no MotherDuck a partir do arquivo local
     console_obj.print("Enviando dados para MotherDuck...")
+    md_conn.execute(f"CREATE DATABASE {target_db} FROM '{db_path}'")
 
-    local_conn.sql(f"CREATE {or_replace}DATABASE {target_db} FROM CURRENT_DATABASE()")
-
-    local_conn.close()
+    md_conn.close()
 
 
 def _upload_filtered_data(
