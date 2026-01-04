@@ -266,11 +266,9 @@ def page_status():
                         FROM {subsystem}
                     """)
 
-                # Execute combined query (limit to avoid performance issues)
+                # Execute combined query for all columns
                 if len(stats_parts) > 0:
-                    # Query first 30 columns to avoid timeout
-                    limited_parts = stats_parts[:30]
-                    stats_query = " UNION ALL ".join(limited_parts)
+                    stats_query = " UNION ALL ".join(stats_parts)
 
                     stats_result = engine.sql(stats_query)
 
@@ -291,10 +289,7 @@ def page_status():
                             })
 
                         final_df = pd.DataFrame(stats_list)
-                        st.dataframe(final_df, width='stretch', height=600)
-
-                        if len(column_names) > 30:
-                            st.info(f"Mostrando 30 de {len(column_names)} colunas.")
+                        st.dataframe(final_df, use_container_width=True, height=800)
 
         except Exception as e:
             st.warning(f"Erro ao calcular estatisticas: {e}")

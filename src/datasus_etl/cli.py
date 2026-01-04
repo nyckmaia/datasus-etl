@@ -1098,25 +1098,33 @@ def _check_duckdb_cli() -> Optional[str]:
 def _run_duckdb_cli(
     db_path: Path,
     console_obj: Console,
+    read_only: bool = True,
 ) -> None:
     """Run native DuckDB CLI on a database file.
 
     Args:
         db_path: Path to the DuckDB database file
         console_obj: Rich console for output
+        read_only: If True, open database in read-only mode (default: True)
     """
     import subprocess
+
+    mode_str = "[yellow]somente-leitura[/yellow]" if read_only else "[red]escrita[/red]"
 
     # Show info before launching CLI
     console_obj.print()
     console_obj.print("[bold cyan]DuckDB CLI[/bold cyan]")
-    console_obj.print(f"Database: [green]{db_path.name}[/green]")
+    console_obj.print(f"Database: [green]{db_path.name}[/green] ({mode_str})")
     console_obj.print("[dim]Digite .help para ver comandos do DuckDB CLI[/dim]")
     console_obj.print("[dim]Digite .exit ou Ctrl+D para sair[/dim]")
     console_obj.print()
 
-    # Launch DuckDB CLI in read-only mode
-    subprocess.run(["duckdb", "-readonly", str(db_path)])
+    # Launch DuckDB CLI
+    cmd = ["duckdb"]
+    if read_only:
+        cmd.append("-readonly")
+    cmd.append(str(db_path))
+    subprocess.run(cmd)
 
 
 def _discover_subsystems(data_dir: Path) -> list[str]:
@@ -1291,6 +1299,256 @@ def _run_interactive_shell(
             console_obj.print(f"[red]Erro: {e}[/red]")
 
 
+def _get_date_column(source: str) -> str:
+    """Get the date column name for a given subsystem.
+
+    Args:
+        source: Subsystem name (sihsus, sim)
+
+    Returns:
+        Date column name for filtering
+    """
+    date_columns = {
+        "sihsus": "dt_inter",
+        "sim": "dtobito",
+    }
+    return date_columns.get(source.lower(), "dt_inter")
+
+
+def _export_to_sql(conn, query: str, output_file: Path, table_name: str) -> int:
+    """Export query results as INSERT statements SQL.
+
+    Args:
+        conn: DuckDB connection
+        query: SQL query to execute
+        output_file: Output file path
+        table_name: Table name for INSERT statements
+
+    Returns:
+        Number of rows exported
+    """
+    import pandas as pd
+
+    df = conn.execute(query).fetchdf()
+    row_count = len(df)
+
+    if row_count == 0:
+        return 0
+
+    with open(output_file, 'w', encoding='utf-8') as f:
+        f.write(f"-- Exported from {table_name}\n")
+        f.write(f"-- Rows: {row_count}\n\n")
+
+        # Get column names
+        columns = ", ".join(df.columns)
+
+        for _, row in df.iterrows():
+            values = ", ".join([
+                f"'{str(v).replace(chr(39), chr(39)+chr(39))}'" if isinstance(v, str) else
+                "NULL" if pd.isna(v) else str(v)
+                for v in row
+            ])
+            f.write(f"INSERT INTO {table_name} ({columns}) VALUES ({values});\n")
+
+    return row_count
+
+
+@app.command(name="export")
+def export_cmd(
+    source: str = typer.Option(
+        ...,
+        "--source",
+        "-s",
+        help="Subsistema: sihsus, sim",
+    ),
+    start_date: str = typer.Option(
+        ...,
+        "--start-date",
+        help="Data inicio (YYYY-MM-DD)",
+    ),
+    end_date: str = typer.Option(
+        ...,
+        "--end-date",
+        help="Data fim (YYYY-MM-DD)",
+    ),
+    output_dir: Path = typer.Option(
+        ...,
+        "--output-dir",
+        "-o",
+        help="Diretorio de saida para os arquivos exportados",
+    ),
+    format: str = typer.Option(
+        "csv",
+        "--format",
+        "-f",
+        help="Formato de saida: csv, parquet, sql",
+    ),
+    partition_column: str = typer.Option(
+        "source_file",
+        "--partition-column",
+        "-p",
+        help="Coluna para particionar os arquivos de saida",
+    ),
+    raw: bool = typer.Option(
+        False,
+        "--raw",
+        help="Exportar tabela _raw ao inves da VIEW enriquecida",
+    ),
+    data_dir: Path = typer.Option(
+        Path("./data"),
+        "--data-dir",
+        "-d",
+        help="Diretorio do banco DuckDB",
+    ),
+) -> None:
+    """Exporta dados do DuckDB para CSV, Parquet ou SQL.
+
+    Exporta dados do banco DuckDB particionados por uma coluna especifica.
+    Por padrao, exporta a VIEW enriquecida. Use --raw para exportar a tabela bruta.
+
+    [bold]Exemplos de uso:[/bold]
+
+        # Exportar SIHSUS para CSV (padrao)
+        datasus export --source sihsus --start-date 2023-01-01 --end-date 2023-12-31 --output-dir ./csv-data
+
+        # Exportar para Parquet com particao customizada
+        datasus export -s sihsus --start-date 2023-01-01 --end-date 2023-06-30 -f parquet -o ./parquet-data
+
+        # Exportar tabela _raw para SQL
+        datasus export -s sihsus --start-date 2023-01-01 --end-date 2023-03-31 -f sql -o ./sql-data --raw
+    """
+    from tqdm import tqdm
+
+    # Validate format
+    valid_formats = ["csv", "parquet", "sql"]
+    format_lower = format.lower()
+    if format_lower not in valid_formats:
+        console.print(f"[red]Erro: Formato invalido '{format}'.[/red]")
+        console.print(f"[dim]Formatos validos: {', '.join(valid_formats)}[/dim]")
+        raise typer.Exit(1)
+
+    # Validate source
+    valid_sources = ["sihsus", "sim"]
+    source_lower = source.lower()
+    if source_lower not in valid_sources:
+        console.print(f"[red]Erro: Subsistema invalido '{source}'.[/red]")
+        console.print(f"[dim]Subsistemas validos: {', '.join(valid_sources)}[/dim]")
+        raise typer.Exit(1)
+
+    # Locate database
+    db_path = data_dir / f"{source_lower}.duckdb"
+    if not db_path.exists():
+        console.print(f"[red]Erro: Banco nao encontrado: {db_path}[/red]")
+        console.print("[dim]Execute 'datasus pipeline' primeiro para criar os dados.[/dim]")
+        raise typer.Exit(1)
+
+    # Determine table/view name
+    table_name = f"{source_lower}_raw" if raw else source_lower
+
+    # Get date column for this subsystem
+    date_column = _get_date_column(source_lower)
+
+    # Create output directory
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    console.print()
+    console.print("[bold cyan]DataSUS Export[/bold cyan]")
+    console.print(f"Banco: [green]{db_path.name}[/green]")
+    console.print(f"Tabela: [green]{table_name}[/green]")
+    console.print(f"Periodo: [green]{start_date}[/green] a [green]{end_date}[/green]")
+    console.print(f"Formato: [green]{format_lower}[/green]")
+    console.print(f"Particao: [green]{partition_column}[/green]")
+    console.print(f"Saida: [green]{output_dir}[/green]")
+    console.print()
+
+    try:
+        conn = duckdb.connect(str(db_path), read_only=True)
+
+        # Check if table exists
+        tables = [row[0] for row in conn.execute("SHOW TABLES").fetchall()]
+        if table_name not in tables:
+            console.print(f"[red]Erro: Tabela '{table_name}' nao encontrada.[/red]")
+            console.print(f"[dim]Tabelas disponiveis: {', '.join(tables)}[/dim]")
+            conn.close()
+            raise typer.Exit(1)
+
+        # Check if columns exist
+        columns_result = conn.execute(f"DESCRIBE {table_name}").fetchall()
+        column_names = [row[0].lower() for row in columns_result]
+
+        if partition_column.lower() not in column_names:
+            console.print(f"[red]Erro: Coluna '{partition_column}' nao encontrada.[/red]")
+            conn.close()
+            raise typer.Exit(1)
+
+        if date_column.lower() not in column_names:
+            console.print(f"[red]Erro: Coluna de data '{date_column}' nao encontrada.[/red]")
+            conn.close()
+            raise typer.Exit(1)
+
+        # Get distinct partition values within date range
+        partition_query = f"""
+            SELECT DISTINCT {partition_column}
+            FROM {table_name}
+            WHERE {date_column} >= '{start_date}'
+              AND {date_column} <= '{end_date}'
+            ORDER BY {partition_column}
+        """
+        partition_values = conn.execute(partition_query).fetchall()
+
+        if not partition_values:
+            console.print("[yellow]Nenhum registro encontrado no periodo especificado.[/yellow]")
+            conn.close()
+            return
+
+        console.print(f"Encontrados [cyan]{len(partition_values)}[/cyan] arquivos para exportar...")
+        console.print()
+
+        total_rows = 0
+        exported_files = 0
+
+        for (partition_value,) in tqdm(partition_values, desc="Exportando", unit="arquivo"):
+            # Generate output filename
+            base_name = Path(str(partition_value)).stem if partition_value else "unknown"
+            output_file = output_dir / f"{base_name}.{format_lower}"
+
+            # Build query for this partition
+            query = f"""
+                SELECT * FROM {table_name}
+                WHERE {partition_column} = '{partition_value}'
+                  AND {date_column} >= '{start_date}'
+                  AND {date_column} <= '{end_date}'
+            """
+
+            if format_lower == "csv":
+                # Use DuckDB COPY for CSV
+                conn.execute(f"COPY ({query}) TO '{output_file}' (HEADER, DELIMITER ';')")
+                # Count rows
+                row_count = conn.execute(f"SELECT COUNT(*) FROM ({query})").fetchone()[0]
+            elif format_lower == "parquet":
+                # Use DuckDB COPY for Parquet
+                conn.execute(f"COPY ({query}) TO '{output_file}' (FORMAT PARQUET)")
+                row_count = conn.execute(f"SELECT COUNT(*) FROM ({query})").fetchone()[0]
+            else:  # sql
+                row_count = _export_to_sql(conn, query, output_file, table_name)
+
+            total_rows += row_count
+            if row_count > 0:
+                exported_files += 1
+
+        conn.close()
+
+        console.print()
+        console.print(f"[bold green]{SYM_CHECK} Export concluido![/bold green]")
+        console.print(f"  Arquivos: [cyan]{exported_files}[/cyan]")
+        console.print(f"  Registros: [cyan]{total_rows:,}[/cyan]")
+        console.print(f"  Destino: [cyan]{output_dir}[/cyan]")
+
+    except Exception as e:
+        console.print(f"[red]Erro durante exportacao: {e}[/red]")
+        raise typer.Exit(1)
+
+
 @app.command()
 def db(
     data_dir: Path = typer.Option(
@@ -1304,6 +1562,11 @@ def db(
         "--source",
         "-s",
         help="Filtrar por subsistema especifico (sihsus, sim, siasus)",
+    ),
+    read_only: bool = typer.Option(
+        True,
+        "--read-only/--write",
+        help="Modo somente leitura (padrao) ou escrita. Use --write para permitir modificacoes.",
     ),
 ) -> None:
     """Abre shell interativo DuckDB para consultar dados.
@@ -1381,10 +1644,12 @@ def db(
 
     if duckdb_cli_path:
         # Use native DuckDB CLI for better performance
-        _run_duckdb_cli(db_path, console)
+        _run_duckdb_cli(db_path, console, read_only=read_only)
     else:
         # Fallback to Python REPL
-        conn = duckdb.connect(str(db_path), read_only=True)
+        mode_str = "somente-leitura" if read_only else "escrita"
+        console.print(f"[dim]Modo: {mode_str}[/dim]")
+        conn = duckdb.connect(str(db_path), read_only=read_only)
 
         # Get available tables/views
         try:
