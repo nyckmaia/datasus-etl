@@ -27,13 +27,14 @@ except ImportError:
 class DownloadStage(Stage):
     """Stage for downloading DBC files from DATASUS FTP."""
 
-    def __init__(self, config: PipelineConfig) -> None:
-        super().__init__("Download SIHSUS Data")
+    def __init__(self, config: PipelineConfig, subsystem: str = "sihsus") -> None:
+        super().__init__(f"Download {subsystem.upper()} Data")
         self.config = config
+        self.subsystem = subsystem
 
     def _execute(self, context: PipelineContext) -> PipelineContext:
         """Execute download stage."""
-        downloader = FTPDownloader(self.config.download)
+        downloader = FTPDownloader(self.config.download, subsystem=self.subsystem)
         files = downloader.download()
 
         context.set("downloaded_files", files)
@@ -65,9 +66,10 @@ class DbcToDbfStage(Stage):
 class DbfToDbStage(Stage):
     """Stage for streaming DBF directly to DuckDB."""
 
-    def __init__(self, config: PipelineConfig) -> None:
+    def __init__(self, config: PipelineConfig, subsystem: str = "sihsus") -> None:
         super().__init__("Stream DBF to DuckDB")
         self.config = config
+        self.subsystem = subsystem
 
     def _execute(self, context: PipelineContext) -> PipelineContext:
         """Stream all DBF files to DuckDB staging tables with parallel processing."""
@@ -87,10 +89,32 @@ class DbfToDbStage(Stage):
             dataframe_threshold_mb=self.config.database.dataframe_threshold_mb
         )
 
-        # Find all DBF files
-        dbf_files = list(self.config.conversion.dbf_dir.rglob("*.dbf"))
+        # Find DBF files filtered by subsystem prefix
+        from datasus_etl.datasets import DatasetRegistry
+
+        dataset_config = DatasetRegistry.get(self.subsystem)
+        file_prefix = dataset_config.FILE_PREFIX.upper() if dataset_config else ""
+
+        all_dbf_files = list(self.config.conversion.dbf_dir.rglob("*.dbf"))
+
+        # Filter by subsystem prefix to avoid mixing data from different subsystems
+        if file_prefix:
+            dbf_files = [
+                f for f in all_dbf_files
+                if f.stem.upper().startswith(file_prefix)
+            ]
+            self.logger.debug(
+                f"Filtered {len(all_dbf_files)} DBF files to {len(dbf_files)} "
+                f"matching prefix '{file_prefix}'"
+            )
+        else:
+            dbf_files = all_dbf_files
+
         if not dbf_files:
-            self.logger.warning(f"No DBF files found in {self.config.conversion.dbf_dir}")
+            self.logger.warning(
+                f"No DBF files found in {self.config.conversion.dbf_dir} "
+                f"matching prefix '{file_prefix}'"
+            )
             return context
 
         # Import tqdm for terminal-visible logging

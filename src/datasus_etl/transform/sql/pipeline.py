@@ -16,6 +16,7 @@ from datasus_etl.transform.sql.categorical import SexoTransform, RacaCorTransfor
 from datasus_etl.transform.sql.types import TypeCastTransform
 from datasus_etl.transform.sql.validation import CidValidationTransform
 from datasus_etl.transform.sql.enrichment import IbgeEnrichmentTransform
+from datasus_etl.transform.sql.idade import IdadeTransform
 
 # CID (ICD-10) columns by subsystem
 SIHSUS_CID_COLUMNS = [
@@ -23,6 +24,18 @@ SIHSUS_CID_COLUMNS = [
     "diagsec1", "diagsec2", "diagsec3", "diagsec4", "diagsec5",
     "diagsec6", "diagsec7", "diagsec8", "diagsec9"
 ]
+
+
+def quote_column(col: str) -> str:
+    """Quote a column name to handle SQL reserved words.
+
+    Args:
+        col: Column name to quote
+
+    Returns:
+        Quoted column name (e.g., '"natural"')
+    """
+    return f'"{col}"'
 
 
 class TransformPipeline:
@@ -36,6 +49,7 @@ class TransformPipeline:
     5. SexoTransform - Map SEXO codes to labels
     6. RacaCorTransform - Map RACA_COR codes to labels
     7. IbgeEnrichmentTransform - Add geographic data via JOIN
+    8. IdadeTransform - Decode IDADE field for SIM subsystem
 
     The pipeline generates a complete SQL query with CTEs for each stage.
 
@@ -102,6 +116,7 @@ class TransformPipeline:
             self.sexo = None
             self.raca_cor = None
             self.ibge = None
+            self.idade = None
         else:
             # Full mode: all transforms
             date_columns = self._date_columns_map.get(self.subsystem, [])
@@ -119,6 +134,12 @@ class TransformPipeline:
                 self.ibge = IbgeEnrichmentTransform(self.conn)
             else:
                 self.ibge = None
+
+            # IDADE transform for SIM subsystem
+            if self.subsystem == "sim":
+                self.idade = IdadeTransform()
+            else:
+                self.idade = None
 
     @property
     def transforms(self) -> list[BaseTransform]:
@@ -138,6 +159,8 @@ class TransformPipeline:
                 result.append(self.raca_cor)
             if self.ibge:
                 result.append(self.ibge)
+            if self.idade:
+                result.append(self.idade)
 
         return result
 
@@ -199,8 +222,8 @@ class TransformPipeline:
             SQL column list with type conversions
         """
         if self.raw_mode:
-            # Raw mode: just reference cleaned columns
-            return ",\n        ".join([f"cleaned.{c.lower()}" for c in columns])
+            # Raw mode: just reference cleaned columns (quoted for reserved words)
+            return ",\n        ".join([f'cleaned.{quote_column(c.lower())}' for c in columns])
 
         typed = []
         columns_lower = [c.lower() for c in columns]
@@ -213,38 +236,39 @@ class TransformPipeline:
 
         for col in columns:
             col_lower = col.lower()
+            col_quoted = quote_column(col_lower)
 
             # Check for special transforms
             if col_lower == "sexo" and self.sexo:
-                typed.append(f"{self.sexo.get_sql_expression(col_lower)} AS {col_lower}")
+                typed.append(f"{self.sexo.get_sql_expression(col_lower)} AS {col_quoted}")
             elif col_lower == "raca_cor" and self.raca_cor:
-                typed.append(f"{self.raca_cor.get_sql_expression(col_lower)} AS {col_lower}")
+                typed.append(f"{self.raca_cor.get_sql_expression(col_lower)} AS {col_quoted}")
             elif self.cid_validation and self.cid_validation.applies_to(col_lower):
-                typed.append(f"{self.cid_validation.get_sql_expression(col_lower)} AS {col_lower}")
+                typed.append(f"{self.cid_validation.get_sql_expression(col_lower)} AS {col_quoted}")
             elif col_lower in date_column_mapping:
                 # Use parsed date version
                 parsed_col = date_column_mapping[col_lower]
-                typed.append(f"cleaned.{parsed_col} AS {col_lower}")
+                typed.append(f'cleaned.{quote_column(parsed_col)} AS {col_quoted}')
             elif col_lower in self.schema:
                 # Apply type cast
                 target_type = self.schema[col_lower]
                 if target_type == "VARCHAR":
-                    typed.append(f"cleaned.{col_lower}")
+                    typed.append(f'cleaned.{col_quoted}')
                 elif target_type == "BOOLEAN":
                     typed.append(
-                        f"CASE WHEN cleaned.{col_lower} IN ('1', 'true', 'TRUE') THEN TRUE "
-                        f"WHEN cleaned.{col_lower} IN ('0', 'false', 'FALSE') THEN FALSE "
-                        f"ELSE NULL END AS {col_lower}"
+                        f'CASE WHEN cleaned.{col_quoted} IN (\'1\', \'true\', \'TRUE\') THEN TRUE '
+                        f'WHEN cleaned.{col_quoted} IN (\'0\', \'false\', \'FALSE\') THEN FALSE '
+                        f'ELSE NULL END AS {col_quoted}'
                     )
                 elif target_type == "DATE":
                     # Date should already be handled above
-                    typed.append(f"cleaned.{col_lower}")
+                    typed.append(f'cleaned.{col_quoted}')
                 else:
                     # Numeric types
-                    typed.append(f"TRY_CAST(cleaned.{col_lower} AS {target_type}) AS {col_lower}")
+                    typed.append(f'TRY_CAST(cleaned.{col_quoted} AS {target_type}) AS {col_quoted}')
             else:
                 # Not in schema, keep as VARCHAR
-                typed.append(f"cleaned.{col_lower}")
+                typed.append(f'cleaned.{col_quoted}')
 
         return ",\n        ".join(typed)
 
@@ -269,7 +293,7 @@ class TransformPipeline:
         conditions = []
         for date_col in date_columns:
             if date_col.lower() in columns_lower:
-                conditions.append(f"cleaned.{date_col.lower()}_parsed IS NULL")
+                conditions.append(f'cleaned.{quote_column(date_col.lower() + "_parsed")} IS NULL')
 
         if conditions:
             return f"NOT ({' AND '.join(conditions)})"
@@ -280,6 +304,7 @@ class TransformPipeline:
         """Build SQL for canonical schema columns (CTE: canonical).
 
         Generates all columns from schema, with NULL for missing columns.
+        Includes derived columns (IBGE enrichment, IDADE decoding for SIM).
 
         Args:
             columns: List of source columns
@@ -295,19 +320,38 @@ class TransformPipeline:
         if self.ibge and self.ibge.is_loaded:
             ibge_columns = set(IbgeEnrichmentTransform.IBGE_COLUMNS)
 
+        # IDADE derived columns (for SIM subsystem)
+        idade_columns = set()
+        if self.idade:
+            idade_columns = set(IdadeTransform.IDADE_COLUMNS)
+
         for col_name, col_type in self.schema.items():
+            col_quoted = quote_column(col_name)
             if col_name in ibge_columns:
                 # IBGE column - from JOIN if available
                 if self.ibge and self.ibge.is_loaded and "munic_res" in columns_lower:
-                    canonical.append(f"ibge.{col_name}")
+                    canonical.append(f'ibge.{col_quoted}')
                 else:
-                    canonical.append(f"NULL::{col_type} AS {col_name}")
+                    canonical.append(f'NULL::{col_type} AS {col_quoted}')
+            elif col_name in idade_columns:
+                # IDADE derived column - decode from source idade field
+                if "idade" in columns_lower:
+                    if col_name == "idade_valor":
+                        canonical.append(
+                            f'{self.idade.get_idade_valor_sql("typed." + quote_column("idade"))} AS {col_quoted}'
+                        )
+                    elif col_name == "idade_unidade":
+                        canonical.append(
+                            f'{self.idade.get_idade_unidade_sql("typed." + quote_column("idade"))} AS {col_quoted}'
+                        )
+                else:
+                    canonical.append(f'NULL::{col_type} AS {col_quoted}')
             elif col_name in columns_lower:
                 # Column exists in source
-                canonical.append(f"typed.{col_name}")
+                canonical.append(f'typed.{col_quoted}')
             else:
                 # Missing column - NULL with correct type
-                canonical.append(f"NULL::{col_type} AS {col_name}")
+                canonical.append(f'NULL::{col_type} AS {col_quoted}')
 
         return ",\n        ".join(canonical)
 

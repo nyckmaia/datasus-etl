@@ -15,18 +15,26 @@ class SIMConfig(DatasetConfig):
     """Configuration for SIM (Mortality Information System) dataset.
 
     SIM contains death/mortality records from death certificates
-    (DO - Declaracao de Obito). Data files are named with the pattern
-    DOUFYYYY.dbc where:
+    (DO - Declaracao de Obito). Data files have two patterns:
+
+    CID10 (1996+): DOUFYYYY.dbc
     - DO = Fixed prefix for death declarations
     - UF = 2-letter state code (e.g., SP, RJ)
     - YYYY = 4-digit year
+    - Example: DOSP2023.dbc
+
+    CID9 (1979-1995): DORUFYY.dbc
+    - DOR = Fixed prefix for CID9 death declarations
+    - UF = 2-letter state code
+    - YY = 2-digit year
+    - Example: DORSP80.dbc (1980)
 
     Note: SIM files are organized by year, not by month like SIHSUS.
     """
 
     NAME: ClassVar[str] = "sim"
     DESCRIPTION: ClassVar[str] = "Sistema de Informacoes sobre Mortalidade"
-    FILE_PREFIX: ClassVar[str] = "DO"
+    FILE_PREFIX: ClassVar[str] = "DO"  # Primary prefix (also matches DOR)
 
     # FTP directory structure for SIM data
     # SIM uses a different structure with CID9 (before 1996) and CID10 (1996+)
@@ -65,8 +73,9 @@ class SIMConfig(DatasetConfig):
     def parse_filename(cls, filename: str) -> Optional[dict]:
         """Parse SIM filename to extract metadata.
 
-        SIM files follow the pattern: DOUFYYYY.dbc
-        Example: DOSP2023.dbc -> {uf: "SP", year: 2023}
+        Supports two patterns:
+        - CID10 (1996+): DOUFYYYY.dbc (e.g., DOSP2023.dbc)
+        - CID9 (1979-1995): DORUFYY.dbc (e.g., DORSP80.dbc)
 
         Note: Unlike SIHSUS, SIM files are yearly, not monthly.
 
@@ -79,27 +88,41 @@ class SIMConfig(DatasetConfig):
         try:
             # Remove extension
             stem = filename.replace(".dbc", "").replace(".DBC", "")
+            upper_stem = stem.upper()
 
-            # Must start with DO
-            if not stem.startswith("DO"):
-                return None
+            # CID9 pattern: DORUFYY (DOR + UF + 2 digit year)
+            # Must check DOR first since it also starts with DO
+            if upper_stem.startswith("DOR"):
+                if len(stem) >= 7:
+                    uf = stem[3:5].upper()
+                    yy = int(stem[5:7])
+                    # CID9 data is from 1979-1995
+                    # Years 79-99 are 1979-1999, years 00-78 would be 2000s (but CID9 stops at 1995)
+                    year = 1900 + yy if yy >= 79 else 2000 + yy
+                    if 1979 <= year <= 1995:
+                        return {
+                            "uf": uf,
+                            "year": year,
+                            "month": None,  # SIM is yearly
+                            "source_file": filename,
+                            "cid_version": "CID9",
+                        }
 
-            if len(stem) < 8:
-                return None
+            # CID10 pattern: DOUFYYYY (DO + UF + 4 digit year)
+            if upper_stem.startswith("DO") and not upper_stem.startswith("DOR"):
+                if len(stem) >= 8:
+                    uf = stem[2:4].upper()
+                    year = int(stem[4:8])
+                    if 1996 <= year <= 2100:
+                        return {
+                            "uf": uf,
+                            "year": year,
+                            "month": None,  # SIM is yearly
+                            "source_file": filename,
+                            "cid_version": "CID10",
+                        }
 
-            uf = stem[2:4]
-            year = int(stem[4:8])
-
-            # Validate year range
-            if year < 1979 or year > 2100:
-                return None
-
-            return {
-                "uf": uf,
-                "year": year,
-                "month": None,  # SIM is yearly, not monthly
-                "source_file": filename,
-            }
+            return None
 
         except (ValueError, IndexError):
             return None

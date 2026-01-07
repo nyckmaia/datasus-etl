@@ -51,20 +51,22 @@ class CleaningTransform(BaseTransform):
         Returns:
             SQL expression that removes invisible chars, trims, and converts empty to NULL
         """
+        # Quote column names to handle SQL reserved words (e.g., 'natural')
+        quoted_col = f'"{column}"'
         return f"""NULLIF(
             TRIM(
                 REPLACE(
                     REPLACE(
                         REPLACE(
                             REPLACE(
-                                REPLACE(CAST({column} AS VARCHAR), CHR(9), ''),
+                                REPLACE(CAST({quoted_col} AS VARCHAR), CHR(9), ''),
                                 CHR(10), ''),
                             CHR(13), ''),
                         CHR(0), ''),
                     CHR(12), '')
             ),
             ''
-        ) AS {column.lower()}"""
+        ) AS "{column.lower()}\""""
 
     def get_sql_expression(self, column: str) -> str:
         """Generate SQL expression without AS alias (for nesting).
@@ -75,13 +77,15 @@ class CleaningTransform(BaseTransform):
         Returns:
             SQL expression that cleans the value (without AS alias)
         """
+        # Quote column names to handle SQL reserved words (e.g., 'natural')
+        quoted_col = f'"{column}"'
         return f"""NULLIF(
             TRIM(
                 REPLACE(
                     REPLACE(
                         REPLACE(
                             REPLACE(
-                                REPLACE(CAST({column} AS VARCHAR), CHR(9), ''),
+                                REPLACE(CAST({quoted_col} AS VARCHAR), CHR(9), ''),
                                 CHR(10), ''),
                             CHR(13), ''),
                         CHR(0), ''),

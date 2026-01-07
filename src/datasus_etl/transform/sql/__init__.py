@@ -46,6 +46,7 @@ from datasus_etl.transform.sql.categorical import SexoTransform, RacaCorTransfor
 from datasus_etl.transform.sql.types import TypeCastTransform
 from datasus_etl.transform.sql.validation import CidValidationTransform
 from datasus_etl.transform.sql.enrichment import IbgeEnrichmentTransform
+from datasus_etl.transform.sql.idade import IdadeTransform
 from datasus_etl.transform.sql.pipeline import TransformPipeline
 
 __all__ = [
@@ -57,5 +58,6 @@ __all__ = [
     "SexoTransform",
     "RacaCorTransform",
     "IbgeEnrichmentTransform",
+    "IdadeTransform",
     "TransformPipeline",
 ]

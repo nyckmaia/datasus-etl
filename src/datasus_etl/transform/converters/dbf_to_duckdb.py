@@ -421,20 +421,21 @@ class DbfToDuckDBConverter:
             }
 
             # Build column definitions
+            # Quote column names to handle SQL reserved words (e.g., 'natural')
             columns = []
 
             # Add UF column at the beginning if provided
             if uf_code:
-                columns.append("uf VARCHAR")  # lowercase 'uf' for consistency
+                columns.append('"uf" VARCHAR')  # lowercase 'uf' for consistency
 
             # Add source_file column after UF
             if source_file:
-                columns.append("source_file VARCHAR")  # Original DBC filename
+                columns.append('"source_file" VARCHAR')  # Original DBC filename
 
             for field in dbf.fields:
                 field_type = type_map.get(field.type, "VARCHAR")
                 clean_name = self._clean_column_name(field.name)  # Clean column name
-                columns.append(f"{clean_name} {field_type}")
+                columns.append(f'"{clean_name}" {field_type}')
 
             # Create table
             create_sql = f"""

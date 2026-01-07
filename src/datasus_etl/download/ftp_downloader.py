@@ -1,4 +1,4 @@
-"""FTP downloader for DATASUS/SIHSUS data."""
+"""FTP downloader for DATASUS data (SIHSUS, SIM, etc)."""
 
 import datetime
 import logging
@@ -9,33 +9,40 @@ from typing import Optional
 from tqdm import tqdm
 
 from datasus_etl.config import DownloadConfig
-from datasus_etl.constants import ALL_UFS, DATASUS_FTP_HOST, SIHSUS_DIRS
+from datasus_etl.constants import ALL_UFS, DATASUS_FTP_HOST
+from datasus_etl.datasets import DatasetRegistry
 from datasus_etl.exceptions import DownloadError
 
 
 class FTPDownloader:
-    """Downloads SIHSUS data from DATASUS FTP server.
+    """Downloads data from DATASUS FTP server for any supported subsystem.
 
-    Downloads RD*.dbc files (hospital admission records) from two historical folders:
-    - 199201_200712: Data from 1992-01 to 2007-12
-    - 200801_: Data from 2008-01 onwards
+    Supports multiple subsystems (SIHSUS, SIM, etc) by using the DatasetRegistry
+    to get subsystem-specific FTP directories, file prefixes, and filename parsing.
     """
 
-    def __init__(self, config: DownloadConfig) -> None:
+    def __init__(self, config: DownloadConfig, subsystem: str = "sihsus") -> None:
         """Initialize FTP downloader.
 
         Args:
             config: Download configuration
+            subsystem: Subsystem name (sihsus, sim). Default: sihsus for backward compatibility.
         """
         self.config = config
+        self.subsystem = subsystem.lower()
         self.logger = logging.getLogger("datasus_etl.FTPDownloader")
         self.ftp_host = DATASUS_FTP_HOST
         self._downloaded_files: list[Path] = []
         self._skipped_files: list[Path] = []
         self._failed_files: list[tuple[str, str]] = []
 
+        # Get dataset configuration from registry
+        self._dataset_config = DatasetRegistry.get(self.subsystem)
+        if not self._dataset_config:
+            raise ValueError(f"Unknown subsystem: {subsystem}. Available: {DatasetRegistry.list_available()}")
+
     def download(self) -> list[Path]:
-        """Download SIHSUS files from FTP.
+        """Download files from FTP.
 
         Returns:
             List of downloaded file paths
@@ -43,7 +50,7 @@ class FTPDownloader:
         Raises:
             DownloadError: If download fails critically
         """
-        self.logger.info("Starting SIHSUS download from DATASUS FTP")
+        self.logger.info(f"Starting {self.subsystem.upper()} download from DATASUS FTP")
 
         # Parse dates
         start_date = datetime.datetime.strptime(self.config.start_date, "%Y-%m-%d")
@@ -96,12 +103,17 @@ class FTPDownloader:
     ) -> list[tuple[str, str, str, int]]:
         """Collect files from FTP directories.
 
+        Uses DatasetRegistry to get subsystem-specific FTP directories,
+        file prefixes, and filename parsing logic.
+
         Returns:
             List of tuples (ftp_path, filename, uf, size)
         """
         selected_files = []
+        ftp_dirs = self._dataset_config.get_ftp_dirs()
 
-        for dir_info in SIHSUS_DIRS:
+        for dir_info in ftp_dirs:
+            ftp = None
             try:
                 self.logger.debug(f"Connecting to FTP: {dir_info['path']}")
                 ftp = FTP(self.ftp_host, timeout=self.config.timeout)
@@ -111,43 +123,41 @@ class FTPDownloader:
                 files = ftp.nlst()
 
                 for filename in files:
-                    # Filter RD*.dbc files
-                    if not (filename.startswith("RD") and filename.lower().endswith(".dbc")):
+                    # Filter by file extension
+                    if not filename.lower().endswith(".dbc"):
                         continue
 
-                    # Extract UF and date from filename (RDxxYYMM.dbc)
-                    try:
-                        uf = filename[2:4]
-                        yy = int(filename[4:6])
-                        mm = int(filename[6:8])
-
-                        if mm < 1 or mm > 12:
-                            continue
-
-                        # Interpret year based on directory
-                        if "199201_200712" in dir_info["path"]:
-                            year = 1900 + yy if yy >= 92 else 2000 + yy
-                        else:
-                            year = 2000 + yy
-
-                        file_date = datetime.datetime(year, mm, 1)
-
-                    except (ValueError, IndexError):
-                        continue
-
-                    # Check if within date range and directory range
-                    if not (start_date <= file_date <= end_date):
-                        continue
-
-                    if not (
-                        dir_info["start_year"]
-                        <= file_date.year
-                        <= dir_info.get("end_year", 9999)
-                    ):
+                    # Use DatasetRegistry to parse filename
+                    parsed = self._dataset_config.parse_filename(filename)
+                    if not parsed:
                         continue
 
                     # Check UF
+                    uf = parsed.get("uf", "")
                     if uf not in uf_list:
+                        continue
+
+                    # Build file date for range checking
+                    year = parsed.get("year")
+                    month = parsed.get("month") or 1  # Default to January for yearly datasets
+                    if not year:
+                        continue
+
+                    try:
+                        file_date = datetime.datetime(year, month, 1)
+                    except (ValueError, TypeError):
+                        continue
+
+                    # Check if within date range
+                    if not (start_date <= file_date <= end_date):
+                        continue
+
+                    # Check if within directory's year range
+                    if not (
+                        dir_info["start_year"]
+                        <= year
+                        <= dir_info.get("end_year", 9999)
+                    ):
                         continue
 
                     # Check incremental filter (if set, only download specified files)
@@ -167,10 +177,11 @@ class FTPDownloader:
 
             except Exception as e:
                 self.logger.error(f"Error accessing {dir_info['path']}: {e}")
-                try:
-                    ftp.quit()
-                except Exception:
-                    pass
+                if ftp:
+                    try:
+                        ftp.quit()
+                    except Exception:
+                        pass
 
         return selected_files
 
@@ -189,7 +200,7 @@ class FTPDownloader:
             unit="B",
             unit_scale=True,
             unit_divisor=1024,
-            desc="Downloading SIHSUS",
+            desc=f"Downloading {self.subsystem.upper()}",
         ) as pbar:
             for ftp_path, filename, uf, size in files:
                 # Setup output path

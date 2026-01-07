@@ -75,14 +75,15 @@ class DateParsingTransform(BaseTransform):
             SQL expression with multi-format date parsing and optional validation
         """
         col_lower = column.lower()
+        col_quoted = f'"{col_lower}"'
 
         # Only parse columns that are in our date list
         if col_lower not in [c.lower() for c in self._date_columns]:
-            return f"{column} AS {col_lower}"
+            return f'{col_quoted} AS {col_quoted}'
 
         # Check if column exists in source
         if col_lower not in [c.lower() for c in columns]:
-            return f"NULL AS {col_lower}_parsed"
+            return f'NULL AS "{col_lower}_parsed"'
 
         if self.allow_future:
             return self._get_simple_parse_sql(column)
@@ -99,12 +100,13 @@ class DateParsingTransform(BaseTransform):
             SQL expression for date parsing
         """
         col_lower = column.lower()
+        col_quoted = f'"{col_lower}"'
         return f"""COALESCE(
-            CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%Y%m%d') AS DATE),
-            CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%d%m%Y') AS DATE),
-            CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%Y-%m-%d') AS DATE),
-            TRY_CAST(NULLIF({col_lower}, '') AS DATE)
-        ) AS {col_lower}_parsed"""
+            CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%Y%m%d') AS DATE),
+            CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%d%m%Y') AS DATE),
+            CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%Y-%m-%d') AS DATE),
+            TRY_CAST(NULLIF({col_quoted}, '') AS DATE)
+        ) AS "{col_lower}_parsed\""""
 
     def _get_validated_parse_sql(self, column: str) -> str:
         """Generate date parsing SQL with future date validation.
@@ -116,36 +118,37 @@ class DateParsingTransform(BaseTransform):
             SQL expression for date parsing with future date rejection
         """
         col_lower = column.lower()
+        col_quoted = f'"{col_lower}"'
         return f"""COALESCE(
             -- Try format 1: YYYYMMDD with date validation
             CASE
-                WHEN CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%Y%m%d') AS DATE) IS NOT NULL
-                     AND CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%Y%m%d') AS DATE) <= CURRENT_DATE
-                THEN CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%Y%m%d') AS DATE)
+                WHEN CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%Y%m%d') AS DATE) IS NOT NULL
+                     AND CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%Y%m%d') AS DATE) <= CURRENT_DATE
+                THEN CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%Y%m%d') AS DATE)
                 ELSE NULL
             END,
             -- Try format 2: DDMMYYYY with date validation
             CASE
-                WHEN CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%d%m%Y') AS DATE) IS NOT NULL
-                     AND CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%d%m%Y') AS DATE) <= CURRENT_DATE
-                THEN CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%d%m%Y') AS DATE)
+                WHEN CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%d%m%Y') AS DATE) IS NOT NULL
+                     AND CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%d%m%Y') AS DATE) <= CURRENT_DATE
+                THEN CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%d%m%Y') AS DATE)
                 ELSE NULL
             END,
             -- Try format 3: YYYY-MM-DD with date validation
             CASE
-                WHEN CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%Y-%m-%d') AS DATE) IS NOT NULL
-                     AND CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%Y-%m-%d') AS DATE) <= CURRENT_DATE
-                THEN CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%Y-%m-%d') AS DATE)
+                WHEN CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%Y-%m-%d') AS DATE) IS NOT NULL
+                     AND CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%Y-%m-%d') AS DATE) <= CURRENT_DATE
+                THEN CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%Y-%m-%d') AS DATE)
                 ELSE NULL
             END,
             -- Fallback: direct cast with validation
             CASE
-                WHEN TRY_CAST(NULLIF({col_lower}, '') AS DATE) IS NOT NULL
-                     AND TRY_CAST(NULLIF({col_lower}, '') AS DATE) <= CURRENT_DATE
-                THEN TRY_CAST(NULLIF({col_lower}, '') AS DATE)
+                WHEN TRY_CAST(NULLIF({col_quoted}, '') AS DATE) IS NOT NULL
+                     AND TRY_CAST(NULLIF({col_quoted}, '') AS DATE) <= CURRENT_DATE
+                THEN TRY_CAST(NULLIF({col_quoted}, '') AS DATE)
                 ELSE NULL
             END
-        ) AS {col_lower}_parsed"""
+        ) AS "{col_lower}_parsed\""""
 
     def get_sql_expression(self, column: str) -> str:
         """Generate date parsing SQL expression without AS alias.
@@ -157,37 +160,38 @@ class DateParsingTransform(BaseTransform):
             SQL expression for date parsing (without AS alias)
         """
         col_lower = column.lower()
+        col_quoted = f'"{col_lower}"'
         if self.allow_future:
             return f"""COALESCE(
-                CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%Y%m%d') AS DATE),
-                CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%d%m%Y') AS DATE),
-                CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%Y-%m-%d') AS DATE),
-                TRY_CAST(NULLIF({col_lower}, '') AS DATE)
+                CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%Y%m%d') AS DATE),
+                CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%d%m%Y') AS DATE),
+                CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%Y-%m-%d') AS DATE),
+                TRY_CAST(NULLIF({col_quoted}, '') AS DATE)
             )"""
         else:
             return f"""COALESCE(
                 CASE
-                    WHEN CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%Y%m%d') AS DATE) IS NOT NULL
-                         AND CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%Y%m%d') AS DATE) <= CURRENT_DATE
-                    THEN CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%Y%m%d') AS DATE)
+                    WHEN CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%Y%m%d') AS DATE) IS NOT NULL
+                         AND CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%Y%m%d') AS DATE) <= CURRENT_DATE
+                    THEN CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%Y%m%d') AS DATE)
                     ELSE NULL
                 END,
                 CASE
-                    WHEN CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%d%m%Y') AS DATE) IS NOT NULL
-                         AND CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%d%m%Y') AS DATE) <= CURRENT_DATE
-                    THEN CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%d%m%Y') AS DATE)
+                    WHEN CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%d%m%Y') AS DATE) IS NOT NULL
+                         AND CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%d%m%Y') AS DATE) <= CURRENT_DATE
+                    THEN CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%d%m%Y') AS DATE)
                     ELSE NULL
                 END,
                 CASE
-                    WHEN CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%Y-%m-%d') AS DATE) IS NOT NULL
-                         AND CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%Y-%m-%d') AS DATE) <= CURRENT_DATE
-                    THEN CAST(TRY_STRPTIME(NULLIF({col_lower}, ''), '%Y-%m-%d') AS DATE)
+                    WHEN CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%Y-%m-%d') AS DATE) IS NOT NULL
+                         AND CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%Y-%m-%d') AS DATE) <= CURRENT_DATE
+                    THEN CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%Y-%m-%d') AS DATE)
                     ELSE NULL
                 END,
                 CASE
-                    WHEN TRY_CAST(NULLIF({col_lower}, '') AS DATE) IS NOT NULL
-                         AND TRY_CAST(NULLIF({col_lower}, '') AS DATE) <= CURRENT_DATE
-                    THEN TRY_CAST(NULLIF({col_lower}, '') AS DATE)
+                    WHEN TRY_CAST(NULLIF({col_quoted}, '') AS DATE) IS NOT NULL
+                         AND TRY_CAST(NULLIF({col_quoted}, '') AS DATE) <= CURRENT_DATE
+                    THEN TRY_CAST(NULLIF({col_quoted}, '') AS DATE)
                     ELSE NULL
                 END
             )"""

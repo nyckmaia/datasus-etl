@@ -283,9 +283,10 @@ class DuckDBManager:
 
         try:
             # Build column definitions from schema
+            # Quote column names to handle SQL reserved words (e.g., 'natural')
             columns = []
             for col_name, col_type in schema.items():
-                columns.append(f"{col_name} {col_type}")
+                columns.append(f'"{col_name}" {col_type}')
 
             columns_sql = ",\n    ".join(columns)
 
@@ -369,6 +370,21 @@ class DuckDBManager:
         self.logger.info(f"Creating enrichment VIEW: {view_name}")
 
         try:
+            # For SIM subsystem, skip enrichment for now (TODO: implement later)
+            # SIM uses different column names (codmunres instead of munic_res)
+            if subsystem.lower() == "sim":
+                self.logger.info(
+                    f"Skipping enrichment VIEW for {subsystem}. "
+                    "Creating simple VIEW instead."
+                )
+                view_sql = f"""
+                CREATE OR REPLACE VIEW {view_name} AS
+                SELECT * FROM {raw_table}
+                """
+                self._conn.execute(view_sql)
+                self.logger.info(f"Simple VIEW '{view_name}' created successfully")
+                return
+
             # Check if dim_municipios has data
             dim_count = self._conn.execute(
                 "SELECT COUNT(*) FROM dim_municipios"

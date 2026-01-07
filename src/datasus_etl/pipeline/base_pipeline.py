@@ -31,9 +31,10 @@ except ImportError:
 class DownloadStage(Stage):
     """Stage for downloading DBC files from DATASUS FTP."""
 
-    def __init__(self, config: PipelineConfig, subsystem_name: str = "Data") -> None:
-        super().__init__(f"Download {subsystem_name} Data")
+    def __init__(self, config: PipelineConfig, subsystem: str = "sihsus") -> None:
+        super().__init__(f"Download {subsystem.upper()} Data")
         self.config = config
+        self.subsystem = subsystem
 
     def _execute(self, context: PipelineContext) -> PipelineContext:
         """Execute download stage."""
@@ -47,7 +48,7 @@ class DownloadStage(Stage):
         # Report start of download
         context.update_stage_progress("download", 0.1, "Conectando ao FTP...")
 
-        downloader = FTPDownloader(self.config.download)
+        downloader = FTPDownloader(self.config.download, subsystem=self.subsystem)
 
         # Report download in progress
         context.update_stage_progress("download", 0.5, "Baixando arquivos...")
@@ -100,9 +101,10 @@ class DbcToDbfStage(Stage):
 class DbfToDbStage(Stage):
     """Stage for streaming DBF directly to DuckDB."""
 
-    def __init__(self, config: PipelineConfig) -> None:
+    def __init__(self, config: PipelineConfig, subsystem: str = "sihsus") -> None:
         super().__init__("Stream DBF to DuckDB")
         self.config = config
+        self.subsystem = subsystem
 
     def _execute(self, context: PipelineContext) -> PipelineContext:
         """Stream all DBF files to DuckDB staging tables with parallel processing."""
@@ -126,10 +128,32 @@ class DbfToDbStage(Stage):
             dataframe_threshold_mb=self.config.database.dataframe_threshold_mb,
         )
 
-        # Find all DBF files
-        dbf_files = list(self.config.conversion.dbf_dir.rglob("*.dbf"))
+        # Find DBF files filtered by subsystem prefix
+        from datasus_etl.datasets import DatasetRegistry
+
+        dataset_config = DatasetRegistry.get(self.subsystem)
+        file_prefix = dataset_config.FILE_PREFIX.upper() if dataset_config else ""
+
+        all_dbf_files = list(self.config.conversion.dbf_dir.rglob("*.dbf"))
+
+        # Filter by subsystem prefix to avoid mixing data from different subsystems
+        if file_prefix:
+            dbf_files = [
+                f for f in all_dbf_files
+                if f.stem.upper().startswith(file_prefix)
+            ]
+            self.logger.debug(
+                f"Filtered {len(all_dbf_files)} DBF files to {len(dbf_files)} "
+                f"matching prefix '{file_prefix}'"
+            )
+        else:
+            dbf_files = all_dbf_files
+
         if not dbf_files:
-            self.logger.warning(f"No DBF files found in {self.config.conversion.dbf_dir}")
+            self.logger.warning(
+                f"No DBF files found in {self.config.conversion.dbf_dir} "
+                f"matching prefix '{file_prefix}'"
+            )
             return context
 
         # Use single worker to avoid DuckDB connection contention
@@ -312,8 +336,9 @@ class SqlTransformStage(Stage):
                     ).description]
 
                     # Insert into persistent connection
+                    # Quote column names to handle SQL reserved words (e.g., 'natural')
                     placeholders = ", ".join(["?" for _ in columns])
-                    col_list = ", ".join(columns)
+                    col_list = ", ".join([f'"{col}"' for col in columns])
                     persistent_conn.executemany(
                         f"INSERT INTO {raw_table} ({col_list}) VALUES ({placeholders})",
                         data
@@ -520,7 +545,7 @@ class DatasusPipeline(Pipeline[PipelineConfig], ABC):
             }
 
         # Always start with download
-        download_stage = DownloadStage(self.config, self.subsystem_name.upper())
+        download_stage = DownloadStage(self.config, subsystem=self.subsystem_name)
         self.add_stage(download_stage)
         self.context.register_stage("download", stage_weights["download"])
 
@@ -542,7 +567,7 @@ class DatasusPipeline(Pipeline[PipelineConfig], ABC):
             self.add_stage(dbc_stage)
             self.context.register_stage("dbc_to_dbf", stage_weights["dbc_to_dbf"])
 
-            dbf_stage = DbfToDbStage(self.config)
+            dbf_stage = DbfToDbStage(self.config, subsystem=self.subsystem_name)
             self.add_stage(dbf_stage)
             self.context.register_stage("dbf_to_db", stage_weights["dbf_to_db"])
 

@@ -38,7 +38,12 @@ SIM_DUCKDB_SCHEMA: dict[str, str] = {
     # ========================================================================
     # Demographics
     # ========================================================================
-    "idade": "VARCHAR",  # Age code (format varies by age unit)
+    "idade": "VARCHAR",  # Age code (format varies by age unit) - original encoded value
+    # Derived age columns (decoded from IDADE field):
+    # Format: first digit = unit (1=min, 2=hr, 3=months, 4=yrs, 5=>100yrs, 9=ignored)
+    #         next 2 digits = value
+    "idade_valor": "INTEGER",  # Numeric age value (NULL if idade is invalid/ignored)
+    "idade_unidade": "VARCHAR",  # Age unit: 'minutos', 'horas', 'meses', 'anos', 'ignorado'
     "sexo": "VARCHAR",  # Sex (1=M, 2=F, 0/9=Unknown)
     "racacor": "VARCHAR",  # Race/color (1-5 + 9=unknown)
     "estciv": "VARCHAR",  # Marital status

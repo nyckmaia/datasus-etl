@@ -131,7 +131,7 @@ class IncrementalUpdater:
 
                     uf = parsed.get("uf")
                     year = parsed.get("year")
-                    month = parsed.get("month", 1)  # Default to January for yearly files
+                    month = parsed.get("month") or 1  # Default to January for yearly files (handles None)
 
                     if uf not in uf_list:
                         continue
