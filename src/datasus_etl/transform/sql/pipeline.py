@@ -18,6 +18,7 @@ from datasus_etl.transform.sql.validation import CidValidationTransform
 from datasus_etl.transform.sql.enrichment import IbgeEnrichmentTransform
 from datasus_etl.transform.sql.idade import IdadeTransform
 from datasus_etl.transform.sql.cid_array import CidArrayTransform
+from datasus_etl.transform.sql.boolean_mappings import SIM_BOOLEAN_MAPPINGS, get_boolean_case_sql
 
 # CID (ICD-10) columns by subsystem
 SIHSUS_CID_COLUMNS = [
@@ -100,7 +101,7 @@ class TransformPipeline:
             "sihsus": ["dt_inter", "dt_saida", "nasc", "gestor_dt"],
             "sim": [
                 "dtobito", "dtnasc", "dtinvestig", "dtcadastro", "dtrecebim",
-                "dtatestado", "dtregcart", "dtcadinf",
+                "dtatestado", "dtcadinf",
                 # Additional date columns (may have 7-digit format)
                 "dtrecoriga", "dtcadinv", "dtconinv", "dtconcaso",
             ],
@@ -272,9 +273,27 @@ class TransformPipeline:
                 if target_type == "VARCHAR":
                     typed.append(f'cleaned.{col_quoted}')
                 elif target_type == "BOOLEAN":
+                    # Check for custom BOOLEAN mappings (SIM subsystem)
+                    if self.subsystem == "sim" and col_lower in SIM_BOOLEAN_MAPPINGS:
+                        bool_sql = get_boolean_case_sql(col_lower, f'cleaned.{col_quoted}')
+                        typed.append(f'{bool_sql} AS {col_quoted}')
+                    else:
+                        # Default BOOLEAN mapping (1/true -> TRUE, 0/false -> FALSE)
+                        typed.append(
+                            f'CASE WHEN cleaned.{col_quoted} IN (\'1\', \'true\', \'TRUE\') THEN TRUE '
+                            f'WHEN cleaned.{col_quoted} IN (\'0\', \'false\', \'FALSE\') THEN FALSE '
+                            f'ELSE NULL END AS {col_quoted}'
+                        )
+                elif target_type == "TIME":
+                    # TIME conversion for SIM horaobito (HHMM -> HH:MM)
                     typed.append(
-                        f'CASE WHEN cleaned.{col_quoted} IN (\'1\', \'true\', \'TRUE\') THEN TRUE '
-                        f'WHEN cleaned.{col_quoted} IN (\'0\', \'false\', \'FALSE\') THEN FALSE '
+                        f'CASE '
+                        f'WHEN cleaned.{col_quoted} IS NULL OR TRIM(cleaned.{col_quoted}) = \'\' THEN NULL '
+                        f'WHEN LENGTH(TRIM(cleaned.{col_quoted})) = 4 '
+                        f'AND TRY_CAST(TRIM(cleaned.{col_quoted}) AS INTEGER) IS NOT NULL '
+                        f'THEN CAST(TRY_STRPTIME('
+                        f'SUBSTRING(TRIM(cleaned.{col_quoted}), 1, 2) || \':\' || '
+                        f'SUBSTRING(TRIM(cleaned.{col_quoted}), 3, 2), \'%H:%M\') AS TIME) '
                         f'ELSE NULL END AS {col_quoted}'
                     )
                 elif target_type == "DATE":

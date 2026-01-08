@@ -10,20 +10,22 @@ from datasus_etl.transform.sql.base import BaseTransform
 
 
 class CidArrayTransform(BaseTransform):
-    """Transform that converts CID columns to arrays, handling asterisks.
+    """Transform that converts CID columns to arrays, handling multiple delimiters.
 
     SIM data often contains multiple CID codes in a single field, separated
-    by asterisks (*). This transform:
+    by asterisks (*) or slashes (/). This transform:
     1. Removes leading/trailing whitespace
-    2. Splits by asterisk separator
-    3. Filters out empty values
-    4. Validates each CID format (letter + 2-3 digits)
-    5. Returns a VARCHAR[] array
+    2. Normalizes delimiters (converts '/' to '*')
+    3. Splits by asterisk separator
+    4. Filters out empty values
+    5. Validates each CID format (letter + 2-3 digits)
+    6. Returns a VARCHAR[] array
 
     Examples:
         '*A01'              -> ['A01']
         '*A01*J128'         -> ['A01', 'J128']
-        '*I251*N19X*E149'   -> ['I251', 'N19X', 'E149']
+        'A001/I12/H890'     -> ['A001', 'I12', 'H890']
+        'A001/I12*H890'     -> ['A001', 'I12', 'H890']  (mixed delimiters)
         ''                  -> NULL
         NULL                -> NULL
 
@@ -31,7 +33,7 @@ class CidArrayTransform(BaseTransform):
         SIM_CID_COLUMNS: List of column names this transform applies to
     """
 
-    SIM_CID_COLUMNS = ["linhaa", "linhab", "linhac", "linhad", "linhaii", "causabas"]
+    SIM_CID_COLUMNS = ["linhaa", "linhab", "linhac", "linhad", "linhaii", "causabas", "atestado"]
 
     @property
     def name(self) -> str:
@@ -95,7 +97,7 @@ class CidArrayTransform(BaseTransform):
                 SELECT CASE WHEN LEN(arr) = 0 THEN NULL ELSE arr END
                 FROM (
                     SELECT LIST_FILTER(
-                        STRING_SPLIT(UPPER(TRIM(cleaned."{col_lower}")), '*'),
+                        STRING_SPLIT(REPLACE(UPPER(TRIM(cleaned."{col_lower}")), '/', '*'), '*'),
                         x -> x != '' AND REGEXP_MATCHES(x, '^[A-Z][0-9]{{2,3}}$')
                     ) AS arr
                 )

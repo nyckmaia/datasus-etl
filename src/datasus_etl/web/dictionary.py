@@ -167,7 +167,6 @@ SIHSUS_COLUMNS = {
 # SIM - Mortality Information System Column Descriptions
 SIM_COLUMNS = {
     # Identification
-    "numerodo": "Numero da Declaracao de Obito (DO)",
     "uf": "UF de ocorrencia",
     "source_file": "Arquivo DBC de origem",
 
@@ -222,7 +221,6 @@ SIM_COLUMNS = {
     "dtcadastro": "Data de cadastro no sistema",
     "dtrecebim": "Data de recebimento",
     "dtatestado": "Data do atestado",
-    "dtregcart": "Data de registro em cartorio",
     "dtcadinf": "Data de cadastro de informacoes",
 }
 

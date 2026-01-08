@@ -54,7 +54,7 @@ class DateParsingTransform(BaseTransform):
         self._date_columns = date_columns or [
             "dt_inter", "dt_saida", "nasc", "gestor_dt",  # SIHSUS
             "dtobito", "dtnasc", "dtinvestig", "dtcadastro",  # SIM
-            "dtrecebim", "dtatestado", "dtregcart", "dtcadinf",  # SIM additional
+            "dtrecebim", "dtatestado", "dtcadinf",  # SIM additional
         ]
         self.allow_future = allow_future
 

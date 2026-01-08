@@ -74,7 +74,6 @@ Descricoes de todas as colunas em portugues:
 - ... (116 colunas totais)
 
 **SIM:**
-- `numerodo`: Numero da Declaracao de Obito
 - `dtobito`: Data do obito
 - `causabas`: Causa basica (CID-10)
 - ... (40+ colunas)

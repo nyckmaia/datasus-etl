@@ -29,11 +29,10 @@ SIM_DUCKDB_SCHEMA: dict[str, str] = {
     # ========================================================================
     # Death certificate identification
     # ========================================================================
-    "numerodo": "VARCHAR",  # Death certificate number
     "tipobito": "TINYINT",  # Type of death (1=fetal, 2=non-fetal)
     "dtobito": "DATE",  # Date of death
-    "horaobito": "VARCHAR",  # Time of death (HHMM)
-    "natural": "VARCHAR",  # Naturalness (place of birth)
+    "horaobito": "TIME",  # Time of death (HHMM -> HH:MM)
+    "natural": "SMALLINT",  # Naturalness (place of birth) - 16 bits
     "dtnasc": "DATE",  # Date of birth
     # ========================================================================
     # Demographics
@@ -46,21 +45,21 @@ SIM_DUCKDB_SCHEMA: dict[str, str] = {
     "idade_unidade": "VARCHAR",  # Age unit: 'minutos', 'horas', 'meses', 'anos', 'ignorado'
     "sexo": "VARCHAR",  # Sex (1=M, 2=F, 0/9=Unknown)
     "racacor": "VARCHAR",  # Race/color (1-5 + 9=unknown)
-    "estciv": "VARCHAR",  # Marital status
-    "esc": "VARCHAR",  # Education level (old coding)
-    "esc2010": "VARCHAR",  # Education level (2010 coding)
-    "ocup": "VARCHAR",  # Occupation (CBO)
+    "estciv": "TINYINT",  # Marital status - 8 bits
+    "esc": "TINYINT",  # Education level (old coding) - 8 bits
+    "esc2010": "TINYINT",  # Education level (2010 coding) - 8 bits
+    "ocup": "INTEGER",  # Occupation (CBO) - 32 bits
     # ========================================================================
     # Residence information
     # ========================================================================
     "codmunres": "INTEGER",  # Residence municipality (IBGE code)
     "lococor": "TINYINT",  # Place of occurrence (1=hospital, 2=other health, etc.)
-    "codestab": "VARCHAR",  # Health establishment code (CNES)
+    "codestab": "INTEGER",  # Health establishment code (CNES) - 32 bits
     "codmunocor": "INTEGER",  # Occurrence municipality (IBGE code)
     "idademae": "TINYINT",  # Mother's age (for fetal/infant deaths)
-    "escmae": "VARCHAR",  # Mother's education
-    "escmae2010": "VARCHAR",  # Mother's education (2010 coding)
-    "ocupmae": "VARCHAR",  # Mother's occupation
+    "escmae": "TINYINT",  # Mother's education - 8 bits
+    "escmae2010": "TINYINT",  # Mother's education (2010 coding) - 8 bits
+    "ocupmae": "INTEGER",  # Mother's occupation - 32 bits
     # ========================================================================
     # Cause of death (ICD-10)
     # CID columns are stored as VARCHAR[] arrays because:
@@ -78,13 +77,14 @@ SIM_DUCKDB_SCHEMA: dict[str, str] = {
     # Medical certification
     # ========================================================================
     "circobito": "TINYINT",  # Circumstance of death
-    "acidtrab": "TINYINT",  # Work accident (1=yes, 2=no, 9=unknown)
+    "acidtrab": "BOOLEAN",  # Work accident (1=true, 2=false, 9=null)
     "fonte": "TINYINT",  # Source of information
-    "tppos": "TINYINT",  # Type of position/certification
+    "tppos": "BOOLEAN",  # Type of position/certification (1=true, 2=false)
     "dtinvestig": "DATE",  # Investigation date
     "causabas_o": "VARCHAR",  # Original underlying cause
     "dtcadastro": "DATE",  # Registration date
-    "atession": "TINYINT",  # Medical care
+    "atestado": "VARCHAR[]",  # Medical care
+    "atestante": "TINYINT",  # Doctor condition of the certifying doctor
     "fonteinv": "TINYINT",  # Investigation source
     "dtrecebim": "DATE",  # Receipt date
     # ========================================================================
@@ -92,7 +92,6 @@ SIM_DUCKDB_SCHEMA: dict[str, str] = {
     # ========================================================================
     "tpmorteoco": "TINYINT",  # Type of death occurrence
     "semagestac": "TINYINT",  # Weeks of gestation
-    "tpgravid": "TINYINT",  # Type of pregnancy
     "gestacao": "TINYINT",  # Gestation period
     "parto": "TINYINT",  # Type of delivery
     "obitoparto": "TINYINT",  # Death during delivery
@@ -107,18 +106,12 @@ SIM_DUCKDB_SCHEMA: dict[str, str] = {
     # Violence and external causes
     # ========================================================================
     "dtatestado": "DATE",  # Certificate date
-    "circobito": "TINYINT",  # Circumstance (duplicate for external causes context)
-    "tppos": "TINYINT",  # Type of position
     # ========================================================================
     # Additional fields (may vary by year)
     # ========================================================================
-    "codinst": "VARCHAR",  # Institution code
-    "numerolote": "VARCHAR",  # Batch number
+    "numerolote": "INTEGER",  # Batch number - 32 bits
     "versaosist": "VARCHAR",  # System version
     "versaoscb": "VARCHAR",  # SCB version
-    "codcart": "VARCHAR",  # Registry office code
-    "numregcart": "VARCHAR",  # Registry number
-    "dtregcart": "DATE",  # Registry date
     "contador": "INTEGER",  # Counter
     "difdata": "SMALLINT",  # Date difference
     "dtcadinf": "DATE",  # Information registration date
@@ -126,13 +119,14 @@ SIM_DUCKDB_SCHEMA: dict[str, str] = {
     "dtcadinv": "DATE",  # Investigation registration date
     "dtconinv": "DATE",  # Investigation conclusion date
     "dtconcaso": "DATE",  # Case conclusion date
-    "stcodifica": "VARCHAR",  # Coding status
-    "codificado": "VARCHAR",  # Coded
+    "stcodifica": "BOOLEAN",  # Coding status (S=true, N=false)
+    "codificado": "BOOLEAN",  # Coded (S=true, N=false)
     "cb_pre": "VARCHAR",  # Pre-coding underlying cause
-    "comunsvoam": "VARCHAR",  # Common SVO
-    "comundinf": "VARCHAR",  # Common information
-    "tpassam": "VARCHAR",  # Type of assistance (detailed)
-    "altcausa": "VARCHAR",  # Altered cause
-    "ufinform": "VARCHAR",  # Informing state
-    "nudissam": "VARCHAR",  # Dissemination number
+    "altcausa": "BOOLEAN",  # Altered cause (1=true, 2=false)
+    "comunsvoim": "INTEGER",  # City code of the SVO or IML municipality
+    # ========================================================================
+    # Optional fields (may not exist in all files)
+    # ========================================================================
+    "stdoepidem": "BOOLEAN",  # Epidemiological status (1=true, 0=false)
+    "stdonova": "BOOLEAN",  # New DO status (1=true, 0=false)
 }
