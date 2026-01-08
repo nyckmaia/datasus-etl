@@ -33,7 +33,7 @@ class CidArrayTransform(BaseTransform):
         SIM_CID_COLUMNS: List of column names this transform applies to
     """
 
-    SIM_CID_COLUMNS = ["linhaa", "linhab", "linhac", "linhad", "linhaii", "causabas", "atestado"]
+    SIM_CID_COLUMNS = ["linhaa", "linhab", "linhac", "linhad", "linhaii", "causabas", "atestado", "causamat"]
 
     @property
     def name(self) -> str:

@@ -26,6 +26,7 @@ SIM_DUCKDB_SCHEMA: dict[str, str] = {
     # ========================================================================
     "uf": "VARCHAR",  # UF state code extracted from filename (e.g., "SP", "RJ")
     "source_file": "VARCHAR",  # Original DBC filename (e.g., "DOSP2023.dbc")
+    "origem": "TINYINT",  # Origin of the record
     # ========================================================================
     # Death certificate identification
     # ========================================================================
@@ -33,6 +34,7 @@ SIM_DUCKDB_SCHEMA: dict[str, str] = {
     "dtobito": "DATE",  # Date of death
     "horaobito": "TIME",  # Time of death (HHMM -> HH:MM)
     "natural": "SMALLINT",  # Naturalness (place of birth) - 16 bits
+    "codmunnatu": "INTEGER",  # Municipality of birth (IBGE code)
     "dtnasc": "DATE",  # Date of birth
     # ========================================================================
     # Demographics
@@ -41,13 +43,14 @@ SIM_DUCKDB_SCHEMA: dict[str, str] = {
     # Derived age columns (decoded from IDADE field):
     # Format: first digit = unit (1=min, 2=hr, 3=months, 4=yrs, 5=>100yrs, 9=ignored)
     #         next 2 digits = value
-    "idade_valor": "INTEGER",  # Numeric age value (NULL if idade is invalid/ignored)
+    "idade_valor": "UTINYINT",  # Numeric age value (NULL if idade is invalid/ignored)
     "idade_unidade": "VARCHAR",  # Age unit: 'minutos', 'horas', 'meses', 'anos', 'ignorado'
     "sexo": "VARCHAR",  # Sex (1=M, 2=F, 0/9=Unknown)
     "racacor": "VARCHAR",  # Race/color (1-5 + 9=unknown)
     "estciv": "TINYINT",  # Marital status - 8 bits
     "esc": "TINYINT",  # Education level (old coding) - 8 bits
     "esc2010": "TINYINT",  # Education level (2010 coding) - 8 bits
+    "seriescfal": "TINYINT",  # School grade of the deceased
     "ocup": "INTEGER",  # Occupation (CBO) - 32 bits
     # ========================================================================
     # Residence information
@@ -55,11 +58,16 @@ SIM_DUCKDB_SCHEMA: dict[str, str] = {
     "codmunres": "INTEGER",  # Residence municipality (IBGE code)
     "lococor": "TINYINT",  # Place of occurrence (1=hospital, 2=other health, etc.)
     "codestab": "INTEGER",  # Health establishment code (CNES) - 32 bits
+    "estabdescr": "VARCHAR",  # Establishment description (not in official PDF documentation, but appears in *.dbc files)
     "codmunocor": "INTEGER",  # Occurrence municipality (IBGE code)
     "idademae": "TINYINT",  # Mother's age (for fetal/infant deaths)
     "escmae": "TINYINT",  # Mother's education - 8 bits
     "escmae2010": "TINYINT",  # Mother's education (2010 coding) - 8 bits
+    "seriescmae": "TINYINT",  # School grade of the mother
     "ocupmae": "INTEGER",  # Mother's occupation - 32 bits
+    "qtdfilvivo": "TINYINT",  # Number of live children
+    "qtdfilmort": "TINYINT",  # Number of deceased children
+    "gravidez": "TINYINT",  # Type of pregnancy
     # ========================================================================
     # Cause of death (ICD-10)
     # CID columns are stored as VARCHAR[] arrays because:
@@ -109,16 +117,28 @@ SIM_DUCKDB_SCHEMA: dict[str, str] = {
     # ========================================================================
     # Additional fields (may vary by year)
     # ========================================================================
-    "numerolote": "INTEGER",  # Batch number - 32 bits
+    "numerolote": "UINTEGER",  # Batch number - 32 bits
     "versaosist": "VARCHAR",  # System version
     "versaoscb": "VARCHAR",  # SCB version
-    "contador": "INTEGER",  # Counter
-    "difdata": "SMALLINT",  # Date difference
+    "contador": "UINTEGER",  # Counter
+    "difdata": "USMALLINT",  # Date difference
+    "nudiasobco": "USMALLINT",  # Days between death and communication
+    "nudiasobin": "USMALLINT",  # Days between death and investigation
     "dtcadinf": "DATE",  # Information registration date
+    "morteparto": "TINYINT",  # Death in relation to delivery
     "dtrecoriga": "DATE",  # Original receipt date
+    "causamat": "VARCHAR[]",  # Maternal cause (CID array, separated by '*' and '/')
+    "escmaeagr1": "TINYINT",  # Mother's education aggregated
+    "escfalagr1": "TINYINT",  # Deceased's education aggregated
     "dtcadinv": "DATE",  # Investigation registration date
+    "tpobitocor": "TINYINT",  # Type of death occurred
     "dtconinv": "DATE",  # Investigation conclusion date
+    "fontes": "VARCHAR",  # Information sources
+    "tpresginfo": "TINYINT",  # Type of information retrieval
+    "tpnivelinv": "VARCHAR",  # Type/level of investigation
+    "nudiasinf": "SMALLINT",  # Days of information (undocumented field)
     "dtconcaso": "DATE",  # Case conclusion date
+    "fontesinf": "VARCHAR",  # Information sources (not in official PDF documentation, but appears in *.dbc files)
     "stcodifica": "BOOLEAN",  # Coding status (S=true, N=false)
     "codificado": "BOOLEAN",  # Coded (S=true, N=false)
     "cb_pre": "VARCHAR",  # Pre-coding underlying cause
