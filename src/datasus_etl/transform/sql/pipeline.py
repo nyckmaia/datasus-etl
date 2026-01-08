@@ -348,7 +348,8 @@ class TransformPipeline:
         """Build SQL for canonical schema columns (CTE: canonical).
 
         Generates all columns from schema, with NULL for missing columns.
-        Includes derived columns (IBGE enrichment, IDADE decoding for SIM).
+        Includes derived columns (IBGE enrichment, IDADE decoding for SIM,
+        and descriptive columns for SIM categorical fields).
 
         Args:
             columns: List of source columns

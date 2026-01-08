@@ -11,6 +11,10 @@ import psutil
 
 from datasus_etl.config import DatabaseConfig
 from datasus_etl.exceptions import PyInmetError
+from datasus_etl.transform.sql.sim_descriptive_mappings import (
+    SIM_DESCRIPTIVE_MAPPINGS,
+    get_descriptive_case_sql,
+)
 
 
 class DuckDBManager:
@@ -370,19 +374,46 @@ class DuckDBManager:
         self.logger.info(f"Creating enrichment VIEW: {view_name}")
 
         try:
-            # For SIM subsystem, skip enrichment for now (TODO: implement later)
-            # SIM uses different column names (codmunres instead of munic_res)
+            # For SIM subsystem, create VIEW with descriptive columns
             if subsystem.lower() == "sim":
                 self.logger.info(
-                    f"Skipping enrichment VIEW for {subsystem}. "
-                    "Creating simple VIEW instead."
+                    f"Creating SIM enrichment VIEW with descriptive columns"
                 )
-                view_sql = f"""
-                CREATE OR REPLACE VIEW {view_name} AS
-                SELECT * FROM {raw_table}
-                """
+                # Get existing columns in sim_raw
+                existing_cols = {
+                    row[0].lower()
+                    for row in self._conn.execute(
+                        f"SELECT column_name FROM information_schema.columns "
+                        f"WHERE table_name = '{raw_table}'"
+                    ).fetchall()
+                }
+
+                # Build descriptive column expressions only for existing columns
+                desc_columns = []
+                for source_col in SIM_DESCRIPTIVE_MAPPINGS:
+                    if source_col in existing_cols:
+                        desc_col = f"{source_col}_desc"
+                        sql_expr = get_descriptive_case_sql(source_col, f'r."{source_col}"')
+                        desc_columns.append(f'{sql_expr} AS "{desc_col}"')
+
+                if desc_columns:
+                    desc_columns_sql = ",\n                    ".join(desc_columns)
+                    view_sql = f"""
+                    CREATE OR REPLACE VIEW {view_name} AS
+                    SELECT
+                        r.*,
+                        {desc_columns_sql}
+                    FROM {raw_table} r
+                    """
+                else:
+                    # No descriptive columns to add
+                    view_sql = f"""
+                    CREATE OR REPLACE VIEW {view_name} AS
+                    SELECT * FROM {raw_table}
+                    """
+
                 self._conn.execute(view_sql)
-                self.logger.info(f"Simple VIEW '{view_name}' created successfully")
+                self.logger.info(f"SIM VIEW '{view_name}' created with {len(desc_columns)} descriptive columns")
                 return
 
             # Check if dim_municipios has data

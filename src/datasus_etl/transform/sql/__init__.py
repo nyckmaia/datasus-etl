@@ -50,6 +50,11 @@ from datasus_etl.transform.sql.cid_array import CidArrayTransform
 from datasus_etl.transform.sql.enrichment import IbgeEnrichmentTransform
 from datasus_etl.transform.sql.idade import IdadeTransform
 from datasus_etl.transform.sql.pipeline import TransformPipeline
+from datasus_etl.transform.sql.sim_descriptive_mappings import (
+    SIM_DESCRIPTIVE_MAPPINGS,
+    SIM_DESCRIPTIVE_COLUMNS,
+    get_descriptive_case_sql,
+)
 
 __all__ = [
     "BaseTransform",
@@ -63,4 +68,7 @@ __all__ = [
     "IbgeEnrichmentTransform",
     "IdadeTransform",
     "TransformPipeline",
+    "SIM_DESCRIPTIVE_MAPPINGS",
+    "SIM_DESCRIPTIVE_COLUMNS",
+    "get_descriptive_case_sql",
 ]
