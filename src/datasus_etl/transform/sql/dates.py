@@ -13,10 +13,14 @@ class DateParsingTransform(BaseTransform):
     """Transform that parses date strings with multiple format fallback.
 
     Tries date formats in order:
-    1. YYYYMMDD (e.g., "20200131")
-    2. DDMMYYYY (e.g., "31012020")
-    3. YYYY-MM-DD (e.g., "2020-01-31")
-    4. Direct cast (fallback)
+    1. YYYYMMDD (e.g., "20200131") - 8 digits
+    2. DDMMYYYY (e.g., "31012020") - 8 digits
+    3. DMMYYYY (e.g., "1012020") - 7 digits (day without leading zero)
+    4. YYYY-MM-DD (e.g., "2020-01-31") - ISO format
+    5. Direct cast (fallback)
+
+    The 7-digit format handles SIM data where day values 1-9 are stored
+    without leading zero (e.g., "1012023" = January 1, 2023).
 
     When allow_future=False (default), validates that parsed dates are not
     in the future. This prevents ambiguous dates like "20260115" from being
@@ -102,9 +106,19 @@ class DateParsingTransform(BaseTransform):
         col_lower = column.lower()
         col_quoted = f'"{col_lower}"'
         return f"""COALESCE(
+            -- Format 1: YYYYMMDD (8 digits)
             CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%Y%m%d') AS DATE),
+            -- Format 2: DDMMYYYY (8 digits)
             CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%d%m%Y') AS DATE),
+            -- Format 3: DMMYYYY (7 digits) - pad with leading zero
+            CASE
+                WHEN LENGTH(NULLIF({col_quoted}, '')) = 7
+                THEN CAST(TRY_STRPTIME('0' || {col_quoted}, '%d%m%Y') AS DATE)
+                ELSE NULL
+            END,
+            -- Format 4: YYYY-MM-DD (ISO)
             CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%Y-%m-%d') AS DATE),
+            -- Fallback: direct cast
             TRY_CAST(NULLIF({col_quoted}, '') AS DATE)
         ) AS "{col_lower}_parsed\""""
 
@@ -120,21 +134,29 @@ class DateParsingTransform(BaseTransform):
         col_lower = column.lower()
         col_quoted = f'"{col_lower}"'
         return f"""COALESCE(
-            -- Try format 1: YYYYMMDD with date validation
+            -- Format 1: YYYYMMDD (8 digits) with date validation
             CASE
                 WHEN CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%Y%m%d') AS DATE) IS NOT NULL
                      AND CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%Y%m%d') AS DATE) <= CURRENT_DATE
                 THEN CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%Y%m%d') AS DATE)
                 ELSE NULL
             END,
-            -- Try format 2: DDMMYYYY with date validation
+            -- Format 2: DDMMYYYY (8 digits) with date validation
             CASE
                 WHEN CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%d%m%Y') AS DATE) IS NOT NULL
                      AND CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%d%m%Y') AS DATE) <= CURRENT_DATE
                 THEN CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%d%m%Y') AS DATE)
                 ELSE NULL
             END,
-            -- Try format 3: YYYY-MM-DD with date validation
+            -- Format 3: DMMYYYY (7 digits) - pad with leading zero, with validation
+            CASE
+                WHEN LENGTH(NULLIF({col_quoted}, '')) = 7
+                     AND CAST(TRY_STRPTIME('0' || {col_quoted}, '%d%m%Y') AS DATE) IS NOT NULL
+                     AND CAST(TRY_STRPTIME('0' || {col_quoted}, '%d%m%Y') AS DATE) <= CURRENT_DATE
+                THEN CAST(TRY_STRPTIME('0' || {col_quoted}, '%d%m%Y') AS DATE)
+                ELSE NULL
+            END,
+            -- Format 4: YYYY-MM-DD (ISO) with date validation
             CASE
                 WHEN CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%Y-%m-%d') AS DATE) IS NOT NULL
                      AND CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%Y-%m-%d') AS DATE) <= CURRENT_DATE
@@ -165,6 +187,11 @@ class DateParsingTransform(BaseTransform):
             return f"""COALESCE(
                 CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%Y%m%d') AS DATE),
                 CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%d%m%Y') AS DATE),
+                CASE
+                    WHEN LENGTH(NULLIF({col_quoted}, '')) = 7
+                    THEN CAST(TRY_STRPTIME('0' || {col_quoted}, '%d%m%Y') AS DATE)
+                    ELSE NULL
+                END,
                 CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%Y-%m-%d') AS DATE),
                 TRY_CAST(NULLIF({col_quoted}, '') AS DATE)
             )"""
@@ -180,6 +207,13 @@ class DateParsingTransform(BaseTransform):
                     WHEN CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%d%m%Y') AS DATE) IS NOT NULL
                          AND CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%d%m%Y') AS DATE) <= CURRENT_DATE
                     THEN CAST(TRY_STRPTIME(NULLIF({col_quoted}, ''), '%d%m%Y') AS DATE)
+                    ELSE NULL
+                END,
+                CASE
+                    WHEN LENGTH(NULLIF({col_quoted}, '')) = 7
+                         AND CAST(TRY_STRPTIME('0' || {col_quoted}, '%d%m%Y') AS DATE) IS NOT NULL
+                         AND CAST(TRY_STRPTIME('0' || {col_quoted}, '%d%m%Y') AS DATE) <= CURRENT_DATE
+                    THEN CAST(TRY_STRPTIME('0' || {col_quoted}, '%d%m%Y') AS DATE)
                     ELSE NULL
                 END,
                 CASE

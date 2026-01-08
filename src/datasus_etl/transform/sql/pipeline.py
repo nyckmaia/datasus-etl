@@ -17,6 +17,7 @@ from datasus_etl.transform.sql.types import TypeCastTransform
 from datasus_etl.transform.sql.validation import CidValidationTransform
 from datasus_etl.transform.sql.enrichment import IbgeEnrichmentTransform
 from datasus_etl.transform.sql.idade import IdadeTransform
+from datasus_etl.transform.sql.cid_array import CidArrayTransform
 
 # CID (ICD-10) columns by subsystem
 SIHSUS_CID_COLUMNS = [
@@ -97,8 +98,12 @@ class TransformPipeline:
         # Date columns by subsystem
         self._date_columns_map = {
             "sihsus": ["dt_inter", "dt_saida", "nasc", "gestor_dt"],
-            "sim": ["dtobito", "dtnasc", "dtinvestig", "dtcadastro", "dtrecebim",
-                   "dtatestado", "dtregcart", "dtcadinf"],
+            "sim": [
+                "dtobito", "dtnasc", "dtinvestig", "dtcadastro", "dtrecebim",
+                "dtatestado", "dtregcart", "dtcadinf",
+                # Additional date columns (may have 7-digit format)
+                "dtrecoriga", "dtcadinv", "dtconinv", "dtconcaso",
+            ],
         }
 
         # Initialize transforms
@@ -117,6 +122,7 @@ class TransformPipeline:
             self.raca_cor = None
             self.ibge = None
             self.idade = None
+            self.cid_array = None
         else:
             # Full mode: all transforms
             date_columns = self._date_columns_map.get(self.subsystem, [])
@@ -127,8 +133,8 @@ class TransformPipeline:
             cid_columns = SIHSUS_CID_COLUMNS if self.subsystem == "sihsus" else []
             self.cid_validation = CidValidationTransform(cid_columns=cid_columns) if cid_columns else None
 
-            self.sexo = SexoTransform()
-            self.raca_cor = RacaCorTransform()
+            self.sexo = SexoTransform(subsystem=self.subsystem)
+            self.raca_cor = RacaCorTransform(subsystem=self.subsystem)
 
             if self.enable_ibge:
                 self.ibge = IbgeEnrichmentTransform(self.conn)
@@ -140,6 +146,12 @@ class TransformPipeline:
                 self.idade = IdadeTransform()
             else:
                 self.idade = None
+
+            # CID array transform for SIM subsystem (handles asterisk-separated CIDs)
+            if self.subsystem == "sim":
+                self.cid_array = CidArrayTransform()
+            else:
+                self.cid_array = None
 
     @property
     def transforms(self) -> list[BaseTransform]:
@@ -161,6 +173,8 @@ class TransformPipeline:
                 result.append(self.ibge)
             if self.idade:
                 result.append(self.idade)
+            if self.cid_array:
+                result.append(self.cid_array)
 
         return result
 
@@ -241,8 +255,11 @@ class TransformPipeline:
             # Check for special transforms
             if col_lower == "sexo" and self.sexo:
                 typed.append(f"{self.sexo.get_sql_expression(col_lower)} AS {col_quoted}")
-            elif col_lower == "raca_cor" and self.raca_cor:
+            elif col_lower in ("raca_cor", "racacor") and self.raca_cor:
                 typed.append(f"{self.raca_cor.get_sql_expression(col_lower)} AS {col_quoted}")
+            elif self.cid_array and self.cid_array.applies_to(col_lower):
+                # SIM CID columns: convert to array (handles asterisk-separated values)
+                typed.append(f"{self.cid_array.get_sql_expression(col_lower)} AS {col_quoted}")
             elif self.cid_validation and self.cid_validation.applies_to(col_lower):
                 typed.append(f"{self.cid_validation.get_sql_expression(col_lower)} AS {col_quoted}")
             elif col_lower in date_column_mapping:
@@ -275,30 +292,38 @@ class TransformPipeline:
     def build_where_clause(self, columns: list[str]) -> str:
         """Build WHERE clause for row filtering.
 
-        Filters out rows where all date columns are NULL.
+        Currently returns 1=1 (no filtering) to preserve all original records.
 
         Args:
             columns: List of source columns
 
         Returns:
-            SQL WHERE clause
+            SQL WHERE clause (always "1=1" - no filtering)
         """
-        if self.raw_mode:
-            return "1=1"
+        return "1=1"
 
-        # Get subsystem date columns for filtering
-        date_columns = self._date_columns_map.get(self.subsystem, [])
+    def build_order_by_clause(self, columns: list[str]) -> str:
+        """Build ORDER BY clause for consistent row ordering.
+
+        Ordering varies by subsystem:
+        - SIM: ORDER BY dtobito ASC (date of death)
+        - SIHSUS: No specific ordering (empty string)
+
+        Args:
+            columns: List of source columns
+
+        Returns:
+            SQL ORDER BY clause, or empty string if no ordering needed
+        """
         columns_lower = [c.lower() for c in columns]
 
-        conditions = []
-        for date_col in date_columns:
-            if date_col.lower() in columns_lower:
-                conditions.append(f'cleaned.{quote_column(date_col.lower() + "_parsed")} IS NULL')
+        if self.subsystem == "sim":
+            # SIM: order by date of death
+            if "dtobito" in columns_lower:
+                return "\nORDER BY dtobito ASC"
 
-        if conditions:
-            return f"NOT ({' AND '.join(conditions)})"
-        else:
-            return "1=1"
+        # Default: no ordering
+        return ""
 
     def build_canonical_columns_sql(self, columns: list[str]) -> str:
         """Build SQL for canonical schema columns (CTE: canonical).
@@ -415,7 +440,7 @@ canonical AS (
         {self.build_canonical_columns_sql(columns)}
     FROM typed{self.build_ibge_join_sql(columns)}
 )
-SELECT * FROM canonical
+SELECT * FROM canonical{self.build_order_by_clause(columns)}
 """
 
     def execute_transform(

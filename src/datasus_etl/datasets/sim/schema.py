@@ -63,13 +63,17 @@ SIM_DUCKDB_SCHEMA: dict[str, str] = {
     "ocupmae": "VARCHAR",  # Mother's occupation
     # ========================================================================
     # Cause of death (ICD-10)
+    # CID columns are stored as VARCHAR[] arrays because:
+    # 1. Raw data contains asterisks: *A01*J128 = multiple CIDs
+    # 2. Array preserves all CIDs without data loss
+    # 3. Each element is validated (letter + 2-3 digits)
     # ========================================================================
-    "causabas": "VARCHAR",  # Underlying cause of death (ICD-10)
-    "linhaa": "VARCHAR",  # Line A - immediate cause
-    "linhab": "VARCHAR",  # Line B - intermediate cause
-    "linhac": "VARCHAR",  # Line C - intermediate cause
-    "linhad": "VARCHAR",  # Line D - underlying cause
-    "linhaii": "VARCHAR",  # Part II - contributing conditions
+    "causabas": "VARCHAR[]",  # Underlying cause of death (ICD-10 array)
+    "linhaa": "VARCHAR[]",  # Line A - immediate cause (array)
+    "linhab": "VARCHAR[]",  # Line B - intermediate cause (array)
+    "linhac": "VARCHAR[]",  # Line C - intermediate cause (array)
+    "linhad": "VARCHAR[]",  # Line D - underlying cause (array)
+    "linhaii": "VARCHAR[]",  # Part II - contributing conditions (array)
     # ========================================================================
     # Medical certification
     # ========================================================================
@@ -118,6 +122,10 @@ SIM_DUCKDB_SCHEMA: dict[str, str] = {
     "contador": "INTEGER",  # Counter
     "difdata": "SMALLINT",  # Date difference
     "dtcadinf": "DATE",  # Information registration date
+    "dtrecoriga": "DATE",  # Original receipt date
+    "dtcadinv": "DATE",  # Investigation registration date
+    "dtconinv": "DATE",  # Investigation conclusion date
+    "dtconcaso": "DATE",  # Case conclusion date
     "stcodifica": "VARCHAR",  # Coding status
     "codificado": "VARCHAR",  # Coded
     "cb_pre": "VARCHAR",  # Pre-coding underlying cause
