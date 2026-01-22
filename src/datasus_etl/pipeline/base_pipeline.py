@@ -7,6 +7,7 @@ and export stages.
 
 import logging
 from abc import ABC, abstractmethod
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 
@@ -18,9 +19,14 @@ from datasus_etl.core.stage import Stage
 from datasus_etl.download.ftp_downloader import FTPDownloader
 from datasus_etl.storage.duckdb_manager import DuckDBManager
 from datasus_etl.storage.memory_aware_processor import MemoryAwareProcessor
-from datasus_etl.storage.sql_transformer import SQLTransformer
+from datasus_etl.storage.parquet_manager import ParquetManager
+from datasus_etl.storage.sql_transformer import SQLTransformer, SUBSYSTEM_SCHEMAS
 from datasus_etl.transform.converters.dbc_to_dbf import DbcToDbfConverter
 from datasus_etl.transform.converters.dbf_to_duckdb import DbfToDuckDBConverter
+from datasus_etl.transform.converters.dbf_to_parquet import (
+    convert_dbf_to_parquet,
+    ParquetConversionResult,
+)
 
 try:
     import humanize
@@ -397,6 +403,159 @@ class SqlTransformStage(Stage):
         return order_columns.get(self.subsystem, "uf")
 
 
+class DbfToParquetStage(Stage):
+    """Stage for converting DBF files to partitioned Parquet format.
+
+    Converts DBF files to Hive-style partitioned Parquet files:
+    - Structure: {base_dir}/parquet/{subsystem}/uf={UF}/{filename}.parquet
+    - Uses ProcessPoolExecutor for true parallel processing
+    - Each worker has its own DuckDB in-memory connection
+    - Tracks processed files via manifest to enable incremental updates
+    """
+
+    def __init__(self, config: PipelineConfig, subsystem: str = "sihsus") -> None:
+        super().__init__("Convert DBF to Parquet")
+        self.config = config
+        self.subsystem = subsystem
+
+    def _execute(self, context: PipelineContext) -> PipelineContext:
+        """Convert DBF files to Parquet with parallel processing."""
+        from datasus_etl.datasets import DatasetRegistry
+        from tqdm import tqdm
+
+        current = context.get_metadata("current_stage", 1)
+        total = context.get_metadata("total_stages", 1)
+
+        # Get dataset configuration
+        dataset_config = DatasetRegistry.get(self.subsystem)
+        file_prefix = dataset_config.FILE_PREFIX.upper() if dataset_config else ""
+        schema = SUBSYSTEM_SCHEMAS.get(self.subsystem, SUBSYSTEM_SCHEMAS["sihsus"])
+
+        # Find DBF files filtered by subsystem prefix
+        all_dbf_files = list(self.config.conversion.dbf_dir.rglob("*.dbf"))
+
+        if file_prefix:
+            dbf_files = [
+                f for f in all_dbf_files
+                if f.stem.upper().startswith(file_prefix)
+            ]
+            self.logger.debug(
+                f"Filtered {len(all_dbf_files)} DBF files to {len(dbf_files)} "
+                f"matching prefix '{file_prefix}'"
+            )
+        else:
+            dbf_files = all_dbf_files
+
+        if not dbf_files:
+            self.logger.warning(
+                f"No DBF files found in {self.config.conversion.dbf_dir} "
+                f"matching prefix '{file_prefix}'"
+            )
+            return context
+
+        # Initialize Parquet manager for manifest tracking
+        parquet_manager = ParquetManager(
+            self.config.storage.database_dir,
+            self.subsystem,
+        )
+
+        # Filter out already processed files
+        processed_files = parquet_manager.get_processed_files()
+        pending_files = [
+            f for f in dbf_files
+            if f"{f.stem.upper()}.dbc" not in processed_files
+        ]
+
+        if not pending_files:
+            tqdm.write(f"\n[{current}/{total}] {SYM_CHECK} All {len(dbf_files)} DBF files already processed")
+            context.set("parquet_results", [])
+            context.set_metadata("files_converted", 0)
+            context.mark_stage_progress_complete("dbf_to_parquet")
+            return context
+
+        tqdm.write(f"\n[{current}/{total}] Parquet: Converting {len(pending_files)} DBF files "
+                   f"(skipping {len(processed_files)} already processed)")
+
+        # Setup output directory
+        output_dir = self.config.get_parquet_dir()
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Configure parallel processing
+        num_workers = min(self.config.database.num_workers, len(pending_files))
+        compression = self.config.storage.parquet_compression
+        raw_mode = self.config.raw_mode
+
+        self.logger.info(f"Using {num_workers} parallel workers, compression={compression}")
+
+        # Process files in parallel using ProcessPoolExecutor
+        results: list[ParquetConversionResult] = []
+        total_rows = 0
+        errors = 0
+
+        with ProcessPoolExecutor(max_workers=num_workers) as executor:
+            # Submit all tasks
+            future_to_file = {
+                executor.submit(
+                    convert_dbf_to_parquet,
+                    dbf_file,
+                    output_dir,
+                    self.subsystem,
+                    schema,
+                    raw_mode,
+                    compression,
+                ): dbf_file
+                for dbf_file in pending_files
+            }
+
+            # Process completed tasks with progress bar
+            for future in tqdm(
+                as_completed(future_to_file),
+                total=len(pending_files),
+                desc=f"DBF{SYM_ARROW}Parquet",
+                leave=False,
+            ):
+                # Check for cancellation
+                context.check_cancelled()
+
+                dbf_file = future_to_file[future]
+                try:
+                    result = future.result()
+                    results.append(result)
+
+                    if result.success:
+                        total_rows += result.rows
+                        parquet_manager.mark_processed(result.source_file)
+                        self.logger.debug(f"Converted {result.source_file}: {result.rows:,} rows")
+                    else:
+                        errors += 1
+                        tqdm.write(f"       [ERROR] {result.source_file}: {result.error}")
+
+                except Exception as e:
+                    errors += 1
+                    self.logger.error(f"Failed to convert {dbf_file.name}: {e}")
+                    tqdm.write(f"       [ERROR] {dbf_file.name}: {e}")
+
+        # Store results in context
+        context.set("parquet_results", results)
+        context.set_metadata("files_converted", len(results) - errors)
+        context.set_metadata("total_rows_converted", total_rows)
+        context.set_metadata("conversion_errors", errors)
+
+        # Get storage stats
+        stats = parquet_manager.get_storage_stats()
+        context.set("parquet_stats", stats)
+
+        tqdm.write(f"       {SYM_CHECK} Converted {len(results) - errors} files, "
+                   f"{total_rows:,} rows, {errors} errors")
+        tqdm.write(f"       Storage: {stats.total_files} Parquet files, "
+                   f"{stats.total_size_bytes / (1024*1024):.1f} MB")
+
+        # Mark stage progress complete
+        context.mark_stage_progress_complete("dbf_to_parquet")
+
+        return context
+
+
 class MemoryAwareProcessingStage(Stage):
     """Stage for memory-aware parallel processing of DBC files.
 
@@ -525,18 +684,37 @@ class DatasusPipeline(Pipeline[PipelineConfig], ABC):
     def setup_stages(self) -> None:
         """Set up standard pipeline stages.
 
-        Uses memory-aware mode if enabled in config, which processes
-        one DBC file at a time with parallel workers to prevent RAM exhaustion.
+        Pipeline stages depend on output_format and memory_aware_mode settings:
+
+        For Parquet mode (default):
+        1. Download DBC files from DATASUS FTP
+        2. Decompress DBC -> DBF
+        3. Convert DBF -> Parquet (partitioned by UF)
+
+        For DuckDB mode (legacy):
+        1. Download DBC files from DATASUS FTP
+        2. Decompress DBC -> DBF
+        3. Stream DBF -> DuckDB staging tables
+        4. Transform in SQL and export to persistent DuckDB
+
+        Memory-aware mode processes one DBC file at a time with parallel workers.
         """
-        # Define stage weights for progress tracking
-        if self.config.database.memory_aware_mode:
+        # Define stage weights for progress tracking based on mode
+        if self.config.is_parquet_mode():
+            # Parquet mode: 3 stages
+            stage_weights = {
+                "download": 0.20,
+                "dbc_to_dbf": 0.10,
+                "dbf_to_parquet": 0.70,
+            }
+        elif self.config.database.memory_aware_mode:
             # Memory-aware mode: 2 stages
             stage_weights = {
                 "download": 0.20,
                 "memory_aware_processing": 0.80,
             }
         else:
-            # Standard mode: 4 stages
+            # Standard DuckDB mode: 4 stages
             stage_weights = {
                 "download": 0.25,
                 "dbc_to_dbf": 0.10,
@@ -549,8 +727,20 @@ class DatasusPipeline(Pipeline[PipelineConfig], ABC):
         self.add_stage(download_stage)
         self.context.register_stage("download", stage_weights["download"])
 
-        # Check if memory-aware mode is enabled
-        if self.config.database.memory_aware_mode:
+        # Choose pipeline path based on configuration
+        if self.config.is_parquet_mode():
+            # Parquet mode: DBC -> DBF -> Parquet
+            dbc_stage = DbcToDbfStage(self.config)
+            self.add_stage(dbc_stage)
+            self.context.register_stage("dbc_to_dbf", stage_weights["dbc_to_dbf"])
+
+            parquet_stage = DbfToParquetStage(self.config, subsystem=self.subsystem_name)
+            self.add_stage(parquet_stage)
+            self.context.register_stage("dbf_to_parquet", stage_weights["dbf_to_parquet"])
+
+            self.logger.info(f"{self.subsystem_name.upper()} pipeline configured for Parquet output")
+
+        elif self.config.database.memory_aware_mode:
             # Memory-aware mode: single stage handles DBC->DuckDB directly
             processing_stage = MemoryAwareProcessingStage(
                 self.config,
@@ -561,8 +751,10 @@ class DatasusPipeline(Pipeline[PipelineConfig], ABC):
             self.context.register_stage(
                 "memory_aware_processing", stage_weights["memory_aware_processing"]
             )
+            self.logger.info(f"{self.subsystem_name.upper()} pipeline configured for memory-aware DuckDB")
+
         else:
-            # Standard mode: separate stages
+            # Standard DuckDB mode: separate stages
             dbc_stage = DbcToDbfStage(self.config)
             self.add_stage(dbc_stage)
             self.context.register_stage("dbc_to_dbf", stage_weights["dbc_to_dbf"])
@@ -576,6 +768,7 @@ class DatasusPipeline(Pipeline[PipelineConfig], ABC):
             )
             self.add_stage(transform_stage)
             self.context.register_stage("sql_transform", stage_weights["sql_transform"])
+            self.logger.info(f"{self.subsystem_name.upper()} pipeline configured for DuckDB output")
 
         self.logger.debug(
             f"{self.subsystem_name.upper()} pipeline configured with {len(self._stages)} stages"
@@ -597,30 +790,53 @@ class DatasusPipeline(Pipeline[PipelineConfig], ABC):
             else:
                 duration_str = str(duration).split(".")[0]
 
-        # Total rows
-        total_rows = context.get_metadata("total_rows_exported", 0)
-        total_rows_in_db = context.get_metadata("total_rows_in_db", total_rows)
+        # Check if Parquet mode
+        is_parquet = self.config.is_parquet_mode()
 
-        # Output size - DuckDB database file
-        db_path = self.config.get_database_path()
-
-        if db_path.exists():
-            total_size = db_path.stat().st_size
-
-            if humanize:
-                size_human = humanize.naturalsize(total_size, binary=True)
-            else:
-                size_human = f"{total_size / (1024**2):.1f} MB"
-        else:
-            size_human = "0 MB"
-
-        # Print summary
         tqdm.write("")
         tqdm.write(f"[PIPELINE] {SYM_CHECK} {self.subsystem_name.upper()} concluido em {duration_str}")
-        tqdm.write(f"           Linhas inseridas: {total_rows:,}")
-        tqdm.write(f"           Total no banco: {total_rows_in_db:,}")
-        tqdm.write(f"           Database: {db_path.name} ({size_human})")
-        tqdm.write(f"           Caminho: {db_path}")
+
+        if is_parquet:
+            # Parquet mode statistics
+            total_rows = context.get_metadata("total_rows_converted", 0)
+            files_converted = context.get_metadata("files_converted", 0)
+            parquet_stats = context.get("parquet_stats")
+
+            tqdm.write(f"           Arquivos convertidos: {files_converted}")
+            tqdm.write(f"           Linhas processadas: {total_rows:,}")
+
+            if parquet_stats:
+                if humanize:
+                    size_human = humanize.naturalsize(parquet_stats.total_size_bytes, binary=True)
+                else:
+                    size_human = f"{parquet_stats.total_size_bytes / (1024**2):.1f} MB"
+
+                parquet_dir = self.config.get_parquet_dir()
+                tqdm.write(f"           Tamanho: {size_human}")
+                tqdm.write(f"           Particoes: {len(parquet_stats.partitions)} UFs")
+                tqdm.write(f"           Caminho: {parquet_dir}")
+        else:
+            # DuckDB mode statistics
+            total_rows = context.get_metadata("total_rows_exported", 0)
+            total_rows_in_db = context.get_metadata("total_rows_in_db", total_rows)
+
+            # Output size - DuckDB database file
+            db_path = self.config.get_database_path()
+
+            if db_path.exists():
+                total_size = db_path.stat().st_size
+
+                if humanize:
+                    size_human = humanize.naturalsize(total_size, binary=True)
+                else:
+                    size_human = f"{total_size / (1024**2):.1f} MB"
+            else:
+                size_human = "0 MB"
+
+            tqdm.write(f"           Linhas inseridas: {total_rows:,}")
+            tqdm.write(f"           Total no banco: {total_rows_in_db:,}")
+            tqdm.write(f"           Database: {db_path.name} ({size_human})")
+            tqdm.write(f"           Caminho: {db_path}")
 
         # Errors
         if context.has_errors:

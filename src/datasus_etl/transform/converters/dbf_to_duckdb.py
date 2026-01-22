@@ -1,5 +1,6 @@
 """Converter from DBF to DuckDB with adaptive streaming support."""
 
+import gc
 import logging
 from pathlib import Path
 from typing import Any
@@ -214,8 +215,10 @@ class DbfToDuckDBConverter:
             rows = len(df)
             self.logger.info(f"Inserted {rows:,} rows from {dbf_path.name} (full DataFrame)")
             # tqdm.write(f"[DEBUG] Cleaning up temp_full_df...")
-            # Cleanup
+            # Cleanup: unregister, delete DataFrame, and garbage collect
             self.conn.unregister("temp_full_df")
+            del df
+            gc.collect()
             # tqdm.write(f"[DEBUG] Cleanup complete for {dbf_path.name}")
             return rows
 
@@ -342,10 +345,11 @@ class DbfToDuckDBConverter:
             )
             tqdm.write(f"[DEBUG] INSERT completed")
 
-            # Cleanup temporary view
-            tqdm.write(f"[DEBUG] Cleaning up temp_chunk view...")
-            self.conn.execute("DROP VIEW IF EXISTS temp_chunk")
-            tqdm.write(f"[DEBUG] temp_chunk view dropped")
+            # Cleanup: unregister AND delete Arrow table to free memory
+            tqdm.write(f"[DEBUG] Cleaning up temp_chunk...")
+            self.conn.unregister("temp_chunk")
+            del arrow_table
+            tqdm.write(f"[DEBUG] temp_chunk unregistered and deleted")
 
         except Exception as e:
             # Enhanced error logging with schema information

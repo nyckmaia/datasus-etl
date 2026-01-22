@@ -78,6 +78,16 @@ class StorageConfig(BaseModel):
     """Configuration for DuckDB persistent storage."""
 
     database_dir: Path = Field(description="Directory for DuckDB database files")
+    output_format: Literal["duckdb", "parquet"] = Field(
+        default="parquet",
+        description="Output storage format: 'parquet' (default, Hive-partitioned files) or "
+                    "'duckdb' (single database file)"
+    )
+    parquet_compression: Literal["snappy", "zstd", "gzip"] = Field(
+        default="zstd",
+        description="Parquet compression algorithm: 'zstd' (default, best ratio), "
+                    "'snappy' (fastest), 'gzip' (most compatible)"
+    )
     write_mode: Literal["append", "replace"] = Field(
         default="append",
         description="How to handle existing data: 'append' (default) adds new records, "
@@ -237,3 +247,19 @@ class PipelineConfig(BaseModel):
             Path to {database_dir}/{subsystem}.duckdb
         """
         return self.storage.database_dir / f"{self.subsystem}.duckdb"
+
+    def get_parquet_dir(self) -> Path:
+        """Get the path to the Parquet directory for this subsystem.
+
+        Returns:
+            Path to {database_dir}/parquet/{subsystem}/
+        """
+        return self.storage.database_dir / "parquet" / self.subsystem
+
+    def is_parquet_mode(self) -> bool:
+        """Check if pipeline is configured for Parquet output.
+
+        Returns:
+            True if output_format is 'parquet'
+        """
+        return self.storage.output_format == "parquet"

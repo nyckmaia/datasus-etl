@@ -257,6 +257,11 @@ def pipeline_cmd(
         "-y",
         help="Pular confirmacao e executar diretamente",
     ),
+    skip_disk_check: bool = typer.Option(
+        False,
+        "--skip-disk-check",
+        help="Pular verificacao de espaco em disco (use se tiver certeza que ha espaco suficiente)",
+    ),
 ) -> None:
     """Executa o pipeline completo: download -> convert -> transform -> export.
 
@@ -325,10 +330,11 @@ def pipeline_cmd(
     table.add_row("Data final", end_date or "hoje")
     table.add_row("Estados (UF)", uf or "todos")
     table.add_row("Diretorio", str(data_dir))
-    table.add_row("Formato saida", "DuckDB")
-    table.add_row("Database", f"{source.lower()}.duckdb")
+    table.add_row("Formato saida", "Parquet (Hive-partitioned)")
+    table.add_row("Saida", f"parquet/{source.lower()}/uf=*/")
     table.add_row("Modo escrita", write_mode)
     table.add_row("Chunk size", f"{chunk_size:,}")
+    table.add_row("Workers", f"{num_workers}")
     table.add_row("Manter temporarios", "Sim" if keep_temp_files else "Nao")
     table.add_row("Modo raw", "Sim (sem conversoes)" if raw else "Nao (com tipos)")
 
@@ -399,8 +405,12 @@ def pipeline_cmd(
             f"Disponivel: {format_size_mb(available_mb)}[/red]"
         )
         console.print()
-        console.print("[dim]Libere espaco no disco ou escolha outro diretorio.[/dim]")
-        raise typer.Exit(1)
+        if not skip_disk_check:
+            console.print("[dim]Libere espaco no disco ou escolha outro diretorio.[/dim]")
+            console.print("[dim]Use --skip-disk-check para ignorar esta verificacao.[/dim]")
+            raise typer.Exit(1)
+        else:
+            console.print("[yellow]Continuando mesmo assim (--skip-disk-check ativo)...[/yellow]")
 
     # Ask for confirmation (unless --yes was passed)
     if not yes:
@@ -697,70 +707,121 @@ def status(
 
     setup_logging("WARNING")
 
-    from datasus_etl.storage.duckdb_query_engine import DuckDBQueryEngine
-
-    db_path = data_dir / f"{source.lower()}.duckdb"
-
     console.print()
     console.print("[bold cyan]DataSUS - Status do Banco[/bold cyan]")
     console.print()
 
-    if not db_path.exists():
-        console.print(f"[yellow]Database nao encontrado: {db_path}[/yellow]")
-        console.print("Execute 'datasus pipeline' para criar o banco de dados.")
-        return
+    source_lower = source.lower()
 
-    try:
-        engine = DuckDBQueryEngine(db_path)
+    # Check for Parquet storage first
+    parquet_dir = data_dir / "parquet" / source_lower
+    db_path = data_dir / f"{source_lower}.duckdb"
 
-        # Get database info
-        db_info = engine.get_database_info()
+    if parquet_dir.exists() and any(parquet_dir.rglob("*.parquet")):
+        # Parquet mode: show Parquet storage stats
+        from datasus_etl.storage.parquet_manager import ParquetManager
+
+        parquet_manager = ParquetManager(data_dir, source_lower)
+        stats = parquet_manager.get_storage_stats()
+        processed_files = parquet_manager.get_processed_files()
 
         # Show summary
-        summary = Table(title="[bold green]Estatisticas[/bold green]", border_style="green")
+        summary = Table(title="[bold green]Estatisticas (Parquet)[/bold green]", border_style="green")
         summary.add_column("Metrica", style="green")
         summary.add_column("Valor", style="white")
 
-        summary.add_row("Total de linhas", f"{db_info['row_count']:,}")
-        summary.add_row("Arquivos fonte processados", str(len(engine.get_processed_source_files())))
-        summary.add_row("Tamanho do database", f"{db_info['size_mb']:.1f} MB")
-        summary.add_row("Tabelas", ", ".join(db_info["tables"]))
-        summary.add_row("Caminho", str(db_path))
+        summary.add_row("Arquivos Parquet", f"{stats.total_files}")
+        summary.add_row("Arquivos fonte processados", str(len(processed_files)))
+        summary.add_row("Tamanho total", f"{stats.total_size_bytes / (1024*1024):.1f} MB")
+        summary.add_row("Particoes (UF)", f"{len(stats.partitions)}")
+        summary.add_row("Compressao", "ZSTD")
+        summary.add_row("Caminho", str(parquet_dir))
 
         console.print(summary)
 
-        # Show dimension status
-        dim_status = db_info["dimensions"]
-        has_dimensions = any(count > 0 for count in dim_status.values())
-        if has_dimensions:
+        # Show partition details
+        if stats.file_count_by_partition:
             console.print()
-            dim_table = Table(title="[bold]Tabelas de Dimensao[/bold]", border_style="blue")
-            dim_table.add_column("Tabela", style="blue")
-            dim_table.add_column("Registros", style="white", justify="right")
+            partition_table = Table(title="[bold]Arquivos por Particao (UF)[/bold]", border_style="blue")
+            partition_table.add_column("UF", style="blue")
+            partition_table.add_column("Arquivos", style="white", justify="right")
 
-            for table_name, count in dim_status.items():
-                if count >= 0:
-                    dim_table.add_row(table_name, f"{count:,}" if count > 0 else "[dim]vazia[/dim]")
+            for uf in sorted(stats.file_count_by_partition.keys()):
+                partition_table.add_row(uf, str(stats.file_count_by_partition[uf]))
 
-            console.print(dim_table)
+            console.print(partition_table)
 
-        # Show file counts if not too many
-        file_counts = engine.get_file_row_counts()
-        if file_counts and len(file_counts) <= 20:
+        # Show row count (requires reading Parquet files)
+        try:
+            conn = duckdb.connect(":memory:")
+            parquet_manager.create_duckdb_view(conn, f"{source_lower}_raw")
+            row_count = conn.execute(f"SELECT COUNT(*) FROM {source_lower}_raw").fetchone()[0]
+            conn.close()
             console.print()
-            files_table = Table(title="[bold]Registros por Arquivo Fonte[/bold]", border_style="blue")
-            files_table.add_column("Arquivo", style="blue")
-            files_table.add_column("Linhas", style="white", justify="right")
+            console.print(f"[bold]Total de linhas:[/bold] {row_count:,}")
+        except Exception as e:
+            console.print(f"[dim]Nao foi possivel contar linhas: {e}[/dim]")
 
-            for filename, count in sorted(file_counts.items()):
-                files_table.add_row(filename, f"{count:,}")
+    elif db_path.exists():
+        # DuckDB mode: use existing DuckDBQueryEngine
+        from datasus_etl.storage.duckdb_query_engine import DuckDBQueryEngine
 
-            console.print(files_table)
+        try:
+            engine = DuckDBQueryEngine(db_path)
 
-        engine.close()
+            # Get database info
+            db_info = engine.get_database_info()
 
-    except Exception as e:
-        console.print(f"[red]Erro ao ler banco: {e}[/red]")
+            # Show summary
+            summary = Table(title="[bold green]Estatisticas (DuckDB)[/bold green]", border_style="green")
+            summary.add_column("Metrica", style="green")
+            summary.add_column("Valor", style="white")
+
+            summary.add_row("Total de linhas", f"{db_info['row_count']:,}")
+            summary.add_row("Arquivos fonte processados", str(len(engine.get_processed_source_files())))
+            summary.add_row("Tamanho do database", f"{db_info['size_mb']:.1f} MB")
+            summary.add_row("Tabelas", ", ".join(db_info["tables"]))
+            summary.add_row("Caminho", str(db_path))
+
+            console.print(summary)
+
+            # Show dimension status
+            dim_status = db_info["dimensions"]
+            has_dimensions = any(count > 0 for count in dim_status.values())
+            if has_dimensions:
+                console.print()
+                dim_table = Table(title="[bold]Tabelas de Dimensao[/bold]", border_style="blue")
+                dim_table.add_column("Tabela", style="blue")
+                dim_table.add_column("Registros", style="white", justify="right")
+
+                for table_name, count in dim_status.items():
+                    if count >= 0:
+                        dim_table.add_row(table_name, f"{count:,}" if count > 0 else "[dim]vazia[/dim]")
+
+                console.print(dim_table)
+
+            # Show file counts if not too many
+            file_counts = engine.get_file_row_counts()
+            if file_counts and len(file_counts) <= 20:
+                console.print()
+                files_table = Table(title="[bold]Registros por Arquivo Fonte[/bold]", border_style="blue")
+                files_table.add_column("Arquivo", style="blue")
+                files_table.add_column("Linhas", style="white", justify="right")
+
+                for filename, count in sorted(file_counts.items()):
+                    files_table.add_row(filename, f"{count:,}")
+
+                console.print(files_table)
+
+            engine.close()
+
+        except Exception as e:
+            console.print(f"[red]Erro ao ler banco: {e}[/red]")
+    else:
+        console.print(f"[yellow]Nenhum dado encontrado para {source_lower}[/yellow]")
+        console.print(f"[dim]Procurado em: {db_path}[/dim]")
+        console.print(f"[dim]Procurado em: {parquet_dir}[/dim]")
+        console.print("Execute 'datasus pipeline' para criar o banco de dados.")
 
 
 def _format_size(size_bytes: int) -> str:
@@ -1127,23 +1188,34 @@ def _run_duckdb_cli(
     subprocess.run(cmd)
 
 
-def _discover_subsystems(data_dir: Path) -> list[str]:
-    """Discover available subsystems by scanning for .duckdb files.
+def _discover_subsystems(data_dir: Path) -> list[tuple[str, str]]:
+    """Discover available subsystems by scanning for .duckdb files or Parquet directories.
 
     Args:
         data_dir: Base data directory
 
     Returns:
-        List of subsystem names that have DuckDB database files
+        List of tuples (subsystem_name, storage_type) where storage_type is 'duckdb' or 'parquet'
     """
     subsystems = []
     if not data_dir.exists():
         return subsystems
 
+    # Check for DuckDB files
     for db_file in data_dir.glob("*.duckdb"):
-        subsystems.append(db_file.stem)
+        subsystems.append((db_file.stem, "duckdb"))
 
-    return sorted(subsystems)
+    # Check for Parquet directories
+    parquet_dir = data_dir / "parquet"
+    if parquet_dir.exists():
+        for subsystem_dir in parquet_dir.iterdir():
+            if subsystem_dir.is_dir() and any(subsystem_dir.rglob("*.parquet")):
+                # Only add if not already found as duckdb
+                subsystem_name = subsystem_dir.name
+                if not any(s[0] == subsystem_name for s in subsystems):
+                    subsystems.append((subsystem_name, "parquet"))
+
+    return sorted(subsystems, key=lambda x: x[0])
 
 
 def _show_db_help(console_obj: Console, max_rows: int) -> None:
@@ -1861,64 +1933,117 @@ def db(
         console.print(f"[red]Erro: Diretorio nao encontrado: {data_dir}[/red]")
         raise typer.Exit(1)
 
-    # Discover available databases
+    # Discover available databases (both DuckDB and Parquet)
     available_dbs = _discover_subsystems(data_dir)
 
     if not available_dbs:
-        console.print(f"[yellow]Nenhum database DuckDB encontrado em: {data_dir}[/yellow]")
+        console.print(f"[yellow]Nenhum database encontrado em: {data_dir}[/yellow]")
         console.print("[dim]Execute 'datasus pipeline' primeiro para criar os dados.[/dim]")
         raise typer.Exit(1)
 
     # Determine which database to open
+    storage_type = None
     if source:
         source_lower = source.lower()
-        db_path = data_dir / f"{source_lower}.duckdb"
-        if not db_path.exists():
-            console.print(f"[red]Erro: Database nao encontrado: {db_path}[/red]")
-            console.print(f"[dim]Databases disponiveis: {', '.join(available_dbs)}[/dim]")
+        # Check for matching subsystem in available databases
+        matching = [(name, stype) for name, stype in available_dbs if name == source_lower]
+        if not matching:
+            console.print(f"[red]Erro: Subsistema nao encontrado: {source_lower}[/red]")
+            console.print(f"[dim]Disponiveis: {', '.join([f'{n} ({t})' for n, t in available_dbs])}[/dim]")
             raise typer.Exit(1)
+        source_lower, storage_type = matching[0]
     else:
         # If only one database, use it; otherwise ask user to specify
         if len(available_dbs) == 1:
-            source_lower = available_dbs[0]
-            db_path = data_dir / f"{source_lower}.duckdb"
+            source_lower, storage_type = available_dbs[0]
         else:
             console.print("[bold cyan]Databases disponiveis:[/bold cyan]")
-            for db_name in available_dbs:
-                db_file = data_dir / f"{db_name}.duckdb"
-                size_mb = db_file.stat().st_size / (1024 * 1024)
-                console.print(f"  - [green]{db_name}[/green] ({size_mb:.1f} MB)")
+            for db_name, db_type in available_dbs:
+                if db_type == "duckdb":
+                    db_file = data_dir / f"{db_name}.duckdb"
+                    size_mb = db_file.stat().st_size / (1024 * 1024)
+                    console.print(f"  - [green]{db_name}[/green] (DuckDB, {size_mb:.1f} MB)")
+                else:
+                    parquet_dir = data_dir / "parquet" / db_name
+                    total_size = sum(f.stat().st_size for f in parquet_dir.rglob("*.parquet"))
+                    size_mb = total_size / (1024 * 1024)
+                    num_files = len(list(parquet_dir.rglob("*.parquet")))
+                    console.print(f"  - [green]{db_name}[/green] (Parquet, {num_files} files, {size_mb:.1f} MB)")
             console.print()
             console.print("[dim]Use --source para especificar o database.[/dim]")
             console.print("[dim]Exemplo: datasus db -d ./data/datasus -s sihsus[/dim]")
             return
 
-    # Check if DuckDB CLI is available
-    duckdb_cli_path = _check_duckdb_cli()
+    # Handle based on storage type
+    if storage_type == "parquet":
+        # Parquet mode: create in-memory DuckDB with VIEW
+        from datasus_etl.storage.parquet_manager import ParquetManager
 
-    if duckdb_cli_path:
-        # Use native DuckDB CLI for better performance
-        _run_duckdb_cli(db_path, console, read_only=read_only)
-    else:
-        # Fallback to Python REPL
-        mode_str = "somente-leitura" if read_only else "escrita"
-        console.print(f"[dim]Modo: {mode_str}[/dim]")
-        conn = duckdb.connect(str(db_path), read_only=read_only)
+        parquet_manager = ParquetManager(data_dir, source_lower)
+        if not parquet_manager.exists():
+            console.print(f"[red]Erro: Nenhum arquivo Parquet encontrado para {source_lower}[/red]")
+            raise typer.Exit(1)
+
+        stats = parquet_manager.get_storage_stats()
+        console.print()
+        console.print(f"[bold cyan]Parquet Storage: {source_lower}[/bold cyan]")
+        console.print(f"  Arquivos: {stats.total_files}")
+        console.print(f"  Tamanho: {stats.total_size_bytes / (1024*1024):.1f} MB")
+        console.print(f"  Particoes: {', '.join(stats.partitions[:10])}{'...' if len(stats.partitions) > 10 else ''}")
+        console.print()
+
+        # Create in-memory connection with VIEW
+        conn = duckdb.connect(":memory:")
+        parquet_manager.create_duckdb_view(conn, f"{source_lower}_raw")
+
+        # Try to load dimension tables for enrichment
+        metadata_db = data_dir / "metadata.duckdb"
+        if metadata_db.exists():
+            conn.execute(f"ATTACH '{metadata_db}' AS metadata (READ_ONLY)")
+            try:
+                conn.execute("CREATE TABLE dim_municipios AS SELECT * FROM metadata.dim_municipios")
+                parquet_manager.create_enriched_view(conn, f"{source_lower}_raw", source_lower)
+                console.print("[dim]Tabelas de dimensao carregadas de metadata.duckdb[/dim]")
+            except Exception:
+                conn.execute(f"CREATE VIEW {source_lower} AS SELECT * FROM {source_lower}_raw")
 
         # Get available tables/views
-        try:
-            result = conn.execute("SHOW TABLES").fetchall()
-            tables = [row[0] for row in result]
+        result = conn.execute("SHOW TABLES").fetchall()
+        tables = [row[0] for row in result]
 
-            if not tables:
-                console.print("[yellow]Nenhuma tabela encontrada no database.[/yellow]")
+        # Run interactive shell
+        _run_interactive_shell(conn, tables, console)
+        conn.close()
+    else:
+        # DuckDB mode: open file directly
+        db_path = data_dir / f"{source_lower}.duckdb"
+
+        # Check if DuckDB CLI is available
+        duckdb_cli_path = _check_duckdb_cli()
+
+        if duckdb_cli_path:
+            # Use native DuckDB CLI for better performance
+            _run_duckdb_cli(db_path, console, read_only=read_only)
+        else:
+            # Fallback to Python REPL
+            mode_str = "somente-leitura" if read_only else "escrita"
+            console.print(f"[dim]Modo: {mode_str}[/dim]")
+            conn = duckdb.connect(str(db_path), read_only=read_only)
+
+            # Get available tables/views
+            try:
+                result = conn.execute("SHOW TABLES").fetchall()
+                tables = [row[0] for row in result]
+
+                if not tables:
+                    console.print("[yellow]Nenhuma tabela encontrada no database.[/yellow]")
+                    conn.close()
+                    raise typer.Exit(1)
+
+                # Run interactive shell
+                _run_interactive_shell(conn, tables, console)
+            finally:
                 conn.close()
-                raise typer.Exit(1)
-
-            # Run interactive shell
-            _run_interactive_shell(conn, tables, console)
-        finally:
-            conn.close()
 
 
 if __name__ == "__main__":
