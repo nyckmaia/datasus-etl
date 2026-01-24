@@ -49,12 +49,16 @@ class ParquetManager:
         """Initialize the Parquet manager.
 
         Args:
-            base_dir: Base directory containing parquet/ folder
+            base_dir: Base directory containing parquet/ folder, or the parquet folder itself
             subsystem: DataSUS subsystem name (sihsus, sim, etc.)
         """
         self.base_dir = Path(base_dir)
         self.subsystem = subsystem.lower()
-        self.parquet_dir = self.base_dir / "parquet" / self.subsystem
+        # Support both base_dir/parquet/subsystem and base_dir/subsystem if base_dir is named "parquet"
+        if self.base_dir.name == "parquet":
+            self.parquet_dir = self.base_dir / self.subsystem
+        else:
+            self.parquet_dir = self.base_dir / "parquet" / self.subsystem
         self.manifest_path = self.parquet_dir / self.MANIFEST_FILENAME
         self.logger = logging.getLogger(__name__)
 

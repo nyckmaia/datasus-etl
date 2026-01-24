@@ -1188,6 +1188,44 @@ def _run_duckdb_cli(
     subprocess.run(cmd)
 
 
+def _run_duckdb_cli_parquet(
+    init_sql: str,
+    views_info: list[str],
+    console_obj: Console,
+) -> None:
+    """Run native DuckDB CLI with Parquet VIEWs initialized via SQL script.
+
+    Args:
+        init_sql: SQL commands to create VIEWs (will be written to temp file)
+        views_info: List of VIEW names for display
+        console_obj: Rich console for output
+    """
+    import subprocess
+    import tempfile
+
+    # Create temporary init file
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".sql", delete=False) as f:
+        f.write(init_sql)
+        init_file = f.name
+
+    try:
+        # Show info before launching CLI
+        console_obj.print()
+        console_obj.print("[bold cyan]DuckDB CLI (Parquet Mode)[/bold cyan]")
+        console_obj.print(f"VIEWs disponiveis: [green]{', '.join(views_info)}[/green]")
+        console_obj.print("[dim]Digite .help para ver comandos do DuckDB CLI[/dim]")
+        console_obj.print("[dim]Digite .exit ou Ctrl+D para sair[/dim]")
+        console_obj.print()
+
+        # Launch DuckDB CLI with init script
+        cmd = ["duckdb", "-init", init_file]
+        subprocess.run(cmd)
+    finally:
+        # Clean up temp file
+        import os
+        os.unlink(init_file)
+
+
 def _discover_subsystems(data_dir: Path) -> list[tuple[str, str]]:
     """Discover available subsystems by scanning for .duckdb files or Parquet directories.
 
@@ -1206,7 +1244,13 @@ def _discover_subsystems(data_dir: Path) -> list[tuple[str, str]]:
         subsystems.append((db_file.stem, "duckdb"))
 
     # Check for Parquet directories
-    parquet_dir = data_dir / "parquet"
+    # Support both data_dir/parquet/ and data_dir itself if it's named "parquet"
+    if data_dir.name == "parquet":
+        # User passed the parquet directory directly
+        parquet_dir = data_dir
+    else:
+        parquet_dir = data_dir / "parquet"
+
     if parquet_dir.exists():
         for subsystem_dir in parquet_dir.iterdir():
             if subsystem_dir.is_dir() and any(subsystem_dir.rglob("*.parquet")):
@@ -1964,10 +2008,14 @@ def db(
                     size_mb = db_file.stat().st_size / (1024 * 1024)
                     console.print(f"  - [green]{db_name}[/green] (DuckDB, {size_mb:.1f} MB)")
                 else:
-                    parquet_dir = data_dir / "parquet" / db_name
-                    total_size = sum(f.stat().st_size for f in parquet_dir.rglob("*.parquet"))
+                    # Support both data_dir/parquet/db_name and data_dir/db_name if data_dir is parquet folder
+                    if data_dir.name == "parquet":
+                        parquet_subdir = data_dir / db_name
+                    else:
+                        parquet_subdir = data_dir / "parquet" / db_name
+                    total_size = sum(f.stat().st_size for f in parquet_subdir.rglob("*.parquet"))
                     size_mb = total_size / (1024 * 1024)
-                    num_files = len(list(parquet_dir.rglob("*.parquet")))
+                    num_files = len(list(parquet_subdir.rglob("*.parquet")))
                     console.print(f"  - [green]{db_name}[/green] (Parquet, {num_files} files, {size_mb:.1f} MB)")
             console.print()
             console.print("[dim]Use --source para especificar o database.[/dim]")
@@ -1992,28 +2040,89 @@ def db(
         console.print(f"  Particoes: {', '.join(stats.partitions[:10])}{'...' if len(stats.partitions) > 10 else ''}")
         console.print()
 
-        # Create in-memory connection with VIEW
-        conn = duckdb.connect(":memory:")
-        parquet_manager.create_duckdb_view(conn, f"{source_lower}_raw")
+        # Determine paths for VIEWs
+        # Support both data_dir/parquet/ibge and data_dir/ibge if data_dir is the parquet folder
+        if data_dir.name == "parquet":
+            ibge_parquet = data_dir / "ibge" / "ibge_locais.parquet"
+        else:
+            ibge_parquet = data_dir / "parquet" / "ibge" / "ibge_locais.parquet"
+        has_ibge = ibge_parquet.exists()
 
-        # Try to load dimension tables for enrichment
-        metadata_db = data_dir / "metadata.duckdb"
-        if metadata_db.exists():
-            conn.execute(f"ATTACH '{metadata_db}' AS metadata (READ_ONLY)")
-            try:
-                conn.execute("CREATE TABLE dim_municipios AS SELECT * FROM metadata.dim_municipios")
-                parquet_manager.create_enriched_view(conn, f"{source_lower}_raw", source_lower)
-                console.print("[dim]Tabelas de dimensao carregadas de metadata.duckdb[/dim]")
-            except Exception:
-                conn.execute(f"CREATE VIEW {source_lower} AS SELECT * FROM {source_lower}_raw")
+        # Get parquet glob pattern from manager
+        parquet_glob = parquet_manager.get_glob_pattern()
 
-        # Get available tables/views
-        result = conn.execute("SHOW TABLES").fetchall()
-        tables = [row[0] for row in result]
+        # Check if DuckDB CLI is available
+        duckdb_cli_path = _check_duckdb_cli()
 
-        # Run interactive shell
-        _run_interactive_shell(conn, tables, console)
-        conn.close()
+        if duckdb_cli_path:
+            # Use native DuckDB CLI for better performance
+            # Build SQL init script with VIEW definitions
+            views_list = [f"{source_lower}_all"]
+            init_sql_parts = [
+                f"-- DataSUS Parquet VIEWs",
+                f"CREATE OR REPLACE VIEW {source_lower}_all AS SELECT * FROM read_parquet('{parquet_glob}', hive_partitioning=true);",
+            ]
+
+            if has_ibge:
+                views_list.append("ibge_locais")
+                views_list.append(source_lower)
+                init_sql_parts.append(f"CREATE OR REPLACE VIEW ibge_locais AS SELECT * FROM read_parquet('{ibge_parquet}');")
+                init_sql_parts.append(f"""CREATE OR REPLACE VIEW {source_lower} AS
+SELECT s.*, i.sigla_uf AS uf_res, i.nome_municipio AS municipio_res,
+       i.nome_regiao_geografica_imediata AS rg_imediata_res,
+       i.nome_regiao_geografica_intermediaria AS rg_intermediaria_res
+FROM {source_lower}_all s
+LEFT JOIN ibge_locais i ON s.munic_res = i.codigo_municipio_6_digitos;""")
+            else:
+                views_list.append(source_lower)
+                init_sql_parts.append(f"CREATE OR REPLACE VIEW {source_lower} AS SELECT * FROM {source_lower}_all;")
+
+            init_sql = "\n".join(init_sql_parts)
+            _run_duckdb_cli_parquet(init_sql, views_list, console)
+        else:
+            # Fallback to Python REPL
+            console.print("[dim]Dica: Para melhor performance e visualizacao, instale o DuckDB CLI:[/dim]")
+            console.print("[dim]      https://duckdb.org/docs/installation/[/dim]")
+            console.print()
+
+            # Create in-memory connection with VIEW
+            conn = duckdb.connect(":memory:")
+            parquet_manager.create_duckdb_view(conn, f"{source_lower}_all")
+
+            if has_ibge:
+                conn.execute(f"""
+                    CREATE OR REPLACE VIEW ibge_locais AS
+                    SELECT * FROM read_parquet('{ibge_parquet}')
+                """)
+                console.print("[dim]VIEW ibge_locais criada a partir de parquet/ibge/ibge_locais.parquet[/dim]")
+
+                # Create enriched VIEW with JOIN to ibge_locais
+                # Uses codigo_municipio_6_digitos for direct JOIN with munic_res
+                conn.execute(f"""
+                    CREATE OR REPLACE VIEW {source_lower} AS
+                    SELECT
+                        s.*,
+                        i.sigla_uf AS uf_res,
+                        i.nome_municipio AS municipio_res,
+                        i.nome_regiao_geografica_imediata AS rg_imediata_res,
+                        i.nome_regiao_geografica_intermediaria AS rg_intermediaria_res
+                    FROM {source_lower}_all s
+                    LEFT JOIN ibge_locais i
+                        ON s.munic_res = i.codigo_municipio_6_digitos
+                """)
+                console.print(f"[dim]VIEW {source_lower} criada com JOIN de ibge_locais (colunas uf_res, municipio_res, rg_imediata_res, rg_intermediaria_res)[/dim]")
+            else:
+                # No IBGE data, create simple VIEW alias
+                conn.execute(f"CREATE VIEW {source_lower} AS SELECT * FROM {source_lower}_all")
+                console.print("[dim]Dica: Execute 'datasus generate-ibge-data' para habilitar o JOIN com dados do IBGE[/dim]")
+
+            # Get available tables/views
+            result = conn.execute("SHOW TABLES").fetchall()
+            tables = [row[0] for row in result]
+
+            # Run interactive shell
+            _run_interactive_shell(conn, tables, console)
+            conn.close()
     else:
         # DuckDB mode: open file directly
         db_path = data_dir / f"{source_lower}.duckdb"
@@ -2044,6 +2153,70 @@ def db(
                 _run_interactive_shell(conn, tables, console)
             finally:
                 conn.close()
+
+
+@app.command(name="generate-ibge-data")
+def generate_ibge_data_cmd(
+    data_dir: Path = typer.Option(
+        None,
+        "--data-dir",
+        "-d",
+        help="Diretorio base para os dados",
+    ),
+) -> None:
+    """Gera arquivo Parquet com dados de municipios do IBGE.
+
+    Converte o arquivo Excel do IBGE (DTB 2024) para formato Parquet,
+    normalizando nomes de colunas (minusculas, sem acentos, espacos -> underline).
+
+    O arquivo sera salvo em: {data_dir}/parquet/ibge/ibge_locais.parquet
+
+    [bold]Exemplo:[/bold]
+        datasus generate-ibge-data -d ./data/datasus
+    """
+    # Validate required parameter
+    if data_dir is None:
+        console.print("[red bold]Erro: --data-dir (-d) e obrigatorio[/red bold]")
+        console.print()
+        console.print("[bold]Exemplo de uso:[/bold]")
+        console.print("  datasus generate-ibge-data -d ./data/datasus")
+        raise typer.Exit(1)
+
+    setup_logging("INFO")
+
+    # Define output path
+    output_path = data_dir / "parquet" / "ibge" / "ibge_locais.parquet"
+
+    console.print()
+    console.print("[bold cyan]Gerando Parquet do IBGE...[/bold cyan]")
+    console.print(f"  Entrada: arquivo Excel DTB 2024 (embutido no pacote)")
+    console.print(f"  Saida: {output_path}")
+    console.print()
+
+    try:
+        # Generate the parquet file
+        from datasus_etl.utils.ibge_loader import generate_ibge_parquet
+
+        result_path = generate_ibge_parquet(output_path)
+
+        # Get file stats
+        file_size = result_path.stat().st_size
+        size_str = f"{file_size / 1024:.1f} KB" if file_size < 1024 * 1024 else f"{file_size / (1024 * 1024):.1f} MB"
+
+        console.print(f"[bold green]{SYM_CHECK} Arquivo gerado com sucesso![/bold green]")
+        console.print(f"  Caminho: {result_path}")
+        console.print(f"  Tamanho: {size_str}")
+        console.print()
+        console.print("[dim]Dica: Use 'datasus db -d {data_dir}' para consultar os dados.[/dim]")
+
+    except FileNotFoundError as e:
+        console.print(f"[red bold]Erro: Arquivo Excel do IBGE nao encontrado[/red bold]")
+        console.print(f"  {e}")
+        raise typer.Exit(1)
+    except Exception as e:
+        console.print(f"[red bold]Erro ao gerar Parquet:[/red bold]")
+        console.print(f"  {e}")
+        raise typer.Exit(1)
 
 
 if __name__ == "__main__":
