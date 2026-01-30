@@ -331,7 +331,7 @@ def pipeline_cmd(
     table.add_row("Estados (UF)", uf or "todos")
     table.add_row("Diretorio", str(data_dir))
     table.add_row("Formato saida", "Parquet (Hive-partitioned)")
-    table.add_row("Saida", f"parquet/{source.lower()}/uf=*/")
+    table.add_row("Saida", f"datasus_db/{source.lower()}/uf=*/")
     table.add_row("Modo escrita", write_mode)
     table.add_row("Chunk size", f"{chunk_size:,}")
     table.add_row("Workers", f"{num_workers}")
@@ -713,15 +713,14 @@ def status(
 
     source_lower = source.lower()
 
-    # Check for Parquet storage first
-    parquet_dir = data_dir / "parquet" / source_lower
+    # Check for Parquet storage first (supports both datasus_db/ and legacy parquet/)
+    from datasus_etl.storage.parquet_manager import ParquetManager
+    parquet_manager = ParquetManager(data_dir, source_lower)
+    parquet_dir = parquet_manager.parquet_dir
     db_path = data_dir / f"{source_lower}.duckdb"
 
     if parquet_dir.exists() and any(parquet_dir.rglob("*.parquet")):
         # Parquet mode: show Parquet storage stats
-        from datasus_etl.storage.parquet_manager import ParquetManager
-
-        parquet_manager = ParquetManager(data_dir, source_lower)
         stats = parquet_manager.get_storage_stats()
         processed_files = parquet_manager.get_processed_files()
 
@@ -1244,17 +1243,22 @@ def _discover_subsystems(data_dir: Path) -> list[tuple[str, str]]:
         subsystems.append((db_file.stem, "duckdb"))
 
     # Check for Parquet directories
-    # Support both data_dir/parquet/ and data_dir itself if it's named "parquet"
-    if data_dir.name == "parquet":
+    # Support datasus_db/, legacy parquet/, and data_dir itself if named accordingly
+    parquet_dirs_to_check = []
+    if data_dir.name in ("datasus_db", "parquet"):
         # User passed the parquet directory directly
-        parquet_dir = data_dir
+        parquet_dirs_to_check.append(data_dir)
     else:
-        parquet_dir = data_dir / "parquet"
+        # Check both new and legacy folder names
+        if (data_dir / "datasus_db").exists():
+            parquet_dirs_to_check.append(data_dir / "datasus_db")
+        if (data_dir / "parquet").exists():
+            parquet_dirs_to_check.append(data_dir / "parquet")
 
-    if parquet_dir.exists():
+    for parquet_dir in parquet_dirs_to_check:
         for subsystem_dir in parquet_dir.iterdir():
             if subsystem_dir.is_dir() and any(subsystem_dir.rglob("*.parquet")):
-                # Only add if not already found as duckdb
+                # Only add if not already found as duckdb or parquet
                 subsystem_name = subsystem_dir.name
                 if not any(s[0] == subsystem_name for s in subsystems):
                     subsystems.append((subsystem_name, "parquet"))
@@ -2008,11 +2012,10 @@ def db(
                     size_mb = db_file.stat().st_size / (1024 * 1024)
                     console.print(f"  - [green]{db_name}[/green] (DuckDB, {size_mb:.1f} MB)")
                 else:
-                    # Support both data_dir/parquet/db_name and data_dir/db_name if data_dir is parquet folder
-                    if data_dir.name == "parquet":
-                        parquet_subdir = data_dir / db_name
-                    else:
-                        parquet_subdir = data_dir / "parquet" / db_name
+                    # Use ParquetManager to get the correct path (supports both datasus_db/ and legacy parquet/)
+                    from datasus_etl.storage.parquet_manager import ParquetManager
+                    pm = ParquetManager(data_dir, db_name)
+                    parquet_subdir = pm.parquet_dir
                     total_size = sum(f.stat().st_size for f in parquet_subdir.rglob("*.parquet"))
                     size_mb = total_size / (1024 * 1024)
                     num_files = len(list(parquet_subdir.rglob("*.parquet")))
@@ -2041,11 +2044,9 @@ def db(
         console.print()
 
         # Determine paths for VIEWs
-        # Support both data_dir/parquet/ibge and data_dir/ibge if data_dir is the parquet folder
-        if data_dir.name == "parquet":
-            ibge_parquet = data_dir / "ibge" / "ibge_locais.parquet"
-        else:
-            ibge_parquet = data_dir / "parquet" / "ibge" / "ibge_locais.parquet"
+        # Use ParquetManager for ibge to get the correct path
+        ibge_manager = ParquetManager(data_dir, "ibge")
+        ibge_parquet = ibge_manager.parquet_dir / "ibge_locais.parquet"
         has_ibge = ibge_parquet.exists()
 
         # Get parquet glob pattern from manager
@@ -2169,7 +2170,8 @@ def generate_ibge_data_cmd(
     Converte o arquivo Excel do IBGE (DTB 2024) para formato Parquet,
     normalizando nomes de colunas (minusculas, sem acentos, espacos -> underline).
 
-    O arquivo sera salvo em: {data_dir}/parquet/ibge/ibge_locais.parquet
+    O arquivo sera salvo em: {data_dir}/datasus_db/ibge/ibge_locais.parquet
+    (ou {data_dir}/parquet/ibge/ se a pasta parquet/ ja existir)
 
     [bold]Exemplo:[/bold]
         datasus generate-ibge-data -d ./data/datasus
@@ -2184,8 +2186,10 @@ def generate_ibge_data_cmd(
 
     setup_logging("INFO")
 
-    # Define output path
-    output_path = data_dir / "parquet" / "ibge" / "ibge_locais.parquet"
+    # Define output path using ParquetManager for path resolution
+    from datasus_etl.storage.parquet_manager import ParquetManager
+    ibge_manager = ParquetManager(data_dir, "ibge")
+    output_path = ibge_manager.parquet_dir / "ibge_locais.parquet"
 
     console.print()
     console.print("[bold cyan]Gerando Parquet do IBGE...[/bold cyan]")

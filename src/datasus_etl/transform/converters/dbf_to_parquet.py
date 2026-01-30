@@ -2,7 +2,7 @@
 
 This module converts DBF files to Parquet format using DuckDB in-memory
 for transformations, enabling partitioned Hive-style storage:
-- Structure: {base_dir}/parquet/{subsystem}/uf={UF}/{filename}.parquet
+- Structure: {base_dir}/datasus_db/{subsystem}/uf={UF}/{filename}.parquet
 - Memory efficient: releases resources after each file conversion
 - Parallel processing: each worker uses its own DuckDB connection
 """
@@ -46,7 +46,7 @@ class DbfToParquetConverter:
         ... )
         >>> result = converter.convert(
         ...     Path("data/sihsus/dbf/RDSP2401.dbf"),
-        ...     Path("data/parquet/sihsus"),
+        ...     Path("data/datasus_db/sihsus"),
         ... )
         >>> print(f"Converted {result.rows} rows to {result.output_file}")
     """

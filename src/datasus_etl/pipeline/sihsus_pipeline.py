@@ -345,7 +345,7 @@ class DbfToParquetStage(Stage):
     """Stage for converting DBF files to partitioned Parquet format.
 
     Converts DBF files to Hive-style partitioned Parquet files:
-    - Structure: {base_dir}/parquet/{subsystem}/uf={UF}/{filename}.parquet
+    - Structure: {base_dir}/datasus_db/{subsystem}/uf={UF}/{filename}.parquet
     - Uses ProcessPoolExecutor for true parallel processing
     - Each worker has its own DuckDB in-memory connection
     - Tracks processed files via manifest to enable incremental updates

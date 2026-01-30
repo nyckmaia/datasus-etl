@@ -1,7 +1,7 @@
 """Parquet storage manager for partitioned Hive-style data.
 
 Manages partitioned Parquet files with Hive-style structure:
-- Structure: {base_dir}/parquet/{subsystem}/uf={UF}/{filename}.parquet
+- Structure: {base_dir}/datasus_db/{subsystem}/uf={UF}/{filename}.parquet
 - Manifest tracking: _manifest.json for processed files
 - DuckDB integration: creates VIEWs from Parquet glob patterns
 """
@@ -49,48 +49,168 @@ class ParquetManager:
         """Initialize the Parquet manager.
 
         Args:
-            base_dir: Base directory containing parquet/ folder, or the parquet folder itself
+            base_dir: Base directory containing datasus_db/ folder, or the datasus_db folder itself
             subsystem: DataSUS subsystem name (sihsus, sim, etc.)
         """
         self.base_dir = Path(base_dir)
         self.subsystem = subsystem.lower()
-        # Support both base_dir/parquet/subsystem and base_dir/subsystem if base_dir is named "parquet"
-        if self.base_dir.name == "parquet":
+        # Support both base_dir/datasus_db/subsystem and base_dir/subsystem if base_dir is named "datasus_db"
+        # Also support legacy "parquet" folder name for backwards compatibility
+        if self.base_dir.name in ("datasus_db", "parquet"):
             self.parquet_dir = self.base_dir / self.subsystem
-        else:
+        elif (self.base_dir / "datasus_db").exists():
+            self.parquet_dir = self.base_dir / "datasus_db" / self.subsystem
+        elif (self.base_dir / "parquet").exists():
+            # Backwards compatibility: use legacy "parquet" folder if it exists
             self.parquet_dir = self.base_dir / "parquet" / self.subsystem
+        else:
+            # Default to new "datasus_db" folder
+            self.parquet_dir = self.base_dir / "datasus_db" / self.subsystem
         self.manifest_path = self.parquet_dir / self.MANIFEST_FILENAME
         self.logger = logging.getLogger(__name__)
 
         # Ensure directory exists
         self.parquet_dir.mkdir(parents=True, exist_ok=True)
 
+    @staticmethod
+    def _extract_uf_from_filename(filename: str) -> str:
+        """Extract UF code from filename in RDUFAAMM.dbc format.
+
+        Args:
+            filename: Source file name (e.g., "RDSP2401.dbc")
+
+        Returns:
+            UF code (e.g., "SP") or "UNKNOWN" if cannot parse
+        """
+        name = filename.upper().replace('.DBC', '')
+        if len(name) >= 4:
+            return name[2:4]
+        return "UNKNOWN"
+
+    @staticmethod
+    def _sort_files_by_date(files: list[str]) -> list[str]:
+        """Sort files by date (oldest to newest).
+
+        Files are in RDUFAAMM.dbc format where AA is year and MM is month.
+
+        Args:
+            files: List of filenames
+
+        Returns:
+            Sorted list of filenames
+        """
+        def parse_date(filename: str) -> tuple[int, int]:
+            name = filename.upper().replace('.DBC', '')
+            if len(name) >= 8:
+                try:
+                    year = int(name[4:6])
+                    month = int(name[6:8])
+                    # Convert 2-digit year: 92-99 -> 1992-1999, 00-91 -> 2000-2091
+                    full_year = 1900 + year if year >= 92 else 2000 + year
+                    return (full_year, month)
+                except ValueError:
+                    pass
+            return (9999, 99)
+
+        return sorted(files, key=parse_date)
+
     def get_processed_files(self) -> set[str]:
         """Get set of source files that have been processed.
+
+        Handles both old format (flat list) and new format (dict by UF).
 
         Returns:
             Set of source_file values (e.g., {"RDSP2401.dbc", "RDSP2402.dbc"})
         """
         manifest = self._load_manifest()
-        return set(manifest.get("processed_files", []))
+        processed = manifest.get("processed_files", {})
+
+        # Handle old format (flat list) for backwards compatibility
+        if isinstance(processed, list):
+            return set(processed)
+
+        # New format: dict with UF keys
+        all_files = set()
+        for uf_files in processed.values():
+            all_files.update(uf_files)
+        return all_files
+
+    def get_processed_files_by_uf(self) -> dict[str, list[str]]:
+        """Get processed files organized by UF.
+
+        Returns:
+            Dict mapping UF codes to list of processed files for that UF
+        """
+        manifest = self._load_manifest()
+        processed = manifest.get("processed_files", {})
+
+        # Handle old format (flat list) - convert to dict
+        if isinstance(processed, list):
+            result: dict[str, list[str]] = {}
+            for filename in processed:
+                uf = self._extract_uf_from_filename(filename)
+                if uf not in result:
+                    result[uf] = []
+                result[uf].append(filename)
+            # Sort files within each UF
+            for uf in result:
+                result[uf] = self._sort_files_by_date(result[uf])
+            return result
+
+        return processed
 
     def mark_processed(self, source_file: str) -> None:
         """Mark a source file as processed in the manifest.
+
+        Files are organized by UF and sorted by date within each UF.
 
         Args:
             source_file: Source file name (e.g., "RDSP2401.dbc")
         """
         manifest = self._load_manifest()
+        uf = self._extract_uf_from_filename(source_file)
 
-        if "processed_files" not in manifest:
-            manifest["processed_files"] = []
+        # Ensure processed_files is a dict (migrate from old format if needed)
+        processed = manifest.get("processed_files", {})
+        if isinstance(processed, list):
+            # Migrate from old format
+            processed = self._migrate_to_uf_format(processed)
 
-        if source_file not in manifest["processed_files"]:
-            manifest["processed_files"].append(source_file)
+        if uf not in processed:
+            processed[uf] = []
+
+        if source_file not in processed[uf]:
+            processed[uf].append(source_file)
+            # Keep sorted by date
+            processed[uf] = self._sort_files_by_date(processed[uf])
+            manifest["processed_files"] = processed
             manifest["last_updated"] = datetime.now().isoformat()
+            self._save_manifest(manifest)
 
-        self._save_manifest(manifest)
-        self.logger.debug(f"Marked as processed: {source_file}")
+        self.logger.debug(f"Marked as processed: {source_file} (UF: {uf})")
+
+    def _migrate_to_uf_format(self, flat_list: list[str]) -> dict[str, list[str]]:
+        """Migrate old flat list format to new UF-based dict format.
+
+        Args:
+            flat_list: Old format list of filenames
+
+        Returns:
+            New format dict with UF keys
+        """
+        result: dict[str, list[str]] = {}
+        for filename in flat_list:
+            uf = self._extract_uf_from_filename(filename)
+            if uf not in result:
+                result[uf] = []
+            result[uf].append(filename)
+
+        # Sort files within each UF and sort UF keys
+        sorted_result: dict[str, list[str]] = {}
+        for uf in sorted(result.keys()):
+            sorted_result[uf] = self._sort_files_by_date(result[uf])
+
+        return sorted_result
 
     def remove_processed(self, source_file: str) -> None:
         """Remove a source file from the processed list.
@@ -101,18 +221,36 @@ class ParquetManager:
             source_file: Source file name to remove
         """
         manifest = self._load_manifest()
+        uf = self._extract_uf_from_filename(source_file)
 
-        if "processed_files" in manifest and source_file in manifest["processed_files"]:
-            manifest["processed_files"].remove(source_file)
+        processed = manifest.get("processed_files", {})
+
+        # Handle old format
+        if isinstance(processed, list):
+            if source_file in processed:
+                processed.remove(source_file)
+                manifest["processed_files"] = processed
+                manifest["last_updated"] = datetime.now().isoformat()
+                self._save_manifest(manifest)
+                self.logger.debug(f"Removed from processed: {source_file}")
+            return
+
+        # New format
+        if uf in processed and source_file in processed[uf]:
+            processed[uf].remove(source_file)
+            # Remove UF key if empty
+            if not processed[uf]:
+                del processed[uf]
+            manifest["processed_files"] = processed
             manifest["last_updated"] = datetime.now().isoformat()
             self._save_manifest(manifest)
-            self.logger.debug(f"Removed from processed: {source_file}")
+            self.logger.debug(f"Removed from processed: {source_file} (UF: {uf})")
 
     def clear_manifest(self) -> None:
         """Clear all processed files from manifest."""
         manifest = {
             "subsystem": self.subsystem,
-            "processed_files": [],
+            "processed_files": {},
             "last_updated": datetime.now().isoformat(),
         }
         self._save_manifest(manifest)
@@ -303,8 +441,8 @@ class ParquetManager:
                     return json.load(f)
             except (json.JSONDecodeError, IOError) as e:
                 self.logger.warning(f"Failed to load manifest: {e}")
-                return {"subsystem": self.subsystem, "processed_files": []}
-        return {"subsystem": self.subsystem, "processed_files": []}
+                return {"subsystem": self.subsystem, "processed_files": {}}
+        return {"subsystem": self.subsystem, "processed_files": {}}
 
     def _save_manifest(self, manifest: dict) -> None:
         """Save manifest to disk."""

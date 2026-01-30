@@ -1,6 +1,6 @@
 """Incremental update support for DataSUS-ETL datasets.
 
-This module provides functionality to update existing DuckDB databases
+This module provides functionality to update existing databases (Parquet or DuckDB)
 by processing only new files from the FTP server, avoiding reprocessing
 of already-imported data.
 """
@@ -14,10 +14,17 @@ from datasus_etl.storage.duckdb_query_engine import DuckDBQueryEngine
 
 
 class IncrementalUpdater:
-    """Manages incremental updates for a DuckDB database.
+    """Manages incremental updates for a database.
 
-    Compares source files in existing DuckDB database with files available
-    on the FTP server to determine which files need to be processed.
+    Compares source files in existing database (Parquet or DuckDB) with files
+    available on the FTP server to determine which files need to be processed.
+
+    For Parquet mode:
+    1. First tries _manifest.json (fast)
+    2. Falls back to querying parquet files directly (robust)
+
+    For legacy DuckDB mode:
+    - Queries the .duckdb file directly
 
     Example:
         >>> updater = IncrementalUpdater(config)
@@ -47,7 +54,13 @@ class IncrementalUpdater:
         self._available_files: set[str] = set()
 
     def get_processed_files(self) -> set[str]:
-        """Get list of files already in DuckDB database.
+        """Get list of files already processed.
+
+        For parquet mode:
+        1. Try _manifest.json first (fast)
+        2. Fallback to querying parquet files directly (robust)
+
+        For legacy duckdb mode: query the .duckdb file
 
         Returns:
             Set of source_file values from existing database
@@ -55,6 +68,62 @@ class IncrementalUpdater:
         if self._processed_files:
             return self._processed_files
 
+        # Parquet mode: hybrid approach
+        if self.config.is_parquet_mode():
+            return self._get_processed_files_parquet()
+
+        # Legacy DuckDB mode
+        return self._get_processed_files_duckdb()
+
+    def _get_processed_files_parquet(self) -> set[str]:
+        """Get processed files for parquet storage mode."""
+        import duckdb
+
+        from datasus_etl.storage.parquet_manager import ParquetManager
+
+        manager = ParquetManager(
+            self.config.storage.database_dir,
+            self.config.subsystem
+        )
+
+        # Strategy 1: Try manifest first (fast)
+        if manager.manifest_path.exists():
+            manifest_files = manager.get_processed_files()
+            if manifest_files:
+                self.logger.info(f"Found {len(manifest_files)} files in manifest")
+                self._processed_files = manifest_files
+                return self._processed_files
+
+        # Strategy 2: Fallback to querying parquet files directly
+        parquet_dir = self.config.get_parquet_dir()
+        if not parquet_dir.exists() or not any(parquet_dir.rglob("*.parquet")):
+            self.logger.info("No parquet files found - full import needed")
+            return set()
+
+        self.logger.info("Manifest empty/missing, querying parquet files directly...")
+        glob_pattern = str(parquet_dir / "uf=*" / "*.parquet")
+
+        try:
+            conn = duckdb.connect(":memory:")
+            result = conn.execute(f"""
+                SELECT DISTINCT source_file
+                FROM read_parquet('{glob_pattern}',
+                                 union_by_name=true,
+                                 hive_partitioning=true)
+                WHERE source_file IS NOT NULL
+            """).fetchall()
+            conn.close()
+
+            self._processed_files = {row[0] for row in result}
+            self.logger.info(f"Found {len(self._processed_files)} files from parquet query")
+            return self._processed_files
+
+        except Exception as e:
+            self.logger.error(f"Failed to query parquet files: {e}")
+            return set()
+
+    def _get_processed_files_duckdb(self) -> set[str]:
+        """Get processed files for legacy DuckDB storage mode."""
         if not self.database_path.exists():
             self.logger.info("Database doesn't exist yet - full import needed")
             return set()
