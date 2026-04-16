@@ -251,18 +251,15 @@ class PipelineConfig(BaseModel):
     def get_parquet_dir(self) -> Path:
         """Get the path to the Parquet directory for this subsystem.
 
-        Supports both new 'datasus_db' folder and legacy 'parquet' folder for
-        backwards compatibility.
+        Delegates to :func:`datasus_etl.storage.paths.resolve_parquet_dir` so
+        there is a single rule shared with :class:`ParquetManager`.
 
         Returns:
-            Path to {database_dir}/datasus_db/{subsystem}/ (or legacy parquet/ if it exists)
+            Path to the parquet directory for ``self.subsystem``.
         """
-        # Check for legacy "parquet" folder first for backwards compatibility
-        legacy_path = self.storage.database_dir / "parquet" / self.subsystem
-        if legacy_path.exists():
-            return legacy_path
-        # Default to new "datasus_db" folder
-        return self.storage.database_dir / "datasus_db" / self.subsystem
+        from .storage.paths import resolve_parquet_dir
+
+        return resolve_parquet_dir(self.storage.database_dir, self.subsystem)
 
     def is_parquet_mode(self) -> bool:
         """Check if pipeline is configured for Parquet output.

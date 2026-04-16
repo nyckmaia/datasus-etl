@@ -57,12 +57,48 @@ from datasus_etl.download.ftp_downloader import FTPDownloader
 from datasus_etl.exceptions import PipelineCancelled
 from datasus_etl.pipeline.sihsus_pipeline import SihsusPipeline
 from datasus_etl.pipeline.sim_pipeline import SIMPipeline
+from datasus_etl.storage.migration import detect_legacy_layout, migrate_legacy_layout
 from datasus_etl.transform.converters.dbc_to_dbf import DbcToDbfConverter
 
 
 # Global reference to current pipeline context for signal handling
 _current_context = None
 _original_sigint_handler = None
+
+
+def _maybe_migrate_legacy(data_dir: Path, assume_yes: bool = False) -> None:
+    """Detect the legacy double-nested ``datasus_db/datasus_db/`` layout and offer to migrate.
+
+    Called at the top of every command that accepts ``--data-dir``. Does nothing
+    if the legacy layout is not present. With ``--yes`` the migration runs
+    without prompting.
+    """
+    legacy = detect_legacy_layout(data_dir)
+    if legacy is None:
+        return
+
+    console.print(
+        f"\n[yellow]Legacy double-nested storage detected:[/yellow] {legacy}"
+    )
+    dry = migrate_legacy_layout(data_dir, dry_run=True)
+    console.print(
+        f"Would move {dry.files_moved} file(s) across "
+        f"{len(dry.subsystems_migrated)} subsystem(s)."
+    )
+    if dry.files_moved == 0:
+        return
+
+    if not assume_yes and not typer.confirm("Migrate now?", default=True):
+        console.print("[dim]Skipped. Re-run with --yes to migrate automatically.[/dim]\n")
+        return
+
+    report = migrate_legacy_layout(data_dir, dry_run=False)
+    conflict_note = (
+        f" (conflicts skipped: {len(report.conflicts)})" if report.conflicts else ""
+    )
+    console.print(
+        f"[green]{SYM_CHECK} Migrated {report.files_moved} file(s){conflict_note}.[/green]\n"
+    )
 
 
 def _handle_sigint(signum, frame):
@@ -303,6 +339,8 @@ def pipeline_cmd(
         raise typer.Exit(1)
 
     setup_logging("DEBUG" if verbose else "INFO")
+
+    _maybe_migrate_legacy(data_dir, assume_yes=yes)
 
     # Validate source
     valid_sources = ["sihsus", "sim", "siasus"]
@@ -552,6 +590,8 @@ def update(
 
     setup_logging("DEBUG" if verbose else "INFO")
 
+    _maybe_migrate_legacy(data_dir, assume_yes=yes)
+
     from datasus_etl.storage.incremental_updater import IncrementalUpdater
 
     # Parse UF list
@@ -706,6 +746,8 @@ def status(
         raise typer.Exit(1)
 
     setup_logging("WARNING")
+
+    _maybe_migrate_legacy(data_dir, assume_yes=False)
 
     console.print()
     console.print("[bold cyan]DataSUS - Status do Banco[/bold cyan]")
@@ -1109,40 +1151,67 @@ def convert(
 
 @app.command()
 def ui(
+    data_dir: Optional[Path] = typer.Option(
+        None,
+        "--data-dir",
+        "-d",
+        help="Base directory for DataSUS storage (where datasus_db/ lives).",
+    ),
     port: int = typer.Option(
-        8501,
+        8787,
         "--port",
         "-p",
-        help="Porta do servidor web",
+        help="Port for the web server.",
+    ),
+    host: str = typer.Option(
+        "127.0.0.1",
+        "--host",
+        help="Bind address. Default is localhost-only; use 0.0.0.0 to expose on the LAN.",
+    ),
+    open_browser: bool = typer.Option(
+        True,
+        "--open/--no-open",
+        help="Open the default browser after startup.",
+    ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Skip confirmation prompts (e.g. auto-approve legacy data migration).",
     ),
 ) -> None:
-    """Open the web interface (Streamlit).
+    """Launch the DataSUS ETL web interface.
 
-    [bold]Example:[/bold]
+    [bold]Examples:[/bold]
+
         datasus ui
-        datasus ui --port 8080
+        datasus ui --data-dir /media/Dados/dados
+        datasus ui --port 8080 --no-open
     """
-    import subprocess
-    import sys
+    import threading
+    import webbrowser
 
-    # Get path to app.py
-    app_path = Path(__file__).parent / "web" / "app.py"
+    import uvicorn
 
-    if not app_path.exists():
-        console.print(f"[red]Erro: arquivo nao encontrado: {app_path}[/red]")
-        raise typer.Exit(1)
+    if data_dir is not None:
+        _maybe_migrate_legacy(data_dir, assume_yes=yes)
+        os.environ["DATASUS_DATA_DIR"] = str(data_dir.expanduser().resolve())
 
-    console.print("\n[bold cyan]DataSUS - Interface Web[/bold cyan]")
-    console.print(f"Abrindo em http://localhost:{port}")
-    console.print("[dim]Pressione Ctrl+C para encerrar[/dim]\n")
+    url = f"http://{host}:{port}"
+    console.print("\n[bold cyan]DataSUS ETL — Web Interface[/bold cyan]")
+    console.print(f"{SYM_ARROW} {url}")
+    console.print("[dim]Press Ctrl+C to stop[/dim]\n")
 
-    # Run streamlit
-    subprocess.run([
-        sys.executable, "-m", "streamlit", "run",
-        str(app_path),
-        "--server.port", str(port),
-        "--server.headless", "false",
-    ])
+    if open_browser:
+        threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+
+    uvicorn.run(
+        "datasus_etl.web.server:create_app",
+        host=host,
+        port=port,
+        factory=True,
+        log_level="info",
+    )
 
 
 def _check_duckdb_cli() -> Optional[str]:

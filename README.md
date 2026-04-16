@@ -18,7 +18,7 @@ Suporta multiplos subsistemas:
 - **Transformacoes SQL** otimizadas em DuckDB
 - **Enriquecimento com dados IBGE** integrado (5571 municipios)
 - **Armazenamento em Parquet** particionado por UF
-- **Interface Web** (Streamlit) para usuarios nao-tecnicos
+- **Interface Web** (FastAPI + React) para usuarios nao-tecnicos
 - **CLI completa** para automacao
 - **Python API** para integracao em pipelines
 - **Shell interativo DuckDB** para consultas SQL
@@ -162,18 +162,28 @@ print(f"Total: {engine.count():,} registros")
 engine.close()
 ```
 
-### 4. Interface Web (Streamlit)
+### 4. Interface Web (FastAPI + React)
 
 ```bash
-datasus ui
+datasus ui                                  # abre http://localhost:8787
+datasus ui --data-dir /media/Dados/dados    # define o diretorio base
+datasus ui --port 8080 --no-open            # porta customizada, sem abrir browser
 ```
 
-Abre http://localhost:8501 com:
+A interface e um SPA em ingles, servido pelo proprio pacote Python (sem
+dependencias externas para o usuario final). Paginas:
 
-- **Status**: Ver estatisticas do banco de dados
-- **Download**: Baixar e processar novos dados
-- **Consultar**: Executar queries SQL interativas
-- **Exportar**: Exportar dados para CSV/Excel
+- **Dashboard**: estatisticas agregadas, mapa de cobertura por UF e serie
+  temporal de volume de dados.
+- **Download**: wizard em 4 passos (subsistema -> escopo -> estimativa ->
+  execucao com progresso ao vivo via SSE).
+- **Query**: editor SQL (Monaco), templates pre-definidos e dicionario de
+  colunas. Exportacao para CSV ou Excel.
+- **Settings**: diretorio de dados persistido em
+  `~/.config/datasus-etl/config.toml`.
+
+Desenvolvedores que quiserem trabalhar no frontend: veja `web-ui/README.md`
+(requer [Bun](https://bun.sh)).
 
 ## Estrutura de Dados
 
@@ -307,7 +317,8 @@ pytest tests/integration/
 - **DuckDB**: Banco analitico SQL
 - **Polars**: DataFrames de alta performance
 - **PyArrow**: Formato Parquet
-- **Streamlit**: Interface web
+- **FastAPI + uvicorn**: API HTTP + servidor ASGI
+- **React + Vite + shadcn/ui**: interface web (bundled com o pacote)
 - **Typer**: CLI framework
 
 ## Licenca

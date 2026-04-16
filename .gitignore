@@ -17,6 +17,14 @@ __pycache__/
 *.duckdb
 data/
 
+# Web UI (generated/build artifacts)
+web-ui/node_modules/
+web-ui/dist/
+web-ui/playwright-report/
+web-ui/test-results/
+web-ui/tests/.tmp-data/
+src/datasus_etl/web/static/
+
 # Distribution / packaging
 .Python
 build/

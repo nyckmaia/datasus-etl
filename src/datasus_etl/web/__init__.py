@@ -1,17 +1,16 @@
-"""Web interface module for DataSUS ETL (Streamlit-based).
+"""Web interface module for DataSUS ETL.
 
-Provides a user-friendly web interface for health researchers:
-- Downloading and processing DataSUS data with progress tracking
-- Querying datasets with SQL templates for common analyses
-- Visualizing data statistics with Plotly charts
-- Exporting data to CSV/Excel with size estimation
+Exposes a FastAPI app that serves a React SPA plus a JSON API. Launch with
+``datasus ui`` or directly via::
 
-Run with: streamlit run src/datasus_etl/web/app.py
-Or:       datasus ui
+    uvicorn datasus_etl.web.server:create_app --factory --port 8787
+
+The legacy Streamlit UI has been removed — its SQL templates and data
+dictionary live on in :mod:`datasus_etl.web.templates` and
+:mod:`datasus_etl.web.dictionary`, which are consumed by the API routes.
 """
 
-from datasus_etl.web.app import main
-from datasus_etl.web.templates import get_templates
 from datasus_etl.web.dictionary import get_column_descriptions
+from datasus_etl.web.templates import get_templates
 
-__all__ = ["main", "get_templates", "get_column_descriptions"]
+__all__ = ["get_templates", "get_column_descriptions"]

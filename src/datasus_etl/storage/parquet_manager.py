@@ -48,24 +48,20 @@ class ParquetManager:
     def __init__(self, base_dir: Path, subsystem: str) -> None:
         """Initialize the Parquet manager.
 
+        Path resolution is delegated to
+        :func:`datasus_etl.storage.paths.resolve_parquet_dir` so the result
+        matches :meth:`PipelineConfig.get_parquet_dir` exactly.
+
         Args:
-            base_dir: Base directory containing datasus_db/ folder, or the datasus_db folder itself
-            subsystem: DataSUS subsystem name (sihsus, sim, etc.)
+            base_dir: The user's configured data directory
+                (e.g. what ``--data-dir`` points at).
+            subsystem: DataSUS subsystem name (``sihsus``, ``sim``, etc.).
         """
+        from .paths import resolve_parquet_dir
+
         self.base_dir = Path(base_dir)
         self.subsystem = subsystem.lower()
-        # Support both base_dir/datasus_db/subsystem and base_dir/subsystem if base_dir is named "datasus_db"
-        # Also support legacy "parquet" folder name for backwards compatibility
-        if self.base_dir.name in ("datasus_db", "parquet"):
-            self.parquet_dir = self.base_dir / self.subsystem
-        elif (self.base_dir / "datasus_db").exists():
-            self.parquet_dir = self.base_dir / "datasus_db" / self.subsystem
-        elif (self.base_dir / "parquet").exists():
-            # Backwards compatibility: use legacy "parquet" folder if it exists
-            self.parquet_dir = self.base_dir / "parquet" / self.subsystem
-        else:
-            # Default to new "datasus_db" folder
-            self.parquet_dir = self.base_dir / "datasus_db" / self.subsystem
+        self.parquet_dir = resolve_parquet_dir(self.base_dir, self.subsystem)
         self.manifest_path = self.parquet_dir / self.MANIFEST_FILENAME
         self.logger = logging.getLogger(__name__)
 
