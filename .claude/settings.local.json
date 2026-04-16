@@ -38,7 +38,9 @@
       "Bash(pip uninstall:*)",
       "Bash(grep:*)",
       "Bash(where:*)",
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "Bash(git reset *)",
+      "Bash(rm src/datasus_etl/web/app.py)"
     ]
   }
 }

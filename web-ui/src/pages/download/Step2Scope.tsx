@@ -1,12 +1,22 @@
 import * as React from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { ArrowLeft, ArrowRight, Info } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { ALL_UFS, BrazilMap } from "@/components/BrazilMap";
+import { useSubsystemDetail } from "@/hooks/useStats";
+import { cn } from "@/lib/utils";
 import { useWizard } from "../DownloadWizard";
 
 function monthToIso(month: string): string {
@@ -24,6 +34,19 @@ function isoToMonth(iso: string): string {
 export function Step2ScopePage() {
   const { state, update } = useWizard();
   const navigate = useNavigate();
+
+  const detail = useSubsystemDetail(state.subsystem);
+  const perUfByUf = React.useMemo(() => {
+    const map = new Map<string, { first: string | null; last: string | null; files: number }>();
+    for (const row of detail.data?.per_uf ?? []) {
+      map.set(row.uf, {
+        first: row.first_period,
+        last: row.last_period,
+        files: row.files,
+      });
+    }
+    return map;
+  }, [detail.data]);
 
   const selected = React.useMemo(() => new Set(state.ufs), [state.ufs]);
 
@@ -61,15 +84,17 @@ export function Step2ScopePage() {
             <Input
               id="start_date"
               type="month"
+              lang="en"
               value={startMonth}
               onChange={(e) => update({ start_date: monthToIso(e.target.value) })}
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="end_date">End month (optional)</Label>
+            <Label htmlFor="end_date">End month</Label>
             <Input
               id="end_date"
               type="month"
+              lang="en"
               value={endMonth}
               onChange={(e) => update({ end_date: monthToIso(e.target.value) })}
             />
@@ -98,6 +123,70 @@ export function Step2ScopePage() {
             </div>
           </div>
           <BrazilMap selected={selected} onToggleUf={toggleUf} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="p-5">
+          <div className="mb-3 flex items-center gap-2">
+            <div className="font-medium">Existing data per UF</div>
+            <div className="text-xs text-muted-foreground">
+              {detail.isLoading
+                ? "Loading…"
+                : detail.isError
+                  ? "Unable to load"
+                  : perUfByUf.size === 0
+                    ? "No data downloaded yet for this subsystem."
+                    : `${perUfByUf.size} of ${ALL_UFS.length} UFs with data — click a row to toggle selection.`}
+            </div>
+          </div>
+
+          {perUfByUf.size === 0 && !detail.isLoading && !detail.isError ? (
+            <div className="flex items-start gap-2 rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+              <Info className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>
+                Nothing is downloaded for this subsystem yet. Pick a start month and UFs to
+                fetch the full scope.
+              </span>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-20">UF</TableHead>
+                  <TableHead>Start</TableHead>
+                  <TableHead>End</TableHead>
+                  <TableHead className="text-right">Files</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {[...ALL_UFS].map((uf) => {
+                  const row = perUfByUf.get(uf);
+                  const hasData = row !== undefined;
+                  const isSelected = selected.has(uf);
+                  return (
+                    <TableRow
+                      key={uf}
+                      onClick={() => toggleUf(uf)}
+                      className={cn(
+                        "cursor-pointer",
+                        isSelected && "bg-secondary/60",
+                        !hasData && "text-muted-foreground",
+                      )}
+                      data-state={isSelected ? "selected" : undefined}
+                    >
+                      <TableCell className="font-mono font-medium">{uf}</TableCell>
+                      <TableCell>{row?.first ?? "—"}</TableCell>
+                      <TableCell>{row?.last ?? "—"}</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {hasData ? row.files.toLocaleString() : "0"}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
 

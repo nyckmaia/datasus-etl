@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from datasus_etl import __version__
 from datasus_etl.datasets.base import DatasetRegistry
+from datasus_etl.storage.paths import resolve_storage_root
 from datasus_etl.web import user_config
 
 router = APIRouter()
@@ -85,7 +86,7 @@ async def get_settings(request: Request) -> SettingsResponse:
     resolved: str | None = None
     if data_dir is not None:
         free, total = _disk_usage(data_dir)
-        resolved = str((data_dir / "datasus_db").resolve()) if data_dir.exists() else None
+        resolved = str(resolve_storage_root(data_dir).resolve()) if data_dir.exists() else None
     return SettingsResponse(
         data_dir=str(data_dir) if data_dir else None,
         data_dir_resolved=resolved,

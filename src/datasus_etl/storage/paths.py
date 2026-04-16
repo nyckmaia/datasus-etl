@@ -50,3 +50,20 @@ def resolve_parquet_dir(base_dir: str | Path, subsystem: str) -> Path:
         return legacy
 
     return base / DATA_ROOT_FOLDER / sub
+
+
+def resolve_storage_root(base_dir: str | Path) -> Path:
+    """Return the directory that contains per-subsystem parquet folders.
+
+    Mirrors :func:`resolve_parquet_dir` but without appending a subsystem, so
+    callers can display the "storage root" (the folder where ``sihsus/``,
+    ``sim/``, etc. live) without duplicating the ``datasus_db/`` segment when
+    the user has already pointed at it directly.
+    """
+    base = Path(base_dir)
+    if base.name.lower() in (DATA_ROOT_FOLDER, LEGACY_FOLDER):
+        return base
+    legacy = base / LEGACY_FOLDER
+    if legacy.is_dir():
+        return legacy
+    return base / DATA_ROOT_FOLDER

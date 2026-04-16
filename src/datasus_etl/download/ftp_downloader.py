@@ -4,7 +4,7 @@ import datetime
 import logging
 from ftplib import FTP
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from tqdm import tqdm
 
@@ -12,6 +12,12 @@ from datasus_etl.config import DownloadConfig
 from datasus_etl.constants import ALL_UFS, DATASUS_FTP_HOST
 from datasus_etl.datasets import DatasetRegistry
 from datasus_etl.exceptions import DownloadError
+
+# Messages starting with this tag are surfaced by the web UI as a
+# "Preparing download" state (no determinate progress bar yet).
+PREPARE_TAG = "[prepare] "
+
+ProgressCallback = Callable[[float, str], None]
 
 
 class FTPDownloader:
@@ -21,12 +27,21 @@ class FTPDownloader:
     to get subsystem-specific FTP directories, file prefixes, and filename parsing.
     """
 
-    def __init__(self, config: DownloadConfig, subsystem: str = "sihsus") -> None:
+    def __init__(
+        self,
+        config: DownloadConfig,
+        subsystem: str = "sihsus",
+        progress_callback: Optional[ProgressCallback] = None,
+    ) -> None:
         """Initialize FTP downloader.
 
         Args:
             config: Download configuration
             subsystem: Subsystem name (sihsus, sim). Default: sihsus for backward compatibility.
+            progress_callback: Optional ``(progress, message)`` callback invoked
+                during FTP listing and per-file downloads. ``progress`` is 0-1
+                *within the download stage*; messages tagged with
+                :data:`PREPARE_TAG` mark the pre-download listing phase.
         """
         self.config = config
         self.subsystem = subsystem.lower()
@@ -35,11 +50,22 @@ class FTPDownloader:
         self._downloaded_files: list[Path] = []
         self._skipped_files: list[Path] = []
         self._failed_files: list[tuple[str, str]] = []
+        self._progress_callback = progress_callback
 
         # Get dataset configuration from registry
         self._dataset_config = DatasetRegistry.get(self.subsystem)
         if not self._dataset_config:
-            raise ValueError(f"Unknown subsystem: {subsystem}. Available: {DatasetRegistry.list_available()}")
+            raise ValueError(
+                f"Unknown subsystem: {subsystem}. "
+                f"Available: {DatasetRegistry.list_available()}"
+            )
+
+    def _report(self, progress: float, message: str) -> None:
+        if self._progress_callback is not None:
+            try:
+                self._progress_callback(progress, message)
+            except Exception:  # noqa: BLE001 — callbacks must never break downloads
+                self.logger.debug("Progress callback raised", exc_info=True)
 
     def download(self) -> list[Path]:
         """Download files from FTP.
@@ -75,13 +101,20 @@ class FTPDownloader:
         )
 
         # Collect files from both FTP directories
+        self._report(0.0, f"{PREPARE_TAG}Connecting to DATASUS FTP…")
         selected_files = self._collect_files_from_ftp(start_date, end_date, uf_list)
 
         if not selected_files:
             self.logger.warning("No files found matching criteria")
+            self._report(0.0, f"{PREPARE_TAG}No files matched the selected scope.")
             return []
 
         self.logger.info(f"Found {len(selected_files)} files to download")
+        total_mb = sum(size for _, _, _, size in selected_files) / (1024 * 1024)
+        self._report(
+            0.0,
+            f"{PREPARE_TAG}Found {len(selected_files)} files ({total_mb:,.1f} MB). Starting downloads…",
+        )
 
         # Download files
         self._download_files(selected_files)
@@ -112,15 +145,25 @@ class FTPDownloader:
         selected_files = []
         ftp_dirs = self._dataset_config.get_ftp_dirs()
 
-        for dir_info in ftp_dirs:
+        for idx, dir_info in enumerate(ftp_dirs, start=1):
             ftp = None
             try:
                 self.logger.debug(f"Connecting to FTP: {dir_info['path']}")
+                self._report(
+                    0.0,
+                    f"{PREPARE_TAG}Listing {dir_info['path']} "
+                    f"(directory {idx}/{len(ftp_dirs)})…",
+                )
                 ftp = FTP(self.ftp_host, timeout=self.config.timeout)
                 ftp.login()
                 ftp.cwd(dir_info["path"])
 
                 files = ftp.nlst()
+                self._report(
+                    0.0,
+                    f"{PREPARE_TAG}{len(files)} entries in {dir_info['path']}; "
+                    "filtering by scope…",
+                )
 
                 for filename in files:
                     # Filter by file extension
@@ -194,6 +237,20 @@ class FTPDownloader:
             files: List of (ftp_path, filename, uf, size)
         """
         total_size = sum(size for _, _, _, size in files)
+        total_count = len(files)
+        bytes_done = 0
+
+        def _report_file(index: int, filename: str, uf: str, size: int, action: str) -> None:
+            # Bytes-based progress when total_size is known, else file-count.
+            done = bytes_done if total_size > 0 else index
+            total = total_size if total_size > 0 else total_count
+            frac = (done / total) if total > 0 else 0.0
+            size_mb = size / (1024 * 1024) if size else 0.0
+            self._report(
+                frac,
+                f"{action} {filename} (UF={uf}, {size_mb:.1f} MB) — "
+                f"{index}/{total_count}",
+            )
 
         with tqdm(
             total=total_size,
@@ -202,7 +259,7 @@ class FTPDownloader:
             unit_divisor=1024,
             desc=f"Downloading {self.subsystem.upper()}",
         ) as pbar:
-            for ftp_path, filename, uf, size in files:
+            for i, (ftp_path, filename, uf, size) in enumerate(files, start=1):
                 # Setup output path
                 uf_dir = self.config.output_dir / uf
                 uf_dir.mkdir(parents=True, exist_ok=True)
@@ -214,7 +271,11 @@ class FTPDownloader:
                     if local_size == size and size > 0:
                         self._skipped_files.append(local_path)
                         pbar.update(size)
+                        bytes_done += size
+                        _report_file(i, filename, uf, size, "Skipped")
                         continue
+
+                _report_file(i, filename, uf, size, "Downloading")
 
                 # Download file
                 retry_count = 0
@@ -234,6 +295,8 @@ class FTPDownloader:
 
                         ftp.quit()
                         self._downloaded_files.append(local_path)
+                        bytes_done += size
+                        _report_file(i, filename, uf, size, "Downloaded")
                         break
 
                     except Exception as e:

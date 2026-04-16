@@ -31,13 +31,22 @@ interface WizardContextValue {
   reset: () => void;
 }
 
-const defaultState: WizardState = {
-  subsystem: null,
-  start_date: "",
-  end_date: "",
-  ufs: [],
-  runId: null,
-};
+function currentMonthIso(): string {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  return `${year}-${month}-01`;
+}
+
+function makeDefaultState(): WizardState {
+  return {
+    subsystem: null,
+    start_date: "",
+    end_date: currentMonthIso(),
+    ufs: [],
+    runId: null,
+  };
+}
 
 const WizardContext = React.createContext<WizardContextValue | null>(null);
 
@@ -49,14 +58,14 @@ export function useWizard(): WizardContextValue {
 
 export function DownloadWizardPage() {
   const { location } = useRouterState();
-  const [state, setState] = React.useState<WizardState>(defaultState);
+  const [state, setState] = React.useState<WizardState>(makeDefaultState);
 
   const update = React.useCallback(
     (patch: Partial<WizardState>) =>
       setState((s) => ({ ...s, ...patch })),
     [],
   );
-  const reset = React.useCallback(() => setState(defaultState), []);
+  const reset = React.useCallback(() => setState(makeDefaultState()), []);
 
   const value = React.useMemo(
     () => ({ state, update, reset }),

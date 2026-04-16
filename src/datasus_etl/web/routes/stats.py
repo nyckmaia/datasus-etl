@@ -38,6 +38,8 @@ class UfBreakdown(BaseModel):
     files: int
     size_bytes: int
     row_count: int | None = None
+    first_period: str | None = None  # "YYYY-MM"
+    last_period: str | None = None  # "YYYY-MM"
 
 
 class TimelinePoint(BaseModel):
@@ -196,8 +198,20 @@ async def subsystem_detail(name: str, request: Request) -> SubsystemDetail:
     for uf in stats.partitions:
         files = mgr.list_parquet_files(uf=uf)
         size = sum(f.stat().st_size for f in files)
+        uf_periods = sorted(
+            p
+            for p in (_parse_period_from_filename(f.name, prefix) for f in files)
+            if p is not None
+        )
         per_uf.append(
-            UfBreakdown(uf=uf, files=len(files), size_bytes=size, row_count=None)
+            UfBreakdown(
+                uf=uf,
+                files=len(files),
+                size_bytes=size,
+                row_count=None,
+                first_period=uf_periods[0] if uf_periods else None,
+                last_period=uf_periods[-1] if uf_periods else None,
+            )
         )
 
     # Timeline (files & size per YYYY-MM, summed across all UFs)

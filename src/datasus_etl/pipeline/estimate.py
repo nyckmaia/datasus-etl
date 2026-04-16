@@ -48,7 +48,7 @@ def estimate_download(
         end_date=end_date,
         uf_list=ufs,
     )
-    downloader = FTPDownloader(cfg)
+    downloader = FTPDownloader(cfg, subsystem=subsystem)
     info = downloader.get_file_info()
 
     total = int(info["total_size_bytes"])

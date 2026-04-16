@@ -51,13 +51,16 @@ class DownloadStage(Stage):
 
         tqdm.write(f"\n[{current}/{total}] Download: Baixando arquivos DBC do FTP...")
 
-        # Report start of download
-        context.update_stage_progress("download", 0.1, "Conectando ao FTP...")
+        # Forward FTP listing + per-file progress to the pipeline context so the
+        # web UI's progress bar and terminal widget update in real time.
+        def _on_download_progress(frac: float, message: str) -> None:
+            context.update_stage_progress("download", frac, message)
 
-        downloader = FTPDownloader(self.config.download, subsystem=self.subsystem)
-
-        # Report download in progress
-        context.update_stage_progress("download", 0.5, "Baixando arquivos...")
+        downloader = FTPDownloader(
+            self.config.download,
+            subsystem=self.subsystem,
+            progress_callback=_on_download_progress,
+        )
 
         files = downloader.download()
 

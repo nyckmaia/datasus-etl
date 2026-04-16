@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { CheckCircle2, XCircle, Square, Home } from "lucide-react";
+import { CheckCircle2, Loader2, XCircle, Square, Home } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -40,7 +40,9 @@ export function Step4RunPage() {
   }
 
   const pct = Math.round((run.progress || 0) * 100);
+  const isPreparing = run.phase === "preparing";
   const statusBadge = (() => {
+    if (isPreparing) return <Badge variant="secondary">Preparing</Badge>;
     switch (run.status) {
       case "running":
         return <Badge>Running</Badge>;
@@ -72,13 +74,30 @@ export function Step4RunPage() {
           {statusBadge}
         </CardHeader>
         <CardContent className="space-y-4">
-          <div>
-            <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
-              <span>{run.message || "Waiting..."}</span>
-              <span className="tabular-nums">{pct}%</span>
+          {isPreparing ? (
+            <div className="flex items-start gap-3 rounded-md border border-dashed border-primary/40 bg-primary/5 p-4">
+              <Loader2 className="mt-0.5 h-5 w-5 shrink-0 animate-spin text-primary" />
+              <div className="space-y-1">
+                <div className="text-sm font-medium">Preparing download…</div>
+                <div className="text-xs text-muted-foreground">
+                  Listing files on the DATASUS FTP and resolving the scope. For
+                  large date/UF ranges this can take a couple of minutes. The
+                  progress bar starts moving once transfers begin.
+                </div>
+                <div className="pt-1 font-mono text-xs text-foreground/80">
+                  {run.message || "Connecting…"}
+                </div>
+              </div>
             </div>
-            <Progress value={pct} />
-          </div>
+          ) : (
+            <div>
+              <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
+                <span className="truncate pr-2">{run.message || "Waiting..."}</span>
+                <span className="tabular-nums">{pct}%</span>
+              </div>
+              <Progress value={pct} />
+            </div>
+          )}
 
           <ScrollArea className="h-64 rounded-md border bg-muted/30">
             <div className="p-3 font-mono text-xs leading-relaxed">
@@ -92,12 +111,13 @@ export function Step4RunPage() {
                       "flex gap-3",
                       log.type === "error" && "text-destructive",
                       log.type === "done" && "text-primary",
+                      log.type === "prepare" && "text-muted-foreground",
                     )}
                   >
                     <span className="text-muted-foreground">
                       {new Date(log.ts).toLocaleTimeString()}
                     </span>
-                    <span className="shrink-0 uppercase text-muted-foreground">
+                    <span className="w-16 shrink-0 uppercase text-muted-foreground">
                       {log.type}
                     </span>
                     <span className="break-all">{log.message}</span>
