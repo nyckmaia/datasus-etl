@@ -19,6 +19,20 @@ export function Step4RunPage() {
   const navigate = useNavigate();
   const run = usePipelineRun(state.runId);
 
+  // Radix ScrollArea renders an internal viewport with this data attribute.
+  // We grab it on every logs.length tick and pin scrollTop to scrollHeight,
+  // so the latest message is always visible without forcing the user to
+  // chase the scrollbar.
+  const logsContainerRef = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    const viewport = logsContainerRef.current?.querySelector<HTMLDivElement>(
+      "[data-radix-scroll-area-viewport]",
+    );
+    if (viewport) {
+      viewport.scrollTop = viewport.scrollHeight;
+    }
+  }, [run.logs.length]);
+
   const cancelMutation = useMutation({
     mutationFn: () => {
       if (!state.runId) throw new Error("no runId");
@@ -39,8 +53,16 @@ export function Step4RunPage() {
     );
   }
 
-  const pct = Math.round((run.progress || 0) * 100);
   const isPreparing = run.phase === "preparing";
+
+  // Stage manifest — order matches the Parquet-mode pipeline. Backend stage
+  // IDs come from PipelineContext.register_stage(...) calls in
+  // base_pipeline.py:setup_stages.
+  const STAGES: { id: string; label: string }[] = [
+    { id: "download", label: "Downloading DBC files" },
+    { id: "dbc_to_dbf", label: "Decompressing DBC → DBF" },
+    { id: "dbf_to_parquet", label: "Converting DBF → Parquet" },
+  ];
   const statusBadge = (() => {
     if (isPreparing) return <Badge variant="secondary">Preparing</Badge>;
     switch (run.status) {
@@ -90,16 +112,47 @@ export function Step4RunPage() {
               </div>
             </div>
           ) : (
-            <div>
-              <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
-                <span className="truncate pr-2">{run.message || "Waiting..."}</span>
-                <span className="tabular-nums">{pct}%</span>
+            <div className="space-y-3">
+              <div className="truncate text-xs text-muted-foreground">
+                {run.message || "Waiting..."}
               </div>
-              <Progress value={pct} />
+              {STAGES.map(({ id, label }) => {
+                const frac = run.stageProgress[id] ?? 0;
+                const pct = Math.round(frac * 100);
+                const isActive = run.activeStage === id && !run.finished;
+                return (
+                  <div key={id}>
+                    <div className="mb-1 flex items-center justify-between text-xs">
+                      <span
+                        className={cn(
+                          "truncate pr-2",
+                          isActive
+                            ? "font-medium text-foreground"
+                            : "text-muted-foreground",
+                        )}
+                      >
+                        {label}
+                      </span>
+                      <span
+                        className={cn(
+                          "tabular-nums",
+                          isActive ? "text-foreground" : "text-muted-foreground",
+                        )}
+                      >
+                        {pct}%
+                      </span>
+                    </div>
+                    <Progress value={pct} />
+                  </div>
+                );
+              })}
             </div>
           )}
 
-          <ScrollArea className="h-64 rounded-md border bg-muted/30">
+          <ScrollArea
+            ref={logsContainerRef}
+            className="h-64 rounded-md border bg-muted/30"
+          >
             <div className="p-3 font-mono text-xs leading-relaxed">
               {run.logs.length === 0 ? (
                 <div className="text-muted-foreground">No events yet.</div>

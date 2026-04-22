@@ -12,7 +12,7 @@ from datasus_etl.config import (
     StorageConfig,
     DatabaseConfig,
 )
-from datasus_etl.pipeline.sihsus_pipeline import (
+from datasus_etl.pipeline.base_pipeline import (
     DownloadStage,
     DbcToDbfStage,
     DbfToDbStage,

@@ -134,6 +134,21 @@ export interface ExportRequest {
   filename?: string | null;
 }
 
+export interface PickDirectoryResponse {
+  path: string | null;
+  cancelled: boolean;
+  error?: string;
+}
+
+export interface ValidatePathResponse {
+  normalized: string;
+  exists: boolean;
+  is_dir: boolean;
+  will_be_created: boolean;
+  writable: boolean;
+  error?: string;
+}
+
 export class ApiError extends Error {
   status: number;
   detail: string;
@@ -184,6 +199,17 @@ export const api = {
     return request("/api/settings/data-dir", {
       method: "PUT",
       body: JSON.stringify({ data_dir }),
+    });
+  },
+
+  pickDirectory(): Promise<PickDirectoryResponse> {
+    return request("/api/settings/pick-directory", { method: "POST" });
+  },
+
+  validatePath(path: string): Promise<ValidatePathResponse> {
+    return request("/api/settings/validate-path", {
+      method: "POST",
+      body: JSON.stringify({ path }),
     });
   },
 

@@ -93,7 +93,16 @@ class DbcToDbfStage(Stage):
 
         tqdm.write(f"\n[{current}/{total}] Conversao: DBC {SYM_ARROW} DBF...")
 
-        converter = DbcToDbfConverter(self.config.conversion)
+        # Forward per-file progress from the converter to the pipeline
+        # context so the UI's "DBC → DBF" bar advances as each file
+        # finishes (instead of jumping from 0% to 100% at the end).
+        def _on_dbc_progress(frac: float, message: str) -> None:
+            context.update_stage_progress("dbc_to_dbf", frac, message)
+
+        converter = DbcToDbfConverter(
+            self.config.conversion,
+            progress_callback=_on_dbc_progress,
+        )
         stats = converter.convert_directory()
 
         context.set("dbc_conversion_stats", stats)
@@ -495,6 +504,15 @@ class DbfToParquetStage(Stage):
         total_rows = 0
         errors = 0
 
+        # Initial UI hint so the stage label flips immediately, before the
+        # first DBF file finishes converting.
+        total_pending = len(pending_files)
+        context.update_stage_progress(
+            "dbf_to_parquet",
+            0.0,
+            f"DBF→Parquet: 0/{total_pending}…",
+        )
+
         with ProcessPoolExecutor(max_workers=num_workers) as executor:
             # Submit all tasks
             future_to_file = {
@@ -510,10 +528,11 @@ class DbfToParquetStage(Stage):
                 for dbf_file in pending_files
             }
 
+            done = 0
             # Process completed tasks with progress bar
             for future in tqdm(
                 as_completed(future_to_file),
-                total=len(pending_files),
+                total=total_pending,
                 desc=f"DBF{SYM_ARROW}Parquet",
                 leave=False,
             ):
@@ -537,6 +556,13 @@ class DbfToParquetStage(Stage):
                     errors += 1
                     self.logger.error(f"Failed to convert {dbf_file.name}: {e}")
                     tqdm.write(f"       [ERROR] {dbf_file.name}: {e}")
+                finally:
+                    done += 1
+                    context.update_stage_progress(
+                        "dbf_to_parquet",
+                        done / total_pending,
+                        f"DBF→Parquet: {done}/{total_pending} ({dbf_file.name})",
+                    )
 
         # Store results in context
         context.set("parquet_results", results)
@@ -981,5 +1007,14 @@ class DatasusPipeline(Pipeline[PipelineConfig], ABC):
                 except Exception as e:
                     self.logger.warning(f"Error closing DuckDB connection: {e}")
 
-            # Cleanup temporary files
-            self._cleanup_temporary_files(success=success)
+            # Cleanup temporary files — wrapped because a transient FS hiccup
+            # (Windows file locks, antivirus scans, race with the just-closed
+            # DuckDB connection) must not turn a successful run into a UI
+            # "Pipeline error". Best-effort: log a warning and move on.
+            try:
+                self._cleanup_temporary_files(success=success)
+            except Exception as cleanup_exc:
+                self.logger.warning(
+                    f"Temporary-file cleanup failed (pipeline already "
+                    f"{'succeeded' if success else 'failed'}): {cleanup_exc}"
+                )

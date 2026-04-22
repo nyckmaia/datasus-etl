@@ -240,7 +240,15 @@ class DbfToParquetConverter:
     ) -> int:
         """Insert entire DBF as DataFrame (fast for small files)."""
         try:
-            from simpledbf import Dbf5
+            # simpledbf's package init unconditionally prints "Pandas/PyTables/
+            # SQLalchemy is not installed" lines for each optional backend it
+            # can't find. We only use the DataFrame path (which needs pandas,
+            # already a hard dependency), so swallow that import-time noise.
+            import contextlib
+            import io
+
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                from simpledbf import Dbf5
             from dbfread import DBF
 
             # Load entire DBF into Pandas DataFrame

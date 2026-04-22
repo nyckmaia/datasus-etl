@@ -20,3 +20,9 @@ export function useUpdateDataDir() {
     },
   });
 }
+
+export function usePickDirectory() {
+  return useMutation({
+    mutationFn: () => api.pickDirectory(),
+  });
+}

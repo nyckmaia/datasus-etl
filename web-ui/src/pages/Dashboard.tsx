@@ -1,6 +1,14 @@
 import * as React from "react";
-import { Link } from "@tanstack/react-router";
-import { Download, Database, HardDrive, Files, Rows3 } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
+import { toast } from "sonner";
+import {
+  Download,
+  Database,
+  HardDrive,
+  Files,
+  Rows3,
+  FolderOpen,
+} from "lucide-react";
 
 import { StatCard } from "@/components/StatCard";
 import { SubsystemCard } from "@/components/SubsystemCard";
@@ -11,12 +19,19 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useStatsOverview, useTimeline } from "@/hooks/useStats";
-import { useSettings } from "@/hooks/useSettings";
+import {
+  useSettings,
+  useUpdateDataDir,
+  usePickDirectory,
+} from "@/hooks/useSettings";
 import { formatBytes, formatCompact, formatNumber } from "@/lib/format";
 
 export function DashboardPage() {
   const settings = useSettings();
   const overview = useStatsOverview(true);
+  const updateDataDir = useUpdateDataDir();
+  const pickDir = usePickDirectory();
+  const navigate = useNavigate();
 
   const data = overview.data ?? [];
   const totalFiles = data.reduce((acc, d) => acc + d.files, 0);
@@ -42,7 +57,42 @@ export function DashboardPage() {
 
   const timeline = useTimeline(chartSubsystem);
 
+  const hasDataDir = !!settings.data?.data_dir_resolved;
   const noData = !overview.isLoading && data.every((d) => d.files === 0);
+
+  const handlePick = () => {
+    pickDir.mutate(undefined, {
+      onSuccess: (res) => {
+        if (res.error) {
+          toast.error(res.error);
+          return;
+        }
+        if (res.cancelled || !res.path) return;
+        updateDataDir.mutate(res.path, {
+          onSuccess: (data) =>
+            toast.success("Data directory set", {
+              description: data.data_dir_resolved ?? data.data_dir ?? "",
+            }),
+          onError: (err: Error) =>
+            toast.error("Failed to set data directory", {
+              description: err.message,
+            }),
+        });
+      },
+      onError: (err: Error) =>
+        toast.error("Folder picker failed", { description: err.message }),
+    });
+  };
+
+  const goToDownload = () => {
+    if (!hasDataDir) {
+      toast.error("Configure a data directory first", {
+        description: "Use the Set Data Directory button or open Settings.",
+      });
+      return;
+    }
+    navigate({ to: "/download" });
+  };
 
   return (
     <div className="space-y-6">
@@ -53,13 +103,39 @@ export function DashboardPage() {
             Overview of your local DataSUS parquet storage.
           </p>
         </div>
-        <Button asChild>
-          <Link to="/download">
-            <Download className="h-4 w-4" />
-            New download
-          </Link>
+        <Button onClick={goToDownload}>
+          <Download className="h-4 w-4" />
+          New download
         </Button>
       </div>
+
+      {!settings.isLoading && !hasDataDir ? (
+        <Card className="border-amber-500/40 bg-amber-500/5">
+          <CardHeader>
+            <CardTitle className="text-base">
+              No data directory configured
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4 text-sm sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-muted-foreground">
+              Pick a base folder for your local DataSUS storage. A{" "}
+              <code className="font-mono">datasus_db/</code> subfolder will be
+              created inside it — that's where every parquet file will live.
+            </p>
+            <Button
+              onClick={handlePick}
+              disabled={pickDir.isPending || updateDataDir.isPending}
+            >
+              <FolderOpen className="h-4 w-4" />
+              {pickDir.isPending
+                ? "Opening picker…"
+                : updateDataDir.isPending
+                  ? "Saving…"
+                  : "Set Data Directory"}
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {overview.isLoading ? (
         <div className="grid gap-4 md:grid-cols-4">
@@ -71,9 +147,9 @@ export function DashboardPage() {
         <div className="grid gap-4 md:grid-cols-4">
           <StatCard
             label="Subsystems"
-            value={formatNumber(data.length)}
+            value={formatNumber(data.filter((d) => d.files > 0).length)}
             icon={Database}
-            hint={`${data.filter((d) => d.files > 0).length} with data`}
+            hint={`${data.length} registered`}
           />
           <StatCard
             label="Total files"
@@ -100,7 +176,7 @@ export function DashboardPage() {
         </div>
       )}
 
-      {overview.error ? (
+      {overview.error && hasDataDir ? (
         <Card>
           <CardContent className="p-6 text-sm text-destructive">
             Failed to load overview:{" "}
@@ -115,11 +191,9 @@ export function DashboardPage() {
           title="No datasets yet"
           description="Once you download DataSUS data into your local store, this dashboard will show file counts, storage size, and a coverage map."
           action={
-            <Button asChild>
-              <Link to="/download">
-                <Download className="h-4 w-4" />
-                Download your first dataset
-              </Link>
+            <Button onClick={goToDownload}>
+              <Download className="h-4 w-4" />
+              Download your first dataset
             </Button>
           }
         />

@@ -210,7 +210,16 @@ class PipelineConfig(BaseModel):
         Returns:
             Configured PipelineConfig instance
         """
-        base_dir = Path(base_dir)
+        # Anchor every path under the canonical storage root. If the user's
+        # base_dir is something like "D:\" or "D:\my-data", resolve_storage_root
+        # appends the "datasus_db" segment so DBC, DBF, and Parquet folders all
+        # share the same parent. Without this normalization, DBC/DBF would land
+        # one directory level above Parquet (because get_parquet_dir() applies
+        # resolve_storage_root() independently), creating a stray "<subsystem>/"
+        # folder next to "datasus_db/".
+        from datasus_etl.storage.paths import resolve_storage_root
+
+        base_dir = resolve_storage_root(Path(base_dir))
         subsystem_dir = base_dir / subsystem
 
         return cls(

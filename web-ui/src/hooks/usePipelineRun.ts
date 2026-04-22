@@ -15,6 +15,15 @@ export interface PipelineLogEntry {
   message: string;
 }
 
+// Pipeline stage IDs the backend emits via the `stage` field of progress
+// events. Kept as a string union so future stages (e.g. memory_aware_processing)
+// flow through unchanged — the UI just won't render them by default.
+export type PipelineStageId =
+  | "download"
+  | "dbc_to_dbf"
+  | "dbf_to_parquet"
+  | string;
+
 export interface PipelineRunState {
   progress: number;
   message: string;
@@ -24,6 +33,15 @@ export interface PipelineRunState {
   snapshot: RunSnapshot | null;
   finished: boolean;
   error: string | null;
+  // Per-stage progress as reported by backend `update_stage_progress` calls.
+  // Keys are stage IDs ("download", "dbc_to_dbf", "dbf_to_parquet"); values
+  // are 0..1 fractions of the individual stage. The UI renders one
+  // <Progress> per known stage from this map.
+  stageProgress: Record<string, number>;
+  // Which stage emitted the most recent progress event — used to highlight
+  // the currently active bar. `null` while preparing or before the first
+  // stage event.
+  activeStage: string | null;
 }
 
 const initialState: PipelineRunState = {
@@ -35,6 +53,8 @@ const initialState: PipelineRunState = {
   snapshot: null,
   finished: false,
   error: null,
+  stageProgress: {},
+  activeStage: null,
 };
 
 function parseMessage(raw: string): { message: string; preparing: boolean } {
@@ -72,8 +92,23 @@ export function usePipelineRun(runId: string | null): PipelineRunState {
     }
     setState(initialState);
 
+    // Dedupe consecutive identical messages — the FTP downloader emits one
+    // event per integer percent of total bytes, but the message string only
+    // changes when a new file starts. Without dedupe the log scroll would be
+    // ~100 copies of "Downloading X.dbc — 1/4" before "Downloading Y.dbc"
+    // appears. Same applies to converter stages emitting per-file messages.
     const append = (log: PipelineLogEntry) =>
-      setState((s) => ({ ...s, logs: [...s.logs, log] }));
+      setState((s) => {
+        const last = s.logs[s.logs.length - 1];
+        if (
+          last &&
+          last.type === log.type &&
+          last.message === log.message
+        ) {
+          return s;
+        }
+        return { ...s, logs: [...s.logs, log] };
+      });
 
     const dispose = subscribeProgress(runId, {
       onEvent: (event) => {
@@ -102,13 +137,39 @@ export function usePipelineRun(runId: string | null): PipelineRunState {
         }
         if (event.type === "progress") {
           const parsed = parseMessage(event.message || "");
-          setState((s) => ({
-            ...s,
-            progress: event.progress,
-            message: parsed.message,
-            status: "running",
-            phase: phaseFrom(s.phase, "running", parsed.preparing, event.progress),
-          }));
+          setState((s) => {
+            // Merge per-stage progress when the backend tags the event.
+            // When a NEW stage starts emitting we lock the previous one to
+            // 1.0 so its bar visibly completes (the backend only fires
+            // mark_stage_progress_complete once per stage and the rounding
+            // can otherwise leave a bar at 99%).
+            let stageProgress = s.stageProgress;
+            let activeStage = s.activeStage;
+            if (event.stage) {
+              const next = { ...s.stageProgress };
+              if (
+                activeStage &&
+                activeStage !== event.stage &&
+                next[activeStage] !== 1
+              ) {
+                next[activeStage] = 1;
+              }
+              if (typeof event.stageProgress === "number") {
+                next[event.stage] = event.stageProgress;
+              }
+              stageProgress = next;
+              activeStage = event.stage;
+            }
+            return {
+              ...s,
+              progress: event.progress,
+              message: parsed.message,
+              status: "running",
+              phase: phaseFrom(s.phase, "running", parsed.preparing, event.progress),
+              stageProgress,
+              activeStage,
+            };
+          });
           if (parsed.message) {
             append({
               ts: Date.now(),
@@ -128,14 +189,25 @@ export function usePipelineRun(runId: string | null): PipelineRunState {
           return;
         }
         if (event.type === "done") {
-          setState((s) => ({
-            ...s,
-            status: "done",
-            progress: 1,
-            message: "Completed",
-            phase: "finished",
-            finished: true,
-          }));
+          setState((s) => {
+            // Pin every stage we've seen to 100% so no bar ends visually
+            // short (rounding or a missing final emit would otherwise leave
+            // it at 99%).
+            const stageProgress: Record<string, number> = {};
+            for (const stage of Object.keys(s.stageProgress)) {
+              stageProgress[stage] = 1;
+            }
+            return {
+              ...s,
+              status: "done",
+              progress: 1,
+              message: "Completed",
+              phase: "finished",
+              finished: true,
+              stageProgress,
+              activeStage: null,
+            };
+          });
           append({ ts: Date.now(), type: "done", message: "Completed" });
           return;
         }
@@ -158,15 +230,29 @@ export function usePipelineRun(runId: string | null): PipelineRunState {
               typeof (event.data as Record<string, unknown>).message === "string"
               ? ((event.data as Record<string, unknown>).message as string)
               : "Pipeline error") || "Pipeline error";
-          setState((s) => ({
-            ...s,
-            status: "error",
-            phase: "finished",
-            finished: true,
-            error: msg,
-            message: msg,
-          }));
-          append({ ts: Date.now(), type: "error", message: msg });
+          // Defense in depth: if the run already completed cleanly (done
+          // or cancelled), ignore any late-arriving error event. This can
+          // happen because the SSE protocol reuses the "error" event name
+          // for browser-side connection issues — a clean close after
+          // `done` shouldn't downgrade a successful run.
+          let suppressed = false;
+          setState((s) => {
+            if (s.finished) {
+              suppressed = true;
+              return s;
+            }
+            return {
+              ...s,
+              status: "error",
+              phase: "finished",
+              finished: true,
+              error: msg,
+              message: msg,
+            };
+          });
+          if (!suppressed) {
+            append({ ts: Date.now(), type: "error", message: msg });
+          }
           return;
         }
         // ping — ignore

@@ -4,12 +4,73 @@ import csv
 import logging
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Callable, Literal, Optional
 
 from tqdm import tqdm
 
 from datasus_etl.config import ConversionConfig
 from datasus_etl.exceptions import ConversionError
+
+ProgressCallback = Callable[[float, str], None]
+
+# Conversion helpers live at module scope so ProcessPoolExecutor workers
+# can pickle them by qualified name. They MUST NOT close over `self` —
+# otherwise pickling `self` would also try to serialize unpicklable state
+# like the per-stage progress callback (a closure registered in
+# `DbcToDbfStage._execute`).
+_worker_logger = logging.getLogger("datasus_etl.DbcToDbfConverter")
+
+
+def _convert_to_dbf(dbc_file: Path, output_dir: Path, datasus_dbc: object) -> bool:
+    """Decompress one DBC file to DBF in ``output_dir``."""
+    output_file = output_dir / (dbc_file.stem + ".dbf")
+    datasus_dbc.decompress(str(dbc_file), str(output_file))
+    _worker_logger.debug(f"Converted {dbc_file.name} → {output_file.name}")
+    return True
+
+
+def _convert_to_csv(dbc_file: Path, output_dir: Path, datasus_dbc: object) -> bool:
+    """Decompress to a temp DBF, then transcode to CSV in ``output_dir``."""
+    import tempfile
+
+    from dbfread import DBF
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_dbf = Path(temp_dir) / (dbc_file.stem + ".dbf")
+        datasus_dbc.decompress(str(dbc_file), str(temp_dbf))
+
+        output_file = output_dir / (dbc_file.stem + ".csv")
+        dbf = DBF(str(temp_dbf), encoding="latin-1", ignore_missing_memofile=True)
+        with open(output_file, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f, delimiter=",", quoting=csv.QUOTE_MINIMAL)
+            writer.writerow(dbf.field_names)
+            for record in dbf:
+                writer.writerow(record.values())
+
+    _worker_logger.debug(f"Converted {dbc_file.name} → {output_file.name}")
+    return True
+
+
+def _convert_file(
+    dbc_file: Path,
+    input_root: Path,
+    output_root: Path,
+    output_format: Literal["dbf", "csv"] = "dbf",
+) -> bool:
+    """Top-level worker entrypoint — picklable for ProcessPoolExecutor."""
+    try:
+        import datasus_dbc
+
+        rel_path = dbc_file.relative_to(input_root)
+        output_dir = output_root / rel_path.parent
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        if output_format == "csv":
+            return _convert_to_csv(dbc_file, output_dir, datasus_dbc)
+        return _convert_to_dbf(dbc_file, output_dir, datasus_dbc)
+    except Exception as e:  # noqa: BLE001 — workers swallow per-file errors
+        _worker_logger.error(f"Error converting {dbc_file.name}: {e}")
+        return False
 
 
 class DbcToDbfConverter:
@@ -24,16 +85,38 @@ class DbcToDbfConverter:
     - Output formats: DBF (default) or CSV
     """
 
-    def __init__(self, config: ConversionConfig) -> None:
+    def __init__(
+        self,
+        config: ConversionConfig,
+        progress_callback: Optional[ProgressCallback] = None,
+    ) -> None:
         """Initialize DBC to DBF/CSV converter.
 
         Args:
             config: Conversion configuration
+            progress_callback: Optional ``(fraction, message)`` callback fired
+                once per file from the main process. Worker subprocesses can't
+                call back across IPC, so per-file in the main process is the
+                finest granularity available.
         """
         self.config = config
         self.logger = logging.getLogger("datasus_etl.DbcToDbfConverter")
         self._converted_count = 0
         self._error_count = 0
+        self._progress_callback = progress_callback
+
+    def _report(self, fraction: float, message: str) -> None:
+        """Forward a progress event to the registered callback, if any.
+
+        Wrapped in ``try/except`` so a bad listener never breaks the
+        conversion run.
+        """
+        if self._progress_callback is None:
+            return
+        try:
+            self._progress_callback(fraction, message)
+        except Exception:  # noqa: BLE001 — listener bugs must not kill conversion
+            self.logger.debug("Progress callback raised", exc_info=True)
 
     def convert(
         self,
@@ -112,7 +195,7 @@ class DbcToDbfConverter:
             self.logger.info(f"Skipped {input_file.name} (already exists)")
             return {"converted": 0, "errors": 0, "skipped": 1}
 
-        success = self._convert_file(input_file, input_file.parent, output_dir, output_format)
+        success = _convert_file(input_file, input_file.parent, output_dir, output_format)
 
         if success:
             return {"converted": 1, "errors": 0, "skipped": 0}
@@ -161,18 +244,28 @@ class DbcToDbfConverter:
 
         # Convert in parallel
         max_workers = self.config.max_workers or 4
+        total = len(dbc_files)
+        format_label = "CSV" if output_format == "csv" else "DBF"
+
+        # Initial UI hint so the stage label flips before the first file
+        # finishes (otherwise the bar sits at 0% with no message).
+        self._report(0.0, f"Converting DBC→{format_label}: 0/{total}…")
 
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            # Submit the module-level worker, NOT a bound method, so `self`
+            # (which holds the unpicklable progress callback) is never
+            # serialized to subprocesses.
             futures = {
                 executor.submit(
-                    self._convert_file, dbc_file, input_dir, output_dir, output_format
+                    _convert_file, dbc_file, input_dir, output_dir, output_format
                 ): dbc_file
                 for dbc_file in dbc_files
             }
 
-            format_label = "CSV" if output_format == "csv" else "DBF"
-            with tqdm(total=len(dbc_files), desc=f"Converting DBC→{format_label}") as pbar:
+            done = 0
+            with tqdm(total=total, desc=f"Converting DBC→{format_label}") as pbar:
                 for future in as_completed(futures):
+                    dbc_file = futures[future]
                     try:
                         success = future.result()
                         if success:
@@ -181,108 +274,20 @@ class DbcToDbfConverter:
                             self._error_count += 1
                     except Exception as e:
                         self._error_count += 1
-                        dbc_file = futures[future]
                         self.logger.error(f"Error converting {dbc_file.name}: {e}")
                     finally:
+                        done += 1
                         pbar.update(1)
+                        self._report(
+                            done / total,
+                            f"Converting DBC→{format_label}: {done}/{total} ({dbc_file.name})",
+                        )
 
         return {
             "converted": self._converted_count,
             "errors": self._error_count,
             "skipped": skipped,
         }
-
-    def _convert_file(
-        self,
-        dbc_file: Path,
-        input_root: Path,
-        output_root: Path,
-        output_format: Literal["dbf", "csv"] = "dbf",
-    ) -> bool:
-        """Convert a single DBC file to DBF or CSV.
-
-        Args:
-            dbc_file: Path to DBC file
-            input_root: Input root directory
-            output_root: Output root directory
-            output_format: Output format ('dbf' or 'csv')
-
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            import datasus_dbc
-
-            # Calculate output path
-            rel_path = dbc_file.relative_to(input_root)
-            output_dir = output_root / rel_path.parent
-            output_dir.mkdir(parents=True, exist_ok=True)
-
-            if output_format == "csv":
-                return self._convert_to_csv(dbc_file, output_dir, datasus_dbc)
-            else:
-                return self._convert_to_dbf(dbc_file, output_dir, datasus_dbc)
-
-        except Exception as e:
-            self.logger.error(f"Error converting {dbc_file.name}: {e}")
-            return False
-
-    def _convert_to_dbf(self, dbc_file: Path, output_dir: Path, datasus_dbc: object) -> bool:
-        """Convert DBC to DBF format.
-
-        Args:
-            dbc_file: Path to DBC file
-            output_dir: Output directory
-            datasus_dbc: The datasus_dbc module
-
-        Returns:
-            True if successful, False otherwise
-        """
-        output_file = output_dir / (dbc_file.stem + ".dbf")
-        datasus_dbc.decompress(str(dbc_file), str(output_file))
-        self.logger.debug(f"Converted {dbc_file.name} → {output_file.name}")
-        return True
-
-    def _convert_to_csv(self, dbc_file: Path, output_dir: Path, datasus_dbc: object) -> bool:
-        """Convert DBC to CSV format.
-
-        First decompresses DBC to DBF, then converts DBF to CSV using dbfread.
-
-        Args:
-            dbc_file: Path to DBC file
-            output_dir: Output directory
-            datasus_dbc: The datasus_dbc module
-
-        Returns:
-            True if successful, False otherwise
-        """
-        import tempfile
-        from dbfread import DBF
-
-        # Create temporary DBF file
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_dbf = Path(temp_dir) / (dbc_file.stem + ".dbf")
-
-            # Decompress DBC to temporary DBF
-            datasus_dbc.decompress(str(dbc_file), str(temp_dbf))
-
-            # Read DBF and write CSV
-            output_file = output_dir / (dbc_file.stem + ".csv")
-
-            dbf = DBF(str(temp_dbf), encoding='latin-1', ignore_missing_memofile=True)
-
-            with open(output_file, 'w', newline='', encoding='utf-8') as f:
-                writer = csv.writer(f, delimiter=',', quoting=csv.QUOTE_MINIMAL)
-
-                # Write header
-                writer.writerow(dbf.field_names)
-
-                # Write rows
-                for record in dbf:
-                    writer.writerow(record.values())
-
-        self.logger.debug(f"Converted {dbc_file.name} → {output_file.name}")
-        return True
 
     def _filter_existing(
         self,

@@ -47,7 +47,7 @@ class BuildUIHook(BuildHookInterface):
 
         if not (ui_dir / "node_modules").exists():
             self.app.display_info("Running `bun install` in web-ui/ …")
-            subprocess.check_call([bun, "install", "--frozen-lockfile=false"], cwd=ui_dir)
+            subprocess.check_call([bun, "install"], cwd=ui_dir)
 
         self.app.display_info("Running `bun run build` in web-ui/ …")
         subprocess.check_call([bun, "run", "build"], cwd=ui_dir)

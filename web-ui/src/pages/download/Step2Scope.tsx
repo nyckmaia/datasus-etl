@@ -4,8 +4,8 @@ import { ArrowLeft, ArrowRight, Info } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { MonthPicker } from "@/components/MonthPicker";
 import {
   Table,
   TableBody,
@@ -81,22 +81,18 @@ export function Step2ScopePage() {
         <CardContent className="grid gap-4 p-5 md:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="start_date">Start month</Label>
-            <Input
+            <MonthPicker
               id="start_date"
-              type="month"
-              lang="en"
               value={startMonth}
-              onChange={(e) => update({ start_date: monthToIso(e.target.value) })}
+              onChange={(v) => update({ start_date: monthToIso(v) })}
             />
           </div>
           <div className="space-y-2">
             <Label htmlFor="end_date">End month</Label>
-            <Input
+            <MonthPicker
               id="end_date"
-              type="month"
-              lang="en"
               value={endMonth}
-              onChange={(e) => update({ end_date: monthToIso(e.target.value) })}
+              onChange={(v) => update({ end_date: monthToIso(v) })}
             />
           </div>
         </CardContent>

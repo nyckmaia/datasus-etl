@@ -238,11 +238,29 @@ class FTPDownloader:
         """
         total_size = sum(size for _, _, _, size in files)
         total_count = len(files)
-        bytes_done = 0
+        # Use a single-element list as a mutable cell so the inner ftp callback
+        # can mutate it without `nonlocal` plumbing through every closure.
+        bytes_done = [0]
+        # Throttle UI emits to once per integer percent — for a 50 MB transfer
+        # at ~700 KB/s that's ~1 event/sec; for larger jobs it scales with
+        # total size, never flooding the SSE queue.
+        last_pct = [-1]
+
+        def _emit_bytes(extra: int, message: str) -> None:
+            done = bytes_done[0] + extra
+            if total_size > 0:
+                frac = done / total_size
+                pct = int(frac * 100)
+                if pct == last_pct[0]:
+                    return
+                last_pct[0] = pct
+            else:
+                frac = 0.0
+            self._report(min(frac, 1.0), message)
 
         def _report_file(index: int, filename: str, uf: str, size: int, action: str) -> None:
             # Bytes-based progress when total_size is known, else file-count.
-            done = bytes_done if total_size > 0 else index
+            done = bytes_done[0] if total_size > 0 else index
             total = total_size if total_size > 0 else total_count
             frac = (done / total) if total > 0 else 0.0
             size_mb = size / (1024 * 1024) if size else 0.0
@@ -271,7 +289,7 @@ class FTPDownloader:
                     if local_size == size and size > 0:
                         self._skipped_files.append(local_path)
                         pbar.update(size)
-                        bytes_done += size
+                        bytes_done[0] += size
                         _report_file(i, filename, uf, size, "Skipped")
                         continue
 
@@ -285,18 +303,35 @@ class FTPDownloader:
                         ftp.login()
                         ftp.cwd(ftp_path)
 
+                        size_mb = size / (1024 * 1024) if size else 0.0
+                        # Bytes received within the current file. Captured by
+                        # the chunk callback below so each chunk can update the
+                        # UI without waiting for the file to finish.
+                        file_received = [0]
+
                         with open(local_path, "wb") as f:
 
                             def callback(data: bytes) -> None:
                                 f.write(data)
                                 pbar.update(len(data))
+                                file_received[0] += len(data)
+                                _emit_bytes(
+                                    file_received[0],
+                                    f"Downloading {filename} "
+                                    f"(UF={uf}, {size_mb:.1f} MB) — "
+                                    f"{i}/{total_count}",
+                                )
 
                             ftp.retrbinary(f"RETR {filename}", callback)
 
                         ftp.quit()
                         self._downloaded_files.append(local_path)
-                        bytes_done += size
-                        _report_file(i, filename, uf, size, "Downloaded")
+                        bytes_done[0] += size
+                        # Do NOT emit a "Downloaded" event — the per-byte
+                        # callback above already reached this file's 100%
+                        # message and the next iteration will emit the next
+                        # "Downloading" line. Logging "Downloaded X" here
+                        # would just duplicate every file in the UI log.
                         break
 
                     except Exception as e:

@@ -88,7 +88,7 @@ def _data_dir_or_400(request: Request) -> Path:
     if d is None:
         raise HTTPException(
             status_code=400,
-            detail="No data directory configured. Set one via PUT /api/settings/data-dir.",
+            detail="No data directory configured.",
         )
     return d
 

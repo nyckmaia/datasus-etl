@@ -7,6 +7,10 @@ import { ThemeToggle } from "./ThemeToggle";
 
 export function TopBar() {
   const { data: settings, isLoading } = useSettings();
+  // The resolved path always ends in datasus_db/ (the subfolder the backend
+  // appends and creates). Fall back to the raw input only while the backend
+  // hasn't finished resolving (e.g. right after a save before refetch).
+  const displayPath = settings?.data_dir_resolved ?? settings?.data_dir ?? "";
 
   return (
     <header className="flex h-14 shrink-0 items-center justify-between border-b bg-background px-6">
@@ -16,9 +20,9 @@ export function TopBar() {
           <span className="shrink-0 text-muted-foreground">Data dir:</span>
           {isLoading ? (
             <Skeleton className="h-4 w-64" />
-          ) : settings?.data_dir ? (
-            <span className="truncate font-mono text-xs" title={settings.data_dir}>
-              {settings.data_dir}
+          ) : displayPath ? (
+            <span className="truncate font-mono text-xs" title={displayPath}>
+              {displayPath}
             </span>
           ) : (
             <span className="text-xs italic text-muted-foreground">

@@ -106,7 +106,7 @@ async def start_run(payload: StartRequest, request: Request) -> StartResponse:
     if data_dir is None:
         raise HTTPException(
             status_code=400,
-            detail="No data directory configured. Set one via PUT /api/settings/data-dir.",
+            detail="No data directory configured.",
         )
     params: dict[str, Any] = {
         "start_date": payload.start_date,

@@ -65,8 +65,14 @@ class ParquetManager:
         self.manifest_path = self.parquet_dir / self.MANIFEST_FILENAME
         self.logger = logging.getLogger(__name__)
 
-        # Ensure directory exists
-        self.parquet_dir.mkdir(parents=True, exist_ok=True)
+        # Intentionally NOT creating parquet_dir here. The dashboard
+        # instantiates one ParquetManager per registered subsystem just to
+        # query stats; eagerly creating folders would litter the data dir
+        # with empty `<subsystem>/` placeholders before the user has
+        # downloaded anything. All read paths already guard with
+        # `.exists()`. The only writer (`mark_processed`) creates the dir
+        # itself, and `DbfToParquetStage` mkdirs the partition tree at
+        # download time.
 
     @staticmethod
     def _extract_uf_from_filename(filename: str) -> str:
@@ -443,6 +449,9 @@ class ParquetManager:
     def _save_manifest(self, manifest: dict) -> None:
         """Save manifest to disk."""
         try:
+            # Lazy mkdir — the constructor no longer creates parquet_dir,
+            # so the first real write needs to materialize it.
+            self.parquet_dir.mkdir(parents=True, exist_ok=True)
             with open(self.manifest_path, "w", encoding="utf-8") as f:
                 json.dump(manifest, f, indent=2, ensure_ascii=False)
         except IOError as e:

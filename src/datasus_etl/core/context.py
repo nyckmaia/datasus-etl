@@ -1,11 +1,20 @@
 """Pipeline context for sharing state between stages."""
 
+import logging
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional
 
 from datasus_etl.exceptions import PipelineCancelled
+
+# (stage_name, stage_progress, message, global_progress) — the four-arg
+# callback used by the web UI to render per-stage progress bars alongside
+# the global one. Older 2-arg callbacks (just global progress + message)
+# stay supported via the existing `_progress_callback`.
+StageProgressCallback = Callable[[str, float, str, float], None]
+
+_logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -39,6 +48,7 @@ class PipelineContext:
         # Progress tracking
         self._stages_progress: dict[str, StageProgress] = {}
         self._progress_callback: Optional[Callable[[float, str], None]] = None
+        self._stage_progress_callback: Optional[StageProgressCallback] = None
 
     def set(self, key: str, value: Any) -> None:
         """Set a value in the context.
@@ -188,21 +198,24 @@ class PipelineContext:
     def update_stage_progress(
         self, stage_name: str, progress: float, message: str = ""
     ) -> None:
-        """Update progress for a stage and notify callback.
+        """Update progress for a stage and notify callbacks.
+
+        Notifies both the legacy global callback (with weighted global
+        progress) and the new stage callback (with per-stage progress) so
+        the UI can render either a single bar or one bar per stage from
+        the same pipeline run.
 
         Args:
             stage_name: Name of the stage
-            progress: Progress value (0.0 to 1.0)
+            progress: Progress value (0.0 to 1.0) for THIS stage
             message: Optional status message
         """
         if stage_name in self._stages_progress:
             self._stages_progress[stage_name].progress = progress
             self._stages_progress[stage_name].status = "running"
 
-        # Calculate global progress and notify callback
         global_progress = self._calculate_global_progress()
-        if self._progress_callback:
-            self._progress_callback(global_progress, message)
+        self._fire_callbacks(stage_name, progress, message, global_progress)
 
     def mark_stage_progress_complete(self, stage_name: str) -> None:
         """Mark a stage as completed in progress tracking.
@@ -214,10 +227,30 @@ class PipelineContext:
             self._stages_progress[stage_name].progress = 1.0
             self._stages_progress[stage_name].status = "completed"
 
-        # Notify callback
         global_progress = self._calculate_global_progress()
-        if self._progress_callback:
-            self._progress_callback(global_progress, f"[OK] {stage_name}")
+        self._fire_callbacks(stage_name, 1.0, f"[OK] {stage_name}", global_progress)
+
+    def _fire_callbacks(
+        self,
+        stage_name: str,
+        stage_progress: float,
+        message: str,
+        global_progress: float,
+    ) -> None:
+        """Invoke both progress callbacks; never let a callback failure
+        kill the pipeline."""
+        if self._progress_callback is not None:
+            try:
+                self._progress_callback(global_progress, message)
+            except Exception:
+                _logger.debug("global progress callback raised", exc_info=True)
+        if self._stage_progress_callback is not None:
+            try:
+                self._stage_progress_callback(
+                    stage_name, stage_progress, message, global_progress
+                )
+            except Exception:
+                _logger.debug("stage progress callback raised", exc_info=True)
 
     def _calculate_global_progress(self) -> float:
         """Calculate overall pipeline progress based on weighted stages.
@@ -242,6 +275,32 @@ class PipelineContext:
             callback: Function that receives (progress: float, message: str)
         """
         self._progress_callback = callback
+
+    @property
+    def progress_callback(self) -> Optional[Callable[[float, str], None]]:
+        """Return the registered progress callback, if any.
+
+        Stages forward this to inner workers (FTP downloader, converters) so
+        their byte/file-level progress reaches the UI without each worker
+        having to know about the pipeline context.
+        """
+        return self._progress_callback
+
+    def set_stage_progress_callback(
+        self, callback: StageProgressCallback
+    ) -> None:
+        """Register a callback that receives per-stage progress.
+
+        Signature: ``(stage_name, stage_progress, message, global_progress)``.
+        Fires every time :meth:`update_stage_progress` or
+        :meth:`mark_stage_progress_complete` is called.
+        """
+        self._stage_progress_callback = callback
+
+    @property
+    def stage_progress_callback(self) -> Optional[StageProgressCallback]:
+        """Return the registered stage progress callback, if any."""
+        return self._stage_progress_callback
 
     def get_global_progress(self) -> float:
         """Get current global progress.

@@ -20,4 +20,6 @@ export type {
   TemplateItem,
   DictionaryEntry,
   ExportRequest,
+  PickDirectoryResponse,
+  ValidatePathResponse,
 } from "@/lib/api";

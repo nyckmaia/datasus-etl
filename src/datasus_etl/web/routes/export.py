@@ -111,7 +111,7 @@ async def export(payload: ExportRequest, request: Request) -> StreamingResponse:
     if data_dir is None:
         raise HTTPException(
             status_code=400,
-            detail="No data directory configured. Set one via PUT /api/settings/data-dir.",
+            detail="No data directory configured.",
         )
 
     con = _connect_with_views(data_dir)

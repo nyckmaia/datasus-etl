@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sys
+import traceback
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -122,6 +124,29 @@ async def _run_pipeline(run: Run, data_dir: Path) -> None:
         except RuntimeError:
             pass  # Loop closing; drop the event.
 
+    def on_stage_progress(
+        stage_name: str,
+        stage_frac: float,
+        message: str,
+        global_frac: float,
+    ) -> None:
+        run.progress = global_frac
+        run.message = message
+        event = RunEvent(
+            type="progress",
+            ts=_now(),
+            data={
+                "progress": global_frac,
+                "message": message,
+                "stage": stage_name,
+                "stage_progress": stage_frac,
+            },
+        )
+        try:
+            asyncio.run_coroutine_threadsafe(run.queue.put(event), loop)
+        except RuntimeError:
+            pass  # Loop closing; drop the event.
+
     await run.queue.put(
         RunEvent(
             type="start",
@@ -144,6 +169,7 @@ async def _run_pipeline(run: Run, data_dir: Path) -> None:
         pipeline_obj = pipeline_cls(cfg)
         run.context = pipeline_obj.context
         pipeline_obj.context.set_progress_callback(on_progress)
+        pipeline_obj.context.set_stage_progress_callback(on_stage_progress)
         pipeline_obj.run()
 
     try:
@@ -161,12 +187,29 @@ async def _run_pipeline(run: Run, data_dir: Path) -> None:
     except Exception as exc:  # noqa: BLE001 — we want to surface every failure
         run.status = "error"
         run.finished_at = _now()
+        tb = traceback.format_exc()
         logger.exception("Pipeline run %s failed", run.id)
+        # Always print to stderr too — datasus_etl loggers may not be wired up
+        # to a handler when running under uvicorn, so the traceback would be
+        # invisible otherwise (which leaves the UI showing a blank "Pipeline
+        # error" with no clue about the underlying cause).
+        print(
+            f"[runtime] Pipeline run {run.id} failed: {type(exc).__name__}: {exc}\n{tb}",
+            file=sys.stderr,
+            flush=True,
+        )
+        # Fall back to the exception type name when str(exc) is empty so the
+        # UI never has to render the generic "Pipeline error" placeholder.
+        message = str(exc).strip() or type(exc).__name__
         await run.queue.put(
             RunEvent(
                 type="error",
                 ts=run.finished_at,
-                data={"message": str(exc), "type": type(exc).__name__},
+                data={
+                    "message": message,
+                    "type": type(exc).__name__,
+                    "traceback": tb,
+                },
             )
         )
         return

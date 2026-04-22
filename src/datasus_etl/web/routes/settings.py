@@ -1,12 +1,24 @@
 """User-configurable settings endpoints.
 
-- ``GET  /api/settings``            — full settings object + environment info.
-- ``PUT  /api/settings/data-dir``   — change the active data directory.
+- ``GET  /api/settings``                 — full settings object + environment info.
+- ``PUT  /api/settings/data-dir``        — change the active data directory.
+- ``POST /api/settings/pick-directory``  — open the OS-native folder picker on
+                                           the machine running the server. Only
+                                           makes sense for the local
+                                           ``datasus ui`` launcher (server and
+                                           user share a display).
+- ``POST /api/settings/validate-path``   — return path metadata so the UI can
+                                           warn the user (will be created, not
+                                           writable, etc.) before saving.
 """
 
 from __future__ import annotations
 
+import asyncio
+import os
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
@@ -18,6 +30,28 @@ from datasus_etl.storage.paths import resolve_storage_root
 from datasus_etl.web import user_config
 
 router = APIRouter()
+
+
+# Picker runs in a one-shot subprocess so tkinter gets its own main thread —
+# avoids the "Tk must run on main thread" failure mode that hits when called
+# from inside uvicorn's worker thread (especially on macOS).
+_PICKER_SCRIPT = """\
+import sys
+try:
+    import tkinter as tk
+    from tkinter import filedialog
+except ImportError:
+    sys.stderr.write("TK_MISSING")
+    sys.exit(2)
+root = tk.Tk()
+root.withdraw()
+root.attributes("-topmost", True)
+root.update()
+path = filedialog.askdirectory(parent=root, mustexist=False,
+                               title="Select DataSUS data directory")
+root.destroy()
+sys.stdout.write(path or "")
+"""
 
 
 class SubsystemInfo(BaseModel):
@@ -42,6 +76,25 @@ class SettingsResponse(BaseModel):
 
 class UpdateDataDirRequest(BaseModel):
     data_dir: str = Field(..., min_length=1, description="Absolute or ~ path to data directory.")
+
+
+class PickDirectoryResponse(BaseModel):
+    path: str | None = None
+    cancelled: bool = False
+    error: str | None = None
+
+
+class ValidatePathRequest(BaseModel):
+    path: str = Field(..., min_length=1)
+
+
+class ValidatePathResponse(BaseModel):
+    normalized: str
+    exists: bool
+    is_dir: bool
+    will_be_created: bool
+    writable: bool
+    error: str | None = None
 
 
 def _subsystems() -> list[SubsystemInfo]:
@@ -119,3 +172,88 @@ async def set_data_dir(payload: UpdateDataDirRequest, request: Request) -> Setti
     user_config.save(user_config.UserConfig(data_dir=str(new_dir)))
     request.app.state.data_dir = new_dir
     return await get_settings(request)
+
+
+@router.post("/pick-directory", response_model=PickDirectoryResponse)
+async def pick_directory() -> PickDirectoryResponse:
+    """Open the OS-native folder picker and return the chosen path.
+
+    Spawns a fresh Python interpreter that runs tkinter's ``askdirectory``
+    dialog, then prints the chosen path to stdout (empty string if the user
+    cancels). The dialog is forced topmost so it surfaces above the browser.
+
+    Assumes the server and user share a display — this endpoint is meant for
+    the local ``datasus ui`` launcher and has no use in remote deployments.
+    """
+    try:
+        proc = await asyncio.to_thread(
+            subprocess.run,
+            [sys.executable, "-c", _PICKER_SCRIPT],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except subprocess.TimeoutExpired:
+        return PickDirectoryResponse(error="Folder picker timed out")
+    except OSError as exc:
+        return PickDirectoryResponse(error=f"Could not launch folder picker: {exc}")
+
+    if proc.returncode == 2 and "TK_MISSING" in proc.stderr:
+        return PickDirectoryResponse(
+            error=(
+                "Native folder picker is unavailable because tkinter is not "
+                "installed. On Ubuntu/Debian: sudo apt install python3-tk"
+            ),
+        )
+    if proc.returncode != 0:
+        return PickDirectoryResponse(
+            error=(proc.stderr.strip() or "Folder picker failed"),
+        )
+
+    chosen = proc.stdout.strip()
+    if not chosen:
+        return PickDirectoryResponse(cancelled=True)
+    return PickDirectoryResponse(path=chosen)
+
+
+@router.post("/validate-path", response_model=ValidatePathResponse)
+async def validate_path(payload: ValidatePathRequest) -> ValidatePathResponse:
+    """Return metadata about a candidate data-dir path.
+
+    Pure metadata — never enumerates directory contents. Used by the Settings
+    page to give the user inline feedback (e.g. "this folder will be created"
+    or "not writable") before they click Save.
+    """
+    raw = payload.path.strip()
+    try:
+        p = Path(raw).expanduser().resolve(strict=False)
+    except (OSError, ValueError) as exc:
+        return ValidatePathResponse(
+            normalized="",
+            exists=False,
+            is_dir=False,
+            will_be_created=False,
+            writable=False,
+            error=f"Invalid path: {exc}",
+        )
+
+    exists = p.exists()
+    is_dir = p.is_dir() if exists else False
+
+    if exists:
+        writable = os.access(p, os.W_OK)
+    else:
+        # Walk up to the first existing ancestor and check its writability —
+        # that's the directory mkdir(parents=True) will actually create into.
+        ancestor = p.parent
+        while not ancestor.exists() and ancestor != ancestor.parent:
+            ancestor = ancestor.parent
+        writable = ancestor.exists() and os.access(ancestor, os.W_OK)
+
+    return ValidatePathResponse(
+        normalized=str(p),
+        exists=exists,
+        is_dir=is_dir,
+        will_be_created=not exists,
+        writable=writable,
+    )
