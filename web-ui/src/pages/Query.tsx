@@ -35,7 +35,7 @@ import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import type { SqlResult } from "@/lib/api";
 import { formatMs, formatNumber } from "@/lib/format";
-import { useSettings } from "@/hooks/useSettings";
+import { useStatsOverview } from "@/hooks/useStats";
 import { useSqlQuery } from "@/hooks/useSqlQuery";
 import { useTheme } from "@/components/ThemeProvider";
 
@@ -51,8 +51,17 @@ const DEFAULT_SQL = "SELECT 1 AS n;";
 
 export function QueryPage() {
   const { resolvedTheme } = useTheme();
-  const settings = useSettings();
+  // The subsystem dropdown is populated from the overview endpoint (which
+  // reports actual file counts) rather than the registry, so subsystems
+  // with no downloaded data are hidden — querying them would yield empty
+  // VIEWs and confuse the user.
+  const overview = useStatsOverview(false);
   const runSql = useSqlQuery();
+
+  const availableSubsystems = React.useMemo(
+    () => (overview.data ?? []).filter((d) => d.files > 0),
+    [overview.data],
+  );
 
   const [subsystem, setSubsystem] = React.useState<string>("");
   const [sql, setSql] = React.useState<string>(DEFAULT_SQL);
@@ -72,10 +81,14 @@ export function QueryPage() {
   });
 
   React.useEffect(() => {
-    if (!subsystem && settings.data?.subsystems[0]) {
-      setSubsystem(settings.data.subsystems[0].name);
+    // Auto-pick the first available subsystem on mount, and reset when the
+    // currently-selected one no longer has data (e.g. the user navigated
+    // away, deleted files, and came back).
+    const stillAvailable = availableSubsystems.some((d) => d.subsystem === subsystem);
+    if (!stillAvailable) {
+      setSubsystem(availableSubsystems[0]?.subsystem ?? "");
     }
-  }, [settings.data, subsystem]);
+  }, [availableSubsystems, subsystem]);
 
   const filteredTemplates = React.useMemo(() => {
     if (!templates.data) return [];
@@ -151,18 +164,35 @@ export function QueryPage() {
             <CardTitle className="text-sm">Subsystem</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Select value={subsystem} onValueChange={setSubsystem}>
+            <Select
+              value={subsystem}
+              onValueChange={setSubsystem}
+              disabled={availableSubsystems.length === 0}
+            >
               <SelectTrigger>
-                <SelectValue placeholder="Select subsystem" />
+                <SelectValue
+                  placeholder={
+                    overview.isLoading
+                      ? "Loading…"
+                      : availableSubsystems.length === 0
+                        ? "No data downloaded yet"
+                        : "Select subsystem"
+                  }
+                />
               </SelectTrigger>
               <SelectContent>
-                {settings.data?.subsystems.map((s) => (
-                  <SelectItem key={s.name} value={s.name}>
-                    {s.name.toUpperCase()}
+                {availableSubsystems.map((d) => (
+                  <SelectItem key={d.subsystem} value={d.subsystem}>
+                    {d.subsystem.toUpperCase()}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {!overview.isLoading && availableSubsystems.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                Run a download to query data here.
+              </p>
+            ) : null}
 
             <Tabs defaultValue="templates">
               <TabsList className="w-full">

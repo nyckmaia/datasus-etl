@@ -77,6 +77,21 @@ export function Step2ScopePage() {
         </p>
       </div>
 
+      {state.subsystem === "sim" ? (
+        <div className="flex items-start gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-200">
+          <Info className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <div className="font-medium">SIM publication lag</div>
+            <p className="mt-0.5 text-xs leading-relaxed">
+              SIM data is published with a ~2 year delay due to ICD-10 coding
+              review. Pick a date range that ends at least two years in the
+              past so the next step can actually find files on the DATASUS
+              FTP. If Estimate returns 0 files, widen the range backwards.
+            </p>
+          </div>
+        </div>
+      ) : null}
+
       <Card>
         <CardContent className="grid gap-4 p-5 md:grid-cols-2">
           <div className="space-y-2">

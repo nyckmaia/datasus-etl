@@ -180,20 +180,31 @@ class FTPDownloader:
                     if uf not in uf_list:
                         continue
 
-                    # Build file date for range checking
+                    # Check if within date range. Monthly datasets (SIHSUS:
+                    # RDUF{YY}{MM}) have a precise month and compare by full
+                    # date. Yearly datasets (SIM: DOUF{YYYY}) return
+                    # ``month=None`` — each file covers the entire calendar
+                    # year, so the old code that forced month=1 made every
+                    # SIM file look like "January 1st" and silently dropped
+                    # any year whose January predates the user's chosen
+                    # start month. Compare by year-overlap instead.
                     year = parsed.get("year")
-                    month = parsed.get("month") or 1  # Default to January for yearly datasets
                     if not year:
                         continue
 
-                    try:
-                        file_date = datetime.datetime(year, month, 1)
-                    except (ValueError, TypeError):
-                        continue
-
-                    # Check if within date range
-                    if not (start_date <= file_date <= end_date):
-                        continue
+                    parsed_month = parsed.get("month")
+                    if parsed_month is None:
+                        # Yearly dataset — include if any part of the year
+                        # intersects the requested range.
+                        if year < start_date.year or year > end_date.year:
+                            continue
+                    else:
+                        try:
+                            file_date = datetime.datetime(year, parsed_month, 1)
+                        except (ValueError, TypeError):
+                            continue
+                        if not (start_date <= file_date <= end_date):
+                            continue
 
                     # Check if within directory's year range
                     if not (
