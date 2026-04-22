@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { ArrowLeft, ArrowRight, Info } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -34,6 +34,19 @@ function isoToMonth(iso: string): string {
 export function Step2ScopePage() {
   const { state, update } = useWizard();
   const navigate = useNavigate();
+  const search = useSearch({ from: "/download/step-2" }) as {
+    subsystem?: string;
+  };
+
+  React.useEffect(() => {
+    if (search.subsystem && search.subsystem !== state.subsystem) {
+      update({ subsystem: search.subsystem });
+      return;
+    }
+    if (!search.subsystem && !state.subsystem) {
+      navigate({ to: "/download/step-1", replace: true });
+    }
+  }, [search.subsystem, state.subsystem, update, navigate]);
 
   const detail = useSubsystemDetail(state.subsystem);
   const perUfByUf = React.useMemo(() => {

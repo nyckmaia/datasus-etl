@@ -99,7 +99,10 @@ export function SubsystemCard({ summary, description }: SubsystemCardProps) {
             </Link>
           </Button>
           <Button asChild size="sm" className="flex-1">
-            <Link to="/download/step-1">
+            <Link
+              to="/download/step-2"
+              search={{ subsystem: summary.subsystem }}
+            >
               <Download className="h-3.5 w-3.5" />
               Update
               <ArrowRight className="h-3.5 w-3.5" />

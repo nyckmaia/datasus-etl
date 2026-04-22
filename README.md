@@ -173,24 +173,39 @@ datasus ui --port 8080 --no-open            # porta customizada, sem abrir brows
 A interface e um SPA em ingles, servido pelo proprio pacote Python (sem
 dependencias externas para o usuario final). Paginas:
 
-- **Dashboard**: estatisticas agregadas, mapa de cobertura por UF e serie
-  temporal de volume de dados.
+- **Dashboard**: estatisticas agregadas, mapa de cobertura por UF, serie
+  temporal de volume de dados e cards por subsistema. O botao **Update**
+  de cada card salta direto para o passo *Scope* do wizard ja com o
+  subsistema pre-selecionado.
 - **Download**: wizard em 4 passos (subsistema -> escopo -> estimativa ->
-  execucao com progresso ao vivo via SSE).
+  execucao com progresso ao vivo via SSE). O passo *Scope* usa um
+  seletor de mes (`MonthPicker`), traz a data final pre-preenchida com o
+  mes atual, e exibe a cobertura ja baixada por UF (primeiro/ultimo
+  periodo).
 - **Query**: editor SQL (Monaco), templates pre-definidos e dicionario de
   colunas. Exportacao para CSV ou Excel.
 - **Settings**: diretorio de dados persistido em
-  `~/.config/datasus-etl/config.toml`.
+  `~/.config/datasus-etl/config.toml`. Conta com **seletor de pasta
+  nativo** (tkinter rodando em subprocesso, para nao travar a thread do
+  uvicorn) e validacao do caminho antes de salvar (existe?, ja tem
+  dados?, e gravavel?).
 
 Desenvolvedores que quiserem trabalhar no frontend: veja `web-ui/README.md`
-(requer [Bun](https://bun.sh)).
+(requer [Bun](https://bun.sh)). **Importante:** o bundle SPA e
+pre-compilado em `src/datasus_etl/web/static/` e servido pelo FastAPI;
+alteracoes em `web-ui/src/` so aparecem apos `bun run build` (ou via
+`bun run dev` na porta 5173 com proxy para a API).
 
 ## Estrutura de Dados
 
-Apos o processamento, os dados sao organizados em:
+Apos o processamento, os dados sao organizados abaixo de uma pasta raiz
+`datasus_db/` criada dentro do `--data-dir`. Se voce apontar diretamente
+para uma pasta ja chamada `datasus_db/` (ou `parquet/`), o pipeline
+respeita essa escolha sem aninhar de novo — toda a logica vive em
+`src/datasus_etl/storage/paths.py`.
 
 ```
-data/datasus/
+<data-dir>/datasus_db/
 ├── sihsus/                    # Sistema de Informacoes Hospitalares
 │   ├── dbc/                   # Arquivos originais (deletados apos processamento)
 │   ├── dbf/                   # Arquivos convertidos (deletados apos processamento)
@@ -208,6 +223,12 @@ data/datasus/
     └── parquet/
         └── ...
 ```
+
+> Versoes antigas chegaram a produzir um layout com duplo aninhamento
+> (`<data-dir>/datasus_db/datasus_db/...`). Na inicializacao do CLI
+> (`pipeline`, `update`, `status`, `ui`) o pacote detecta esse caso e
+> oferece migracao com dry-run; `--yes` pula a confirmacao
+> (`storage/migration.py`).
 
 ## Colunas Enriquecidas
 
@@ -234,6 +255,17 @@ Alem das transformacoes existentes:
 | SIHSUS | Sistema de Informacoes Hospitalares | Completo |
 | SIM | Sistema de Informacoes sobre Mortalidade | Completo |
 | SIASUS | Sistema de Informacoes Ambulatoriais | Planejado |
+
+### Notas sobre o SIM
+
+- Os dados sao publicados com **atraso de ~2 anos** (revisao da
+  codificacao CID-10). Se a estimativa retornar zero arquivos, amplie a
+  janela para tras.
+- O parser de nomes do SIM distingue CID10 e CID9 pelo **tamanho do
+  stem**, nao pelo prefixo: `DOUFYYYY.dbc` (8 chars, CID10, 1996+) vs.
+  `DORUFYY.dbc` (7 chars, CID9, 1979-1995). Checar por prefixo `DOR`
+  causaria colisao com UFs CID10 iniciadas em `R` (RJ/RN/RO/RR/RS),
+  dropando silenciosamente toda a mortalidade desses cinco estados.
 
 ## Performance
 

@@ -43,10 +43,19 @@ const step1Route = createRoute({
   component: Step1SubsystemPage,
 });
 
+interface Step2Search {
+  subsystem?: string;
+}
+
 const step2Route = createRoute({
   getParentRoute: () => downloadRoute,
   path: "step-2",
   component: Step2ScopePage,
+  validateSearch: (search: Record<string, unknown>): Step2Search => {
+    const s = search.subsystem;
+    if (typeof s === "string" && s.length > 0) return { subsystem: s };
+    return {};
+  },
 });
 
 const step3Route = createRoute({
