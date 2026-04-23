@@ -76,6 +76,11 @@ COMMON_FLAGS = [
     "--include-package=xlrd",
     "--include-package=pandas",
     "--include-package-data=pandas",
+    # Small pure-Python deps that Nuitka's autodetect has been known to miss.
+    # tomli_w is used by web/user_config.py to persist the ~/.config/... file;
+    # without it the whole web server fails to import at startup.
+    "--include-package=tomli_w",
+    "--include-package=psutil",
     # Trim the fat.
     "--nofollow-import-to=pandas.tests",
     "--nofollow-import-to=pyarrow.tests",
@@ -105,7 +110,12 @@ def _platform_flags(version: str) -> list[str]:
         win_version = _windows_version(version)
         flags += [
             "--msvc=latest",
-            "--windows-console-mode=disable",
+            # attach: use parent console when launched from a shell (so
+            # `datasus.exe ui` shows log output), no window when launched
+            # from Explorer or a desktop shortcut. Beats "disable" because
+            # disable makes stdout/stderr a black hole and startup errors
+            # become invisible.
+            "--windows-console-mode=attach",
             f"--windows-icon-from-ico={ICONS_DIR / 'icon.ico'}",
             "--company-name=DataSUS ETL",
             "--product-name=DataSUS ETL",
