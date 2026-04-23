@@ -169,21 +169,40 @@ def _build(output_dir: Path, jobs: int | None) -> Path:
     subprocess.check_call(cmd, cwd=ROOT)
 
     if platform.system() == "Darwin":
-        app_bundle = output_dir / "datasus-etl.app"
-        if not app_bundle.is_dir():
-            # Nuitka sometimes names it after the entry module.
-            candidates = list(output_dir.glob("*.app"))
-            if candidates:
-                app_bundle = candidates[0]
+        canonical_app = output_dir / "datasus-etl.app"
+        if canonical_app.is_dir():
+            app_bundle = canonical_app
+        else:
+            candidates = [p for p in output_dir.glob("*.app")]
+            if not candidates:
+                raise SystemExit(f"Nuitka did not produce a .app bundle under {output_dir}")
+            app_bundle = candidates[0]
+            if app_bundle != canonical_app:
+                print(f"[build_nuitka] Renaming {app_bundle.name} -> {canonical_app.name}")
+                app_bundle.rename(canonical_app)
+                app_bundle = canonical_app
         _inject_macos_wrapper(app_bundle)
         return app_bundle
 
-    dist_dir = output_dir / "datasus-etl.dist"
-    if not dist_dir.is_dir():
-        candidates = [p for p in output_dir.iterdir() if p.is_dir() and p.name.endswith(".dist")]
-        if candidates:
-            dist_dir = candidates[0]
-    return dist_dir
+    # Windows/Linux: the dist folder is named after the main module
+    # (__main__.dist by default). Rename it deterministically so all
+    # downstream steps (smoke test, installer packaging) can point at a
+    # single canonical path.
+    canonical_dist = output_dir / "datasus-etl.dist"
+    candidates = [
+        p for p in output_dir.iterdir()
+        if p.is_dir() and p.name.endswith(".dist") and p.name != canonical_dist.name
+    ]
+    if not candidates and canonical_dist.is_dir():
+        return canonical_dist
+    if not candidates:
+        raise SystemExit(f"Nuitka did not produce a .dist folder under {output_dir}")
+    produced = candidates[0]
+    if canonical_dist.is_dir():
+        shutil.rmtree(canonical_dist)
+    print(f"[build_nuitka] Renaming {produced.name} -> {canonical_dist.name}")
+    produced.rename(canonical_dist)
+    return canonical_dist
 
 
 def _inject_macos_wrapper(app_bundle: Path) -> None:
