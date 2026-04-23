@@ -12,9 +12,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write   # to create tags + releases
-  pages: write      # to deploy to GitHub Pages
-  id-token: write   # for the Pages deployment OIDC token
+  contents: write   # to create tags, releases, and push rebuilt docs/
 
 jobs:
   # -------------------------------------------------------------------------
@@ -331,19 +329,20 @@ jobs:
           prerelease: false
 
   # -------------------------------------------------------------------------
-  # Build and deploy the static site to GitHub Pages.
+  # Rebuild the static site with the new VERSION and commit the output back
+  # to main under /docs. GitHub Pages is configured in the repo UI as
+  # "Deploy from a branch" (main, /docs), so committing the build output is
+  # what publishes it — no separate deploy step needed.
   # -------------------------------------------------------------------------
   pages:
-    name: Deploy site
+    name: Rebuild site into /docs
     needs: release
     runs-on: ubuntu-22.04
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.release.outputs.tag }}
+          ref: main             # always build against latest main (post-release commit)
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -355,18 +354,21 @@ jobs:
         working-directory: site
         run: npm ci
 
-      - name: Build site
+      - name: Build site into /docs
         working-directory: site
         env:
           SITE_VERSION: ${{ needs.release.outputs.version }}
           SITE_REPO: nyckmaia/datasus-etl
         run: npm run build
 
-      - uses: actions/configure-pages@v5
-
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: site/dist
-
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Commit regenerated /docs
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/
+          if git diff --cached --quiet; then
+            echo "No changes to /docs — nothing to commit."
+          else
+            git commit -m "chore(release): rebuild site for ${{ needs.release.outputs.tag }} [skip ci]"
+            git push origin HEAD:main
+          fi

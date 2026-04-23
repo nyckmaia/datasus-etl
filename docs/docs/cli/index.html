@@ -1,0 +1,49 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>CLI reference — DataSUS ETL · DataSUS ETL</title><meta name="description" content="Complete command-line reference for the datasus executable."><meta name="color-scheme" content="light"><meta name="theme-color" content="#f3ece0"><link rel="icon" href="/datasus-etl/favicon.svg" type="image/svg+xml"><link rel="canonical" href="https://nyckmaia.github.io/datasus-etl/docs/cli/"><!--
+      First-visit redirect. Runs before paint so we don't flash the EN
+      version to a PT-speaking visitor. Only active on the EN default
+      pages; if the user already has a stored preference, respect it.
+    --><script>
+      (function() {
+        try {
+          var stored = localStorage.getItem('lang');
+          var path = window.location.pathname;
+          var isEn = path.indexOf('/datasus-etl/pt/') !== 0 && path.indexOf('/pt/') !== 0;
+          if (stored === 'pt' && isEn && false) {
+            var target = '/datasus-etl/pt'.replace(/\/+/g, '/');
+            if (!/\/$/.test(target) && !/\.[a-z]+$/.test(target)) target += '/';
+            window.location.replace(target);
+            return;
+          }
+          if (!stored) {
+            var lang = (navigator.language || 'en').toLowerCase();
+            if (lang.indexOf('pt') === 0 && isEn && false) {
+              localStorage.setItem('lang', 'pt');
+              var target2 = '/datasus-etl/pt'.replace(/\/+/g, '/');
+              if (!/\/$/.test(target2) && !/\.[a-z]+$/.test(target2)) target2 += '/';
+              window.location.replace(target2);
+            }
+          }
+        } catch (e) { /* no-op */ }
+      })();
+    </script><link rel="stylesheet" href="/datasus-etl/_astro/changelog.ChGNTydP.css"></head> <body class="antialiased"> <header class="relative z-40"> <div class="max-w-7xl mx-auto px-6 md:px-10 pt-6 pb-3"> <div class="flex items-end justify-between gap-6"> <a href="/datasus-etl/" class="flex items-end gap-3 group"> <span class="display-serif leading-none text-[2rem] md:text-[2.4rem] font-black text-ink tracking-[-0.035em]">DATASUS<span class="text-clinic-red">·</span>ETL</span> <span class="stamp text-ink-400 pb-1 hidden md:inline"> Brazilian public-health data </span> </a> <nav class="hidden md:flex items-center gap-6 stamp text-ink-600"> <a href="/datasus-etl/download" class="relative pb-1 hover:text-ink transition-colors"> Download  </a><a href="/datasus-etl/tutorial" class="relative pb-1 hover:text-ink transition-colors"> Tutorial  </a><a href="/datasus-etl/docs" class="relative pb-1 hover:text-ink transition-colors text-ink" aria-current="page"> Docs <span class="absolute inset-x-0 -bottom-[2px] h-[2px] bg-clinic-red"></span> </a><a href="/datasus-etl/changelog" class="relative pb-1 hover:text-ink transition-colors"> Changelog  </a> <a href="https://github.com/nyckmaia/datasus-etl" rel="noopener noreferrer" target="_blank" class="hover:text-ink" aria-label="GitHub repository">
+GitHub <span aria-hidden="true">↗</span> </a> <div class="flex items-center gap-0 stamp text-ink-600"> <a href="/datasus-etl/" data-lang-set="en" class="px-2 py-1 transition-colors text-ink bg-ink/10" aria-current="true">EN</a> <span class="text-ink-200" aria-hidden="true">·</span> <span class="px-2 py-1 text-ink-200 cursor-not-allowed" title="Portuguese not available on this page">PT</span> </div> <script type="module">document.querySelectorAll("[data-lang-set]").forEach(t=>{t.addEventListener("click",()=>{try{localStorage.setItem("lang",t.dataset.langSet??"en")}catch{}})});</script> </nav> <!-- Mobile compact: only lang + GH --> <div class="md:hidden flex items-center gap-3"> <a href="https://github.com/nyckmaia/datasus-etl" rel="noopener noreferrer" target="_blank" class="stamp text-ink-600">GH</a> <div class="flex items-center gap-0 stamp text-ink-600"> <a href="/datasus-etl/" data-lang-set="en" class="px-2 py-1 transition-colors text-ink bg-ink/10" aria-current="true">EN</a> <span class="text-ink-200" aria-hidden="true">·</span> <span class="px-2 py-1 text-ink-200 cursor-not-allowed" title="Portuguese not available on this page">PT</span> </div>  </div> </div> <!-- Mobile nav row --> <nav class="md:hidden mt-4 flex flex-wrap gap-x-4 gap-y-2 stamp text-ink-600"> <a href="/datasus-etl/download" class="pb-1"> Download </a><a href="/datasus-etl/tutorial" class="pb-1"> Tutorial </a><a href="/datasus-etl/docs" class="pb-1 text-ink border-b-2 border-clinic-red"> Docs </a><a href="/datasus-etl/changelog" class="pb-1"> Changelog </a> </nav> </div> <div class="hairline max-w-7xl mx-auto"></div> </header> <main class="relative">  <section class="max-w-5xl mx-auto px-6 md:px-10 pt-16 md:pt-24 pb-24"> <p class="stamp text-clinic-red"> <a href="../" class="prose-editorial">Docs</a> / CLI reference
+</p> <h1 class="display-serif mt-3 text-display-lg text-ink">CLI reference.</h1> <p class="mt-5 text-lead text-ink-800 max-w-prose-wide">
+The installer ships a single binary. Both
+<code class="font-mono">datasus</code> and
+<code class="font-mono">datasus-etl</code> resolve to the same
+      entry point — use whichever you prefer.
+</p> <div class="prose-editorial"> <h2>Global flags</h2> <p>Available on every subcommand:</p> <pre><code>--help       Show help and exit
+--version    Print version and exit
+-y, --yes    Skip interactive confirmations (legacy migration, overwrites)</code></pre> <h2>datasus pipeline</h2> <p>End-to-end: download → convert → transform → export.</p> <pre><code>datasus pipeline \
+  --source sihsus \
+  --start-date 2023-01-01 \
+  --end-date   2023-12-31 \
+  --uf SP,RJ,MG \
+  --data-dir ./data</code></pre> <h3>Required</h3> <ul> <li><code>-s, --source</code> — subsystem id (<code>sihsus</code> or <code>sim</code>).</li> <li><code>--start-date</code> — ISO date. Earliest month to include (inclusive).</li> </ul> <h3>Common options</h3> <ul> <li><code>--end-date</code> — ISO date, defaults to today.</li> <li><code>--uf</code> — comma-separated state codes. Omit for all states.</li> <li><code>-d, --data-dir</code> — base directory. Resolves to <code>&lt;dir&gt;/datasus_db/&lt;subsystem&gt;/</code>.</li> </ul> <h2>datasus update</h2> <p>Same flags as <code>pipeline</code>, but only downloads files newer than what is already on disk. Useful for cron jobs.</p> <h2>datasus status</h2> <p>Reports what is already downloaded and processed, per UF and per month.</p> <pre><code>datasus status -s sihsus -d ./data</code></pre> <h2>datasus db</h2> <p>Opens the DuckDB interactive shell connected to the parquet store. All tables and views are pre-registered — type <code>.tables</code> to list.</p> <h2>datasus ui</h2> <p>Starts the local web interface at <code>http://127.0.0.1:8787</code> and opens your default browser.</p> <pre><code>datasus ui                              # default
+datasus ui --port 8080 --no-open        # custom port, no browser
+datasus ui --host 0.0.0.0               # expose on LAN (careful!)</code></pre> <h2>Exit codes</h2> <ul> <li><code>0</code> — success.</li> <li><code>1</code> — generic error (network, filesystem, parse).</li> <li><code>2</code> — user-facing failure in the folder-picker subprocess (no tkinter).</li> <li><code>130</code> — interrupted by Ctrl+C.</li> </ul> <aside class="mt-12 border-l-2 border-clinic-sage pl-5"> <div class="stamp text-clinic-sage">Source</div> <p class="!mt-2 text-sm text-ink-600">
+The authoritative CLI definition lives in
+<a href="https://github.com/nyckmaia/datasus-etl/blob/main/src/datasus_etl/cli.py" class="prose-editorial"> <code>src/datasus_etl/cli.py</code> </a>.
+</p> </aside> </div> </section>  </main> <footer class="mt-24"> <div class="max-w-7xl mx-auto px-6 md:px-10"> <div class="rule-fat w-16"></div> <div class="mt-8 grid md:grid-cols-[2fr_1fr_1fr] gap-10 pb-10"> <div> <div class="stamp text-clinic-red">Colophon</div> <p class="mt-3 max-w-md text-ink-600 text-sm leading-relaxed">Built with Astro, Tailwind, Fraunces, Public Sans, and JetBrains Mono. No trackers. No cookies beyond your language preference.</p> <p class="mt-3 max-w-md text-ink-400 text-xs leading-relaxed"> DataSUS is a registered trademark of the Brazilian Ministry of Health. This project is an independent open-source tool and is not affiliated with DATASUS or the Ministry of Health. </p> </div> <div> <div class="stamp text-ink-400">Links</div> <ul class="mt-3 space-y-1.5 text-sm"> <li> <a href="https://github.com/nyckmaia/datasus-etl" class="prose-editorial inline-block" rel="noopener noreferrer" target="_blank">Repository</a> </li><li> <a href="https://github.com/nyckmaia/datasus-etl/releases" class="prose-editorial inline-block" rel="noopener noreferrer" target="_blank">Releases</a> </li><li> <a href="https://github.com/nyckmaia/datasus-etl/issues" class="prose-editorial inline-block" rel="noopener noreferrer" target="_blank">Issues</a> </li> </ul> </div> <div> <div class="stamp text-ink-400">Version</div> <div class="mt-3 font-mono text-ink text-lg">v0.1.0</div> <p class="mt-2 text-ink-400 text-xs leading-relaxed max-w-[22ch]"> Source of truth: the <code class="font-mono">repository VERSION file</code>.
+</p> <p class="mt-4 text-xs text-ink-400">
+© 2026 · Licensed under Apache 2.0. </p> </div> </div> </div> </footer> </body></html>

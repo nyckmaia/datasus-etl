@@ -7,6 +7,8 @@ on:
     paths-ignore:
       - 'VERSION'        # handled by release.yml
       - 'site/**'
+      - 'docs/**'        # rebuilt-site commits from release.yml
+      - 'CHANGELOG.md'
       - '**.md'
 
 concurrency:
