@@ -1,0 +1,65 @@
+---
+import { PLATFORMS, VERSION, downloadUrl } from '~/lib/releases';
+import type { Locale } from '~/lib/i18n';
+
+interface Props {
+  locale: Locale;
+}
+const { locale } = Astro.props;
+
+const copy = {
+  en: {
+    platform: 'Platform',
+    architecture: 'Architecture',
+    format: 'Format',
+    notes: 'Notes',
+    download: 'Download',
+  },
+  pt: {
+    platform: 'Plataforma',
+    architecture: 'Arquitetura',
+    format: 'Formato',
+    notes: 'Observações',
+    download: 'Baixar',
+  },
+}[locale];
+---
+
+<div class="mt-4 border border-ink/15 bg-paper-50 overflow-hidden">
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="stamp text-ink-400 text-left">
+        <th class="px-4 py-3 border-b border-ink/10">{copy.platform}</th>
+        <th class="px-4 py-3 border-b border-ink/10 hidden md:table-cell">{copy.architecture}</th>
+        <th class="px-4 py-3 border-b border-ink/10 hidden md:table-cell">{copy.format}</th>
+        <th class="px-4 py-3 border-b border-ink/10 hidden lg:table-cell">{copy.notes}</th>
+        <th class="px-4 py-3 border-b border-ink/10 text-right">v{VERSION}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {PLATFORMS.map((p) => (
+        <tr class="odd:bg-paper-50 even:bg-paper-100/70 hover:bg-paper-200/50 transition-colors">
+          <td class="px-4 py-4 align-top">
+            <div class="font-medium text-ink">{p.label}</div>
+            <div class="md:hidden mt-1 text-xs text-ink-400 font-mono">{p.architecture}</div>
+          </td>
+          <td class="px-4 py-4 align-top font-mono text-xs text-ink-600 hidden md:table-cell">
+            {p.architecture}
+          </td>
+          <td class="px-4 py-4 align-top font-mono text-xs text-ink-600 hidden md:table-cell">
+            .{p.extension}
+          </td>
+          <td class="px-4 py-4 align-top text-xs text-ink-600 hidden lg:table-cell">
+            {p.note}
+          </td>
+          <td class="px-4 py-4 align-top text-right">
+            <a
+              href={downloadUrl(p)}
+              class="inline-flex items-center gap-2 px-3 py-1.5 bg-ink text-paper text-xs stamp hover:bg-clinic-red transition-colors"
+            >{copy.download} ↓</a>
+          </td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+</div>

@@ -1,0 +1,153 @@
+---
+import Page from '~/layouts/Page.astro';
+import { readFileSync, existsSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { releasesIndexUrl } from '~/lib/releases';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const ROOT = resolve(HERE, '..', '..', '..');
+const changelogPath = resolve(ROOT, 'CHANGELOG.md');
+
+let markdown = '';
+let hasChangelog = false;
+if (existsSync(changelogPath)) {
+  markdown = readFileSync(changelogPath, 'utf8');
+  hasChangelog = markdown.replace(/^#\s+Changelog\s*/, '').trim().length > 0;
+}
+
+function renderMarkdown(src: string): string {
+  // Small markdown subset renderer — the changelog uses a predictable
+  // shape (## / ### / - / **bold** / `code`). No need to pull in a
+  // full parser and expand the site's bundle.
+  const esc = (s: string) =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  const lines = src.replace(/^#\s+Changelog\s*/, '').split('\n');
+  const out: string[] = [];
+  let listOpen = false;
+
+  const closeList = () => {
+    if (listOpen) {
+      out.push('</ul>');
+      listOpen = false;
+    }
+  };
+
+  const inline = (text: string) =>
+    esc(text)
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+    if (!line) {
+      closeList();
+      continue;
+    }
+    let m: RegExpMatchArray | null;
+    if ((m = line.match(/^##\s+\[?(.+?)\]?\s*-\s*(.+)$/))) {
+      closeList();
+      out.push(
+        `<section class="changelog-entry"><header><span class="stamp text-clinic-red">Release</span><h2 class="display-serif text-display text-ink">v${esc(m[1])}</h2><time class="font-mono text-sm text-ink-400">${esc(m[2])}</time></header>`,
+      );
+      continue;
+    }
+    if ((m = line.match(/^##\s+(.+)$/))) {
+      closeList();
+      out.push(`</section><section class="changelog-entry"><header><h2 class="display-serif text-display text-ink">${inline(m[1])}</h2></header>`);
+      continue;
+    }
+    if ((m = line.match(/^###\s+(.+)$/))) {
+      closeList();
+      out.push(`<h3 class="stamp text-clinic-sage mt-6">${inline(m[1])}</h3>`);
+      continue;
+    }
+    if ((m = line.match(/^-\s+(.+)$/))) {
+      if (!listOpen) {
+        out.push('<ul class="changelog-list">');
+        listOpen = true;
+      }
+      out.push(`<li>${inline(m[1])}</li>`);
+      continue;
+    }
+    closeList();
+    out.push(`<p class="text-ink-800 max-w-prose-wide">${inline(line)}</p>`);
+  }
+  closeList();
+  // Close any still-open section.
+  if (out.some((chunk) => chunk.startsWith('<section'))) {
+    out.push('</section>');
+  }
+  return out.join('\n');
+}
+
+const html = hasChangelog ? renderMarkdown(markdown) : '';
+---
+
+<Page
+  title="Changelog — DataSUS ETL"
+  description="Release history, grouped by type, generated from Conventional Commits."
+  locale="en"
+  currentKey="changelog"
+>
+  <section class="max-w-5xl mx-auto px-6 md:px-10 pt-16 md:pt-24 pb-24">
+    <p class="stamp text-clinic-red">Changelog</p>
+    <h1 class="display-serif mt-3 text-display-lg text-ink">Release history.</h1>
+    <p class="mt-5 text-lead text-ink-800 max-w-prose-wide">
+      Generated automatically from
+      <a href="https://www.conventionalcommits.org/" class="prose-editorial">Conventional Commits</a>
+      at each release. Items are grouped into Added, Fixed, Changed,
+      Performance, Documentation, and Other.
+    </p>
+
+    {hasChangelog ? (
+      <div class="mt-10 changelog" set:html={html} />
+    ) : (
+      <div class="mt-12 border border-ink/15 bg-paper-50 p-8 text-center">
+        <p class="display-serif text-display text-ink">No releases yet.</p>
+        <p class="mt-3 text-sm text-ink-600 max-w-prose-wide mx-auto">
+          This page will populate automatically when the first versioned
+          release is published. In the meantime, follow development on the
+          <a href={releasesIndexUrl()} class="prose-editorial">GitHub releases page</a>.
+        </p>
+      </div>
+    )}
+  </section>
+</Page>
+
+<style is:global>
+  .changelog-entry {
+    padding-top: 2.5rem;
+    padding-bottom: 1.5rem;
+    border-top: 1px solid rgba(11, 30, 51, 0.12);
+  }
+  .changelog-entry:first-of-type {
+    border-top: 3px solid #0b1e33;
+  }
+  .changelog-entry header {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 1rem;
+    align-items: baseline;
+    margin-bottom: 0.5rem;
+  }
+  .changelog-list {
+    margin-top: 0.5rem;
+    padding-left: 1rem;
+    list-style: '— ';
+  }
+  .changelog-list li {
+    padding-left: 0.35rem;
+    margin-top: 0.25rem;
+    max-width: 72ch;
+    line-height: 1.55;
+  }
+  .changelog code {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 0.86em;
+    background: rgba(11, 30, 51, 0.06);
+    padding: 0.1em 0.35em;
+    border-radius: 3px;
+  }
+</style>

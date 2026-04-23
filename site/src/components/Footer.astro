@@ -1,0 +1,87 @@
+---
+import type { Locale } from '~/lib/i18n';
+import { VERSION, releasesIndexUrl, repoUrl, issuesUrl } from '~/lib/releases';
+
+interface Props {
+  locale: Locale;
+}
+const { locale } = Astro.props;
+
+const COPY = {
+  en: {
+    colophon: 'Colophon',
+    builtWith:
+      'Built with Astro, Tailwind, Fraunces, Public Sans, and JetBrains Mono. No trackers. No cookies beyond your language preference.',
+    license: 'Licensed under Apache 2.0.',
+    links: [
+      ['Repository', repoUrl()],
+      ['Releases', releasesIndexUrl()],
+      ['Issues', issuesUrl()],
+    ],
+    disclaim:
+      'DataSUS is a registered trademark of the Brazilian Ministry of Health. This project is an independent open-source tool and is not affiliated with DATASUS or the Ministry of Health.',
+    sourceOfTruth: 'Source of truth: the',
+    sourceOfTruthFile: 'repository VERSION file',
+  },
+  pt: {
+    colophon: 'Ficha técnica',
+    builtWith:
+      'Construído com Astro, Tailwind, Fraunces, Public Sans e JetBrains Mono. Sem rastreadores. O único cookie armazena a sua preferência de idioma.',
+    license: 'Licenciado sob Apache 2.0.',
+    links: [
+      ['Repositório', repoUrl()],
+      ['Releases', releasesIndexUrl()],
+      ['Issues', issuesUrl()],
+    ],
+    disclaim:
+      'DATASUS é uma marca registrada do Ministério da Saúde do Brasil. Este é um projeto independente, de código aberto, sem vínculo com o DATASUS ou com o Ministério da Saúde.',
+    sourceOfTruth: 'Fonte única de verdade: o arquivo',
+    sourceOfTruthFile: 'VERSION do repositório',
+  },
+} as const;
+
+const t = COPY[locale];
+---
+
+<footer class="mt-24">
+  <div class="max-w-7xl mx-auto px-6 md:px-10">
+    <div class="rule-fat w-16"></div>
+    <div class="mt-8 grid md:grid-cols-[2fr_1fr_1fr] gap-10 pb-10">
+      <div>
+        <div class="stamp text-clinic-red">{t.colophon}</div>
+        <p class="mt-3 max-w-md text-ink-600 text-sm leading-relaxed">{t.builtWith}</p>
+        <p class="mt-3 max-w-md text-ink-400 text-xs leading-relaxed">
+          {t.disclaim}
+        </p>
+      </div>
+
+      <div>
+        <div class="stamp text-ink-400">Links</div>
+        <ul class="mt-3 space-y-1.5 text-sm">
+          {t.links.map(([label, href]) => (
+            <li>
+              <a
+                href={href}
+                class="prose-editorial inline-block"
+                rel="noopener noreferrer"
+                target="_blank"
+              >{label}</a>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div>
+        <div class="stamp text-ink-400">{locale === 'pt' ? 'Versão' : 'Version'}</div>
+        <div class="mt-3 font-mono text-ink text-lg">v{VERSION}</div>
+        <p class="mt-2 text-ink-400 text-xs leading-relaxed max-w-[22ch]">
+          {t.sourceOfTruth}
+          <code class="font-mono">{t.sourceOfTruthFile}</code>.
+        </p>
+        <p class="mt-4 text-xs text-ink-400">
+          © {new Date().getFullYear()} · {t.license}
+        </p>
+      </div>
+    </div>
+  </div>
+</footer>

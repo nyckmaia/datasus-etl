@@ -1,0 +1,166 @@
+---
+import { PLATFORMS, downloadUrl, VERSION } from '~/lib/releases';
+import type { Locale } from '~/lib/i18n';
+
+interface Props {
+  locale: Locale;
+  variant?: 'hero' | 'inline';
+}
+
+const { locale, variant = 'hero' } = Astro.props;
+const fallback = PLATFORMS[0]; // Windows as safe default
+const fallbackUrl = downloadUrl(fallback);
+
+const copy = {
+  en: {
+    download: 'Download',
+    for: 'for',
+    version: 'Version',
+    detecting: 'detecting your platform…',
+    other: 'other platforms',
+  },
+  pt: {
+    download: 'Baixar',
+    for: 'para',
+    version: 'Versão',
+    detecting: 'detectando sua plataforma…',
+    other: 'outras plataformas',
+  },
+}[locale];
+---
+
+<div
+  class:list={[
+    'download-widget group',
+    variant === 'hero' ? 'block' : 'inline-flex items-center gap-3',
+  ]}
+  data-version={VERSION}
+>
+  <a
+    href={fallbackUrl}
+    data-download-link
+    class:list={[
+      'inline-flex items-center gap-4 transition-all',
+      variant === 'hero'
+        ? 'px-7 py-5 bg-ink text-paper hover:bg-clinic-red'
+        : 'px-4 py-2 bg-ink text-paper hover:bg-clinic-red text-sm',
+    ]}
+  >
+    <span class="stamp" data-slot="cta">{copy.download}</span>
+    <span class="font-mono text-base leading-none" data-slot="platform">
+      {copy.detecting}
+    </span>
+    <svg
+      class="w-5 h-5 flex-shrink-0 -translate-y-px transition-transform group-hover:translate-y-0.5"
+      viewBox="0 0 20 20"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      aria-hidden="true"
+    >
+      <path d="M10 4v10m0 0l-4-4m4 4l4-4" stroke-linecap="round" stroke-linejoin="round" />
+      <path d="M4 16h12" stroke-linecap="round" />
+    </svg>
+  </a>
+
+  {variant === 'hero' && (
+    <div class="mt-3 text-sm text-ink-600 flex items-baseline gap-2">
+      <span class="stamp text-ink-400">{copy.version}</span>
+      <span class="font-mono">v{VERSION}</span>
+      <span class="text-ink-200">·</span>
+      <a
+        href={Astro.url.pathname.includes('/pt/') ? '../download/' : './download/'}
+        class="prose-editorial text-ink-600"
+        data-slot="other-link"
+      >{copy.other} →</a>
+    </div>
+  )}
+</div>
+
+<script type="application/json" id="dl-platforms">
+  {JSON.stringify(PLATFORMS.map((p) => ({ id: p.id, ext: p.extension, label: p.label })))}
+</script>
+
+<script>
+  interface AssetData { id: string; ext: string; label: string }
+  const data: AssetData[] = JSON.parse(
+    document.getElementById('dl-platforms')?.textContent ?? '[]',
+  );
+
+  type DetectResult =
+    | { kind: 'asset'; asset: AssetData }
+    | { kind: 'intel-mac' };
+
+  function detect(): DetectResult {
+    if (typeof navigator === 'undefined') return { kind: 'asset', asset: data[0] };
+    const ua = (navigator.userAgent || '').toLowerCase();
+    const platform = (
+      (navigator as Navigator & { userAgentData?: { platform?: string } })
+        .userAgentData?.platform ?? ''
+    ).toLowerCase();
+
+    const isMac = platform.includes('mac') || ua.includes('mac os') || ua.includes('macintosh');
+    const isWin = platform.includes('win') || ua.includes('windows');
+    const isLin = platform.includes('linux') || ua.includes('linux');
+
+    if (isMac) {
+      // Apple Silicon sniff — imperfect but good enough for a suggestion.
+      const arm =
+        ua.includes('arm64') ||
+        ua.includes('apple silicon') ||
+        (navigator as Navigator & { userAgentData?: { architecture?: string } })
+          .userAgentData?.architecture?.includes('arm');
+      if (arm) {
+        const asset = data.find((p) => p.id === 'macos-arm64');
+        if (asset) return { kind: 'asset', asset };
+      }
+      // Intel Mac (or unclear arch on Mac) — we don't ship a native installer.
+      return { kind: 'intel-mac' };
+    }
+    if (isLin) {
+      const asset = data.find((p) => p.id === 'linux-x64');
+      if (asset) return { kind: 'asset', asset };
+    }
+    if (isWin) {
+      const asset = data.find((p) => p.id === 'windows-x64');
+      if (asset) return { kind: 'asset', asset };
+    }
+    return { kind: 'asset', asset: data[0] };
+  }
+
+  const widgets = document.querySelectorAll<HTMLElement>('.download-widget');
+  widgets.forEach((w) => {
+    const result = detect();
+    const version = w.dataset.version ?? '';
+    const link = w.querySelector<HTMLAnchorElement>('[data-download-link]');
+    const slot = w.querySelector<HTMLElement>('[data-slot="platform"]');
+    const cta = w.querySelector<HTMLElement>('[data-slot="cta"]');
+
+    if (result.kind === 'intel-mac') {
+      // Route Intel Mac users to the source-install walkthrough.
+      const isPt = window.location.pathname.includes('/pt/');
+      const target = isPt ? '/datasus-etl/pt/download/#intel-mac' : '/datasus-etl/download/#intel-mac';
+      if (link) link.href = target;
+      if (slot) slot.textContent = isPt ? 'Mac Intel — instalar do código' : 'Intel Mac — install from source';
+      if (cta) cta.textContent = isPt ? 'Instruções' : 'Instructions';
+      return;
+    }
+
+    const chosen = result.asset;
+    const filename = `datasus-etl-${version}-${chosen.id}.${chosen.ext}`;
+    const url = `https://github.com/nyckmaia/datasus-etl/releases/download/v${version}/${filename}`;
+    if (link) link.href = url;
+    if (slot) slot.textContent = chosen.label;
+  });
+</script>
+
+<style>
+  .download-widget a[data-download-link] {
+    box-shadow: 4px 4px 0 0 #c4364d;
+    border: 1px solid #0b1e33;
+  }
+  .download-widget a[data-download-link]:hover {
+    box-shadow: 2px 2px 0 0 #c4364d;
+    transform: translate(2px, 2px);
+  }
+</style>

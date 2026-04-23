@@ -1,0 +1,219 @@
+/* ---------- Fonts ----------
+   Fraunces for display (variable serif with optical size),
+   Public Sans for body (civic, crisp, less ubiquitous than Inter),
+   JetBrains Mono for data/code (paths, versions, CLI).
+   Google Fonts API import must precede @tailwind per CSS spec.
+------------------------------- */
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,700;9..144,900&family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --paper: #f3ece0;
+  --ink: #0b1e33;
+  --rule: rgba(11, 30, 51, 0.18);
+  color-scheme: light;
+}
+
+html {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: 'Public Sans', system-ui, sans-serif;
+  font-feature-settings: 'ss01' on, 'cv11' on;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background:
+    theme('backgroundImage.grain'),
+    radial-gradient(1200px 800px at 90% -10%, rgba(196, 54, 77, 0.06), transparent 60%),
+    var(--paper);
+  min-height: 100vh;
+}
+
+::selection {
+  background: #0b1e33;
+  color: #f3ece0;
+}
+
+/* ---------- Editorial typography ---------- */
+.display-serif {
+  font-family: 'Fraunces', Georgia, serif;
+  font-variation-settings: 'opsz' 144, 'SOFT' 50;
+}
+
+.stamp {
+  font-family: 'Public Sans', system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 0.72rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.hairline {
+  height: 1px;
+  background: var(--rule);
+}
+
+.hairline-v {
+  width: 1px;
+  background: var(--rule);
+}
+
+.rule-fat {
+  height: 3px;
+  background: var(--ink);
+}
+
+/* Vertical stroke marker used in headings and sidenotes */
+.marker {
+  position: relative;
+  padding-left: 1rem;
+}
+.marker::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.25rem;
+  bottom: 0.25rem;
+  width: 3px;
+  background: #c4364d;
+}
+
+/* Links inside editorial body copy */
+.prose-editorial a {
+  color: inherit;
+  text-decoration: none;
+  background-image: linear-gradient(currentColor, currentColor);
+  background-position: 0 100%;
+  background-repeat: no-repeat;
+  background-size: 100% 1px;
+  transition: background-size 250ms ease;
+}
+.prose-editorial a:hover {
+  background-size: 100% 2px;
+}
+
+/* Body copy inside long-form pages */
+.prose-editorial p {
+  max-width: 68ch;
+  margin-top: 1rem;
+}
+.prose-editorial h2 {
+  font-family: 'Fraunces', Georgia, serif;
+  font-variation-settings: 'opsz' 72;
+  font-weight: 700;
+  font-size: clamp(1.75rem, 2.5vw, 2.25rem);
+  margin-top: 3rem;
+  margin-bottom: 0.5rem;
+  letter-spacing: -0.02em;
+}
+.prose-editorial h3 {
+  font-family: 'Public Sans', system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 1.15rem;
+  margin-top: 2rem;
+  letter-spacing: -0.005em;
+}
+.prose-editorial code {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.86em;
+  background: rgba(11, 30, 51, 0.06);
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+}
+.prose-editorial pre {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  background: var(--ink);
+  color: #f3ece0;
+  padding: 1.25rem 1.5rem;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  overflow-x: auto;
+  border-radius: 4px;
+  margin-top: 1.25rem;
+}
+.prose-editorial pre code {
+  background: transparent;
+  padding: 0;
+  color: inherit;
+}
+.prose-editorial ul {
+  margin-top: 0.75rem;
+  padding-left: 1.25rem;
+  list-style: '— ';
+}
+.prose-editorial ul li {
+  padding-left: 0.35rem;
+  margin-top: 0.35rem;
+  max-width: 68ch;
+}
+
+/* Numbered onboarding lists (Intel Mac source install, etc.) */
+.intel-steps {
+  counter-reset: step;
+  list-style: none;
+  padding-left: 0;
+  margin-top: 1.25rem;
+}
+.intel-steps > li {
+  counter-increment: step;
+  position: relative;
+  padding-left: 2.5rem;
+  padding-bottom: 1.5rem;
+  margin-top: 0;
+  max-width: 68ch;
+}
+.intel-steps > li::before {
+  content: counter(step, decimal-leading-zero);
+  position: absolute;
+  left: 0;
+  top: 0.05rem;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.8rem;
+  color: #c4364d;
+  font-weight: 500;
+}
+.intel-steps > li + li {
+  border-top: 1px dashed rgba(11, 30, 51, 0.15);
+  padding-top: 1rem;
+}
+.intel-steps > li pre {
+  margin-top: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+kbd {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.78em;
+  background: rgba(11, 30, 51, 0.08);
+  border: 1px solid rgba(11, 30, 51, 0.18);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  padding: 0.05em 0.4em;
+  vertical-align: baseline;
+}
+
+/* Stagger page-load fade */
+@keyframes editorial-rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.rise {
+  animation: editorial-rise 700ms cubic-bezier(0.2, 0.7, 0, 1) both;
+}
+.rise-d1 { animation-delay: 80ms; }
+.rise-d2 { animation-delay: 180ms; }
+.rise-d3 { animation-delay: 300ms; }
+.rise-d4 { animation-delay: 440ms; }
+.rise-d5 { animation-delay: 600ms; }
+
+/* Focus visible for keyboard users */
+:where(a, button, [role='button']):focus-visible {
+  outline: 2px solid #c4364d;
+  outline-offset: 3px;
+  border-radius: 2px;
+}

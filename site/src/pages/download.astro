@@ -1,0 +1,194 @@
+---
+import Page from '~/layouts/Page.astro';
+import DownloadTable from '~/components/DownloadTable.astro';
+import { VERSION, releaseUrl, releasesIndexUrl } from '~/lib/releases';
+---
+
+<Page
+  title="Download — DataSUS ETL"
+  description="Native installers for Windows, macOS, and Linux."
+  locale="en"
+  currentKey="download"
+  ptPath="/download"
+>
+  <section class="max-w-7xl mx-auto px-6 md:px-10 pt-16 md:pt-24 pb-24">
+    <div class="grid lg:grid-cols-12 gap-10">
+      <div class="lg:col-span-8">
+        <p class="stamp text-clinic-red">Release v{VERSION}</p>
+        <h1 class="display-serif mt-3 text-display-lg text-ink">Native installers.</h1>
+        <p class="mt-5 text-lead text-ink-800 max-w-[56ch]">
+          Each installer ships a self-contained binary — no Python,
+          DuckDB, or toolchain required on your machine. Download, run,
+          click the shortcut.
+        </p>
+
+        <DownloadTable locale="en" />
+
+        <p class="mt-6 text-xs text-ink-400">
+          Released on GitHub:
+          <a href={releaseUrl()} class="prose-editorial">v{VERSION}</a> ·
+          <a href={releasesIndexUrl()} class="prose-editorial">all releases</a>.
+          Checksums are attached to every release page; verify with
+          <code class="font-mono">sha256sum</code> (Linux),
+          <code class="font-mono">shasum -a 256</code> (macOS), or
+          <code class="font-mono">Get-FileHash</code> (PowerShell).
+        </p>
+      </div>
+
+      <aside class="lg:col-span-4 lg:border-l lg:border-ink/20 lg:pl-8">
+        <div class="stamp text-ink-400">Unsigned installers</div>
+        <h2 class="display-serif mt-2 text-display text-ink">A one-time click.</h2>
+        <p class="mt-3 text-sm text-ink-600 leading-relaxed">
+          Code-signing certificates cost money; this project doesn't carry
+          that cost yet. The first time you run the installer:
+        </p>
+        <dl class="mt-5 space-y-4 text-sm">
+          <div>
+            <dt class="stamp text-clinic-red">Windows</dt>
+            <dd class="mt-1 text-ink-800 leading-relaxed">
+              SmartScreen shows a blue banner. Click <b>More info</b>, then
+              <b>Run anyway</b>.
+            </dd>
+          </div>
+          <div>
+            <dt class="stamp text-clinic-red">macOS</dt>
+            <dd class="mt-1 text-ink-800 leading-relaxed">
+              Gatekeeper blocks the first launch. Right-click the app in
+              <b>/Applications</b> and choose <b>Open</b>; confirm. Subsequent
+              launches work normally.
+            </dd>
+          </div>
+          <div>
+            <dt class="stamp text-clinic-red">Linux</dt>
+            <dd class="mt-1 text-ink-800 leading-relaxed">
+              AppImages need the executable bit: <code class="font-mono">chmod +x</code>
+              the file, then double-click or run it directly.
+            </dd>
+          </div>
+        </dl>
+      </aside>
+    </div>
+
+    <hr class="hairline mt-24" />
+
+    <section id="intel-mac" class="mt-16 grid md:grid-cols-12 gap-10 scroll-mt-24">
+      <div class="md:col-span-5">
+        <p class="stamp text-clinic-red">Intel Mac users</p>
+        <h2 class="display-serif mt-2 text-display-lg text-ink">No native installer — build from source.</h2>
+        <p class="mt-5 text-ink-600 leading-relaxed max-w-prose-wide">
+          We ship a native <code class="font-mono">.dmg</code> only for Macs
+          with Apple Silicon (M-series chips). If your Mac has an Intel
+          processor, follow the steps opposite to install from source —
+          it works and uses the same code. About five minutes of terminal
+          time, and no programming experience required.
+        </p>
+        <p class="mt-4 text-xs text-ink-400 max-w-prose-wide leading-relaxed">
+          Not sure which Mac you have? Click the Apple logo → <b>About This Mac</b>.
+          If it says "Apple M1/M2/M3/M4…", use the DMG in the table above.
+          If it says "Intel Core i…", follow the steps on the right.
+        </p>
+      </div>
+      <div class="md:col-span-7 prose-editorial">
+        <h3 class="!mt-0">Step-by-step</h3>
+        <ol class="intel-steps">
+          <li>
+            <b>Install Python 3.11 or newer.</b> Open the
+            <a href="https://www.python.org/downloads/macos/">python.org downloads page</a>,
+            grab the latest <code>3.11.x</code> or <code>3.12.x</code> installer
+            (the <b>macOS 64-bit universal2</b> one), and run it. Click
+            Continue, Agree, Install.
+          </li>
+          <li>
+            <b>Open the Terminal app.</b> Press <kbd>⌘</kbd>+<kbd>Space</kbd>,
+            type <code>Terminal</code>, press Return. A black-and-white
+            window will appear. That's where you'll type the next
+            commands.
+          </li>
+          <li>
+            <b>Copy the project to your Mac.</b> Paste this line into Terminal
+            and press Return:
+            <pre><code>{`git clone https://github.com/nyckmaia/datasus-etl.git`}</code></pre>
+            If macOS asks whether to install "Developer Command Line
+            Tools", click Install and wait for it to finish, then re-run
+            the command above.
+          </li>
+          <li>
+            <b>Enter the project folder.</b>
+            <pre><code>{`cd datasus-etl`}</code></pre>
+          </li>
+          <li>
+            <b>Create an isolated Python environment</b> (keeps the app's
+            dependencies away from the rest of your system):
+            <pre><code>{`python3 -m venv .venv
+source .venv/bin/activate`}</code></pre>
+            Your Terminal prompt should now start with <code>(.venv)</code>.
+          </li>
+          <li>
+            <b>Install the app.</b> This downloads and builds all the
+            dependencies — takes 2–5 minutes depending on your connection.
+            <pre><code>{`pip install .`}</code></pre>
+          </li>
+          <li>
+            <b>Launch the app.</b>
+            <pre><code>{`datasus ui`}</code></pre>
+            Your default browser will open at
+            <code>http://127.0.0.1:8787</code> — you're in. To stop the
+            server, come back to the Terminal and press <kbd>Ctrl</kbd>+<kbd>C</kbd>.
+          </li>
+          <li>
+            <b>Next time you want to use the app</b>, open Terminal and run:
+            <pre><code>{`cd datasus-etl
+source .venv/bin/activate
+datasus ui`}</code></pre>
+          </li>
+        </ol>
+        <aside class="mt-8 border-l-2 border-clinic-sage pl-5">
+          <div class="stamp text-clinic-sage">Hit a snag?</div>
+          <p class="!mt-2 text-sm text-ink-600">
+            If a step fails, copy the exact error message and
+            <a href="https://github.com/nyckmaia/datasus-etl/issues/new" class="prose-editorial">open an issue on GitHub</a>.
+            Include the line of your Terminal that failed — we'll help.
+          </p>
+        </aside>
+      </div>
+    </section>
+
+    <hr class="hairline mt-24" />
+
+    <section class="mt-16 grid md:grid-cols-12 gap-10">
+      <div class="md:col-span-5">
+        <p class="stamp text-clinic-red">Technical</p>
+        <h2 class="display-serif mt-2 text-display-lg text-ink">Package contents</h2>
+      </div>
+      <div class="md:col-span-7 prose-editorial">
+        <p>
+          Each installer bundles the same Nuitka-compiled binary — the app
+          you run is the same one across platforms. The installer places
+          the files in the OS-standard location, creates a shortcut to
+          launch <code>datasus ui</code>, and (if you leave the checkbox
+          marked) adds the <code>datasus</code> CLI to your <code>PATH</code>
+          so commands like <code>datasus pipeline</code> work from any
+          terminal.
+        </p>
+        <h3>On install</h3>
+        <ul>
+          <li>Windows → <code>%ProgramFiles%\DataSUS ETL\</code> + Start Menu shortcut + optional <code>PATH</code> update (HKCU).</li>
+          <li>macOS → <code>/Applications/DataSUS ETL.app</code> + optional symlink in <code>/usr/local/bin/datasus</code>.</li>
+          <li>Linux → AppImage is self-contained. Run it from anywhere. A <code>.desktop</code> entry registers automatically when you place it in <code>~/.local/share/applications/</code>.</li>
+        </ul>
+        <h3>On first launch</h3>
+        <p>
+          The app starts a local web server on
+          <code>127.0.0.1:8787</code> and opens your default browser. The
+          server is loopback-only — nothing is exposed to the network.
+        </p>
+        <h3>User settings</h3>
+        <p>
+          Your data-directory preference and other settings are persisted
+          in <code>~/.config/datasus-etl/config.toml</code> (Linux/macOS) or
+          the equivalent location under <code>%APPDATA%</code> on Windows.
+        </p>
+      </div>
+    </section>
+  </section>
+</Page>

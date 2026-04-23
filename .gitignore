@@ -186,8 +186,9 @@ venv.bak/
 # Rope project settings
 .ropeproject
 
-# mkdocs documentation
-/site
+# mkdocs documentation (legacy; our /site/ folder now hosts the Astro source
+# and must be committed. Individual ignores for it live near the top — see
+# "Static marketing site (Astro build output)".)
 
 # mypy
 .mypy_cache/

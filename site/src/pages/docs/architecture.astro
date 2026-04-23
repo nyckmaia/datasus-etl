@@ -1,0 +1,116 @@
+---
+import Page from '~/layouts/Page.astro';
+import { repoUrl } from '~/lib/releases';
+---
+
+<Page
+  title="Architecture — DataSUS ETL"
+  description="How the pieces fit: storage paths, migration, SPA bundling, release pipeline."
+  locale="en"
+  currentKey="docs"
+>
+  <section class="max-w-5xl mx-auto px-6 md:px-10 pt-16 md:pt-24 pb-24">
+    <p class="stamp text-clinic-red">
+      <a href="../" class="prose-editorial">Docs</a> / Architecture
+    </p>
+    <h1 class="display-serif mt-3 text-display-lg text-ink">Architecture.</h1>
+    <p class="mt-5 text-lead text-ink-800 max-w-prose-wide">
+      Opinionated notes on the parts of the system most likely to
+      surprise a reader skimming the code.
+    </p>
+
+    <div class="prose-editorial">
+      <h2>Storage paths — one rule</h2>
+      <p>
+        <a href={`${repoUrl()}/blob/main/src/datasus_etl/storage/paths.py`} class="prose-editorial">
+          <code>storage/paths.py::resolve_parquet_dir</code>
+        </a>
+        is the only function that decides where parquet lives. Every
+        other caller delegates here. The rules, in order:
+      </p>
+      <ul>
+        <li>If <code>base_dir.name</code> is already <code>datasus_db</code> or <code>parquet</code> (case-insensitive), append only the subsystem.</li>
+        <li>If a legacy <code>{`{base_dir}/parquet/{subsystem}`}</code> exists, return it unchanged (pre-0.1 layout).</li>
+        <li>Otherwise, return <code>{`{base_dir}/datasus_db/{subsystem}`}</code>.</li>
+      </ul>
+      <p>
+        The original bug that motivated this module produced a
+        double-nested <code>{`{base}/datasus_db/datasus_db/`}</code> layout;
+        <a href={`${repoUrl()}/blob/main/src/datasus_etl/storage/migration.py`} class="prose-editorial">
+          <code>storage/migration.py</code>
+        </a>
+        detects and migrates it at CLI startup.
+      </p>
+
+      <h2>SIM filename parsing — a landmine</h2>
+      <p>
+        <a href={`${repoUrl()}/blob/main/src/datasus_etl/datasets/sim/config.py`} class="prose-editorial">
+          <code>datasets/sim/config.py::parse_filename</code>
+        </a>
+        disambiguates CID9 vs. CID10 <strong>by stem length, not by prefix</strong>:
+      </p>
+      <ul>
+        <li><code>DOUFYYYY.dbc</code> — 8-char stem → CID10 (1996+)</li>
+        <li><code>DORUFYY.dbc</code> — 7-char stem → CID9 (1979–1995)</li>
+      </ul>
+      <p>
+        Checking "starts with <code>DOR</code>" first (a previous
+        implementation) silently dropped every CID10 death record from
+        RJ, RN, RO, RR, and RS.
+      </p>
+
+      <h2>Web UI bundling</h2>
+      <p>
+        The React SPA lives under <code>web-ui/</code> and is built with
+        Vite into <code>src/datasus_etl/web/static/</code> — a gitignored
+        directory. The wheel packaging picks up the built artifacts via
+        a hatch custom build hook at
+        <a href={`${repoUrl()}/blob/main/hatch_build.py`} class="prose-editorial">
+          <code>hatch_build.py</code>
+        </a>.
+      </p>
+
+      <h2>Tkinter in a subprocess</h2>
+      <p>
+        The folder picker runs in a one-shot subprocess via the hidden
+        CLI subcommand <code>datasus _pick-folder</code>. This keeps
+        tkinter on its own main thread (mandatory on macOS) without
+        blocking the uvicorn worker, and the same invocation works for
+        both <code>pip install</code> and Nuitka-compiled binaries.
+      </p>
+
+      <h2>Release pipeline</h2>
+      <p>
+        A push to <code>main</code> that modifies the root
+        <code>VERSION</code> file triggers the release workflow. It
+        validates the semver, runs Nuitka on three matrix runners (Windows
+        x64, macOS arm64, Linux x64), packages each into a native
+        installer, publishes a GitHub Release, and re-deploys this site
+        with the new download links. Intel Macs (x86_64) are not part of
+        the native matrix — GitHub's <code>macos-13</code> runner has been
+        deprecated with extreme queue times; Intel Mac users install from
+        source via <code>pip install .</code>.
+      </p>
+      <p>
+        The workflow lives at
+        <a href={`${repoUrl()}/blob/main/.github/workflows/release.yml`} class="prose-editorial">
+          <code>.github/workflows/release.yml</code>
+        </a>. The Nuitka flags — one line per dependency, each there
+        because it failed without it — live in
+        <a href={`${repoUrl()}/blob/main/scripts/build_nuitka.py`} class="prose-editorial">
+          <code>scripts/build_nuitka.py</code>
+        </a>.
+      </p>
+
+      <h2>Versioning</h2>
+      <p>
+        The root <code>VERSION</code> file is the single source of truth.
+        Hatch reads it to set wheel metadata (no hand-edited
+        <code>pyproject.toml</code>), the build hook re-emits
+        <code>src/datasus_etl/__version__.py</code> to match, and the UI
+        footer plus <code>datasus --version</code> both read
+        <code>__version__</code>.
+      </p>
+    </div>
+  </section>
+</Page>

@@ -1,0 +1,76 @@
+---
+import Page from '~/layouts/Page.astro';
+import { repoUrl } from '~/lib/releases';
+---
+
+<Page
+  title="Schemas — DataSUS ETL"
+  description="SIHSUS and SIM subsystem schemas."
+  locale="en"
+  currentKey="docs"
+>
+  <section class="max-w-5xl mx-auto px-6 md:px-10 pt-16 md:pt-24 pb-24">
+    <p class="stamp text-clinic-red">
+      <a href="../" class="prose-editorial">Docs</a> / Schemas
+    </p>
+    <h1 class="display-serif mt-3 text-display-lg text-ink">Subsystem schemas.</h1>
+    <p class="mt-5 text-lead text-ink-800 max-w-prose-wide">
+      Each supported subsystem has a class describing its raw column
+      list, output parquet schema, filename parser, and enrichment SQL.
+    </p>
+
+    <div class="prose-editorial">
+      <h2>SIHSUS</h2>
+      <p>
+        Source of truth:
+        <a href={`${repoUrl()}/tree/main/src/datasus_etl/datasets/sihsus`} class="prose-editorial">
+          <code>datasets/sihsus/</code>
+        </a>. Raw DBCs follow the DATASUS <code>RDUFYYMM</code> convention
+        (reduced hospital admission, state, year, month). The output
+        parquet is partitioned by UF.
+      </p>
+
+      <h3>Notable transformations</h3>
+      <ul>
+        <li>Municipality codes (6 chars) are joined against the IBGE
+          5,571-municipality registry and exposed alongside the
+          canonical 7-char code.</li>
+        <li>CID-10 codes are normalized to uppercase and stripped.</li>
+        <li>Dates stored as <code>YYYYMMDD</code> strings are parsed into
+          proper <code>DATE</code> columns (<code>DT_INTER</code>,
+          <code>DT_SAIDA</code>, …).</li>
+      </ul>
+
+      <h2>SIM</h2>
+      <p>
+        Source of truth:
+        <a href={`${repoUrl()}/tree/main/src/datasus_etl/datasets/sim`} class="prose-editorial">
+          <code>datasets/sim/</code>
+        </a>. Raw filenames include both CID9 (<code>DORUFYY</code>,
+        1979–1995) and CID10 (<code>DOUFYYYY</code>, 1996+) variants — the
+        parser disambiguates on stem length.
+      </p>
+
+      <h3>Notable transformations</h3>
+      <ul>
+        <li><code>IDADE</code> (original 3-digit coded age) is expanded into
+          <code>IDADE_ANOS</code>, <code>IDADE_MESES</code>, etc.</li>
+        <li>Multiple CID columns are combined into a single
+          <code>CID_ARRAY</code> to simplify "any of these causes" queries.</li>
+        <li>Categorical BOOLEAN encodings are standardized to real
+          <code>BOOLEAN</code>.</li>
+      </ul>
+
+      <aside class="mt-10 border-l-2 border-clinic-sage pl-5">
+        <div class="stamp text-clinic-sage">Scope</div>
+        <p class="!mt-2 text-sm text-ink-600">
+          Column-by-column reference is deferred to the source code
+          linked above — the schemas are long and evolve. The intent of
+          this page is to document the <em>shape</em> and the
+          transformations applied on top of the DATASUS original, not to
+          duplicate the schema in Markdown.
+        </p>
+      </aside>
+    </div>
+  </section>
+</Page>

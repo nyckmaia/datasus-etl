@@ -1,0 +1,140 @@
+---
+import Page from '~/layouts/Page.astro';
+
+const STEPS = [
+  {
+    n: '01',
+    title: 'Instalar o aplicativo',
+    body:
+      'Vá para a página de Download, escolha o instalador do seu sistema e execute. No Windows, clique em Avançar algumas vezes. No macOS (Apple Silicon), arraste o app para a pasta Aplicativos. No Linux, dê permissão de execução ao AppImage e abra. Você não precisa instalar Python nem banco de dados à parte.',
+    note: 'Se o seu Mac for Intel, não há instalador nativo — siga o tutorial de Mac Intel na página de Download (a instalação é via Python e código-fonte). Os avisos de app não-assinado no Windows/macOS estão explicados na mesma página.',
+  },
+  {
+    n: '02',
+    title: 'Abrir pelo atalho',
+    body:
+      'Depois de instalar, encontre o "DataSUS ETL" no Menu Iniciar (Windows), na pasta Aplicativos (macOS) ou no lançador de aplicativos (Linux). Clique. Uma janela abre no seu navegador padrão — esse é o aplicativo.',
+    note: 'A barra de endereço vai mostrar 127.0.0.1:8787. Isso significa que o app está rodando no seu computador, não na internet.',
+  },
+  {
+    n: '03',
+    title: 'Escolher onde os dados vão ficar',
+    body:
+      'A primeira tela pergunta onde guardar os arquivos baixados. Escolha uma pasta com bastante espaço livre (um subsistema completo pode ocupar 10–40 GB ao longo de vários anos). HD externo funciona. O app cria uma subpasta chamada datasus_db/ dentro da pasta escolhida.',
+    note: 'Você pode mudar isso depois, na página de Configurações.',
+  },
+  {
+    n: '04',
+    title: 'Escolher o subsistema',
+    body:
+      'O app cobre o SIHSUS (internações hospitalares) e o SIM (mortalidade). Escolha o que responde à sua pergunta. Para um primeiro teste rápido, o SIM de um único estado é o menor e mais rápido.',
+    note: 'O SIM é publicado com cerca de dois anos de atraso. O app mostra quais meses estão de fato disponíveis antes de começar.',
+  },
+  {
+    n: '05',
+    title: 'Escolher datas e estados',
+    body:
+      'Selecione o intervalo de datas (início e fim) e uma ou mais UFs. O app mostra quantos arquivos vão ser baixados e o tamanho total antes de você confirmar.',
+    note: 'Comece pequeno e aumente depois. Dois meses do SIM para um estado geralmente levam menos de um minuto em conexões típicas.',
+  },
+  {
+    n: '06',
+    title: 'Acompanhar a execução',
+    body:
+      'Clique em Iniciar. Uma tela de progresso mostra cada etapa em tempo real: download dos arquivos brutos, conversão do formato DBC para um formato legível, carga no DuckDB, transformações e enriquecimento, e por fim a gravação dos Parquets. Você pode deixar em uma aba de segundo plano.',
+    note: 'Se algo der errado (rede cair, disco encher), o painel de log diz qual arquivo e por quê. Reabra o app e rode o mesmo intervalo — ele retoma de onde parou.',
+  },
+  {
+    n: '07',
+    title: 'Onde os arquivos ficam',
+    body:
+      'Ao terminar, os dados estão na pasta que você escolheu, dentro de datasus_db/<subsistema>/. Os arquivos são salvos no formato Parquet, organizados por UF, então você pode pegar só o recorte de que precisa.',
+    note: 'Parquet é um formato padrão da indústria — funciona com pandas, polars, Excel (via Power Query), R e DuckDB. Não é um formato proprietário do DataSUS-ETL.',
+  },
+  {
+    n: '08',
+    title: 'Explorar pelo app — ou por SQL',
+    body:
+      'A página de Consulta deixa você navegar pelas tabelas, filtrar por coluna e exportar para CSV ou Excel sem escrever SQL. Se você já domina SQL, abra o shell do DuckDB pela página de Status e faça suas próprias consultas diretamente nos Parquets.',
+    note: 'O app nunca envia seus dados para lugar nenhum. Tudo permanece no seu computador.',
+  },
+];
+---
+
+<Page
+  title="Tutorial — DataSUS ETL"
+  description="Um passo a passo para quem não programa. Do zero até a primeira consulta."
+  locale="pt"
+  currentKey="tutorial"
+  ptPath="/tutorial"
+>
+  <section class="max-w-7xl mx-auto px-6 md:px-10 pt-16 md:pt-24 pb-10">
+    <div class="grid lg:grid-cols-12 gap-10">
+      <div class="lg:col-span-7">
+        <p class="stamp text-clinic-red">Tutorial · Para iniciantes</p>
+        <h1 class="display-serif mt-3 text-display-lg text-ink">
+          Do zero à primeira consulta.
+        </h1>
+        <p class="mt-5 text-lead text-ink-800 max-w-[58ch]">
+          Oito passos. Sem terminal. Sem SQL. Escrito para pesquisadores
+          e clínicos que querem os dados sem o desvio pela engenharia de
+          dados.
+        </p>
+      </div>
+      <aside class="lg:col-span-5 lg:border-l lg:border-ink/20 lg:pl-8">
+        <div class="stamp text-ink-400">Antes de começar</div>
+        <ul class="mt-3 text-sm text-ink-800 space-y-2 marker-list">
+          <li>— Windows 10+, macOS 10.15+ ou Linux (glibc 2.35+).</li>
+          <li>— Cerca de 5 GB livres para um primeiro teste modesto.</li>
+          <li>— Conexão com internet (a primeira execução baixa dados).</li>
+        </ul>
+        <p class="mt-5 text-xs text-ink-400">
+          Este tutorial é intencionalmente só texto. As telas podem variar
+          um pouco entre versões.
+        </p>
+      </aside>
+    </div>
+  </section>
+
+  <section class="max-w-7xl mx-auto px-6 md:px-10 pb-28">
+    <div class="hairline"></div>
+    <ol class="divide-y divide-ink/10">
+      {STEPS.map((step) => (
+        <li class="grid md:grid-cols-[auto_1fr_1.1fr] gap-6 md:gap-10 py-10">
+          <div class="font-mono text-clinic-red text-lg">{step.n}</div>
+          <div>
+            <h2 class="display-serif text-display text-ink leading-snug">{step.title}</h2>
+          </div>
+          <div class="prose-editorial">
+            <p class="!mt-0">{step.body}</p>
+            <p class="!mt-3 text-sm text-ink-600 border-l-2 border-clinic-sage pl-4">
+              <span class="stamp text-clinic-sage mr-2">nota</span>
+              {step.note}
+            </p>
+          </div>
+        </li>
+      ))}
+    </ol>
+
+    <div class="mt-16 grid md:grid-cols-2 gap-6">
+      <div class="border border-ink/15 bg-paper-50 p-6">
+        <div class="stamp text-clinic-red">Quebrou algo?</div>
+        <p class="mt-3 text-sm text-ink-800 leading-relaxed">
+          O aplicativo está em desenvolvimento ativo. Se uma tela não
+          bater com este tutorial ou se uma mensagem de erro não fizer
+          sentido, abra uma issue no GitHub — descreva o que você clicou
+          e o texto exato do erro. Você terá resposta.
+        </p>
+      </div>
+      <div class="border border-ink/15 bg-paper-50 p-6">
+        <div class="stamp text-clinic-red">Aprofundando</div>
+        <p class="mt-3 text-sm text-ink-800 leading-relaxed">
+          Quando quiser automatizar — cron, processamento em lote, leitura
+          direta dos Parquets em R ou Python — veja a
+          <a href="../docs/" class="prose-editorial">documentação técnica</a>
+          (em inglês). O mesmo aplicativo expõe uma CLI completa.
+        </p>
+      </div>
+    </div>
+  </section>
+</Page>
