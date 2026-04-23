@@ -1,0 +1,26 @@
+#!/bin/sh
+# AppImage entry point for DataSUS ETL.
+# Without arguments, launches the web UI. Otherwise forwards to the CLI.
+
+HERE="$(dirname "$(readlink -f "$0")")"
+export LD_LIBRARY_PATH="$HERE/usr/lib:$LD_LIBRARY_PATH"
+# Tcl/Tk runtime bundled by the tk-inter Nuitka plugin lives alongside the
+# binary; set the env vars explicitly so the `_pick-folder` subprocess
+# finds them inside the FUSE-mounted AppImage root.
+if [ -d "$HERE/usr/share/tcl" ]; then
+  export TCL_LIBRARY="$HERE/usr/share/tcl"
+fi
+if [ -d "$HERE/usr/share/tk" ]; then
+  export TK_LIBRARY="$HERE/usr/share/tk"
+fi
+
+BIN="$HERE/usr/bin/datasus"
+if [ ! -x "$BIN" ]; then
+  BIN="$HERE/datasus"
+fi
+
+if [ "$#" -eq 0 ]; then
+  exec "$BIN" ui
+else
+  exec "$BIN" "$@"
+fi

@@ -1,0 +1,372 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'VERSION'
+  workflow_dispatch:  # fallback manual trigger
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write   # to create tags + releases
+  pages: write      # to deploy to GitHub Pages
+  id-token: write   # for the Pages deployment OIDC token
+
+jobs:
+  # -------------------------------------------------------------------------
+  # Validate VERSION before spending 45+ min of CI on a bad bump.
+  # -------------------------------------------------------------------------
+  validate:
+    name: Validate VERSION
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+      tag: ${{ steps.read.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: read
+        name: Read and validate VERSION
+        run: |
+          set -euo pipefail
+          VERSION=$(tr -d '[:space:]' < VERSION)
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::VERSION file contents '$VERSION' is not semver X.Y.Z"
+            exit 1
+          fi
+          TAG="v${VERSION}"
+          if git rev-parse "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "::error::Tag ${TAG} already exists — bump VERSION before pushing."
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Validated VERSION=${VERSION}, TAG=${TAG}"
+
+  # -------------------------------------------------------------------------
+  # Build Nuitka standalones on 4 runners in parallel, then package each into
+  # the native installer (Inno/DMG/AppImage).
+  # -------------------------------------------------------------------------
+  build:
+    name: Build ${{ matrix.target }}
+    needs: validate
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: windows-x64
+            ext: exe
+          - os: macos-14
+            target: macos-arm64
+            ext: dmg
+          - os: macos-13
+            target: macos-x86_64
+            ext: dmg
+          - os: ubuntu-22.04
+            target: linux-x64
+            ext: AppImage
+    env:
+      VERSION: ${{ needs.validate.outputs.version }}
+      ARTIFACT_NAME: datasus-etl-${{ needs.validate.outputs.version }}-${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      # -----------------------------------------------------------------
+      # Platform-specific toolchains
+      # -----------------------------------------------------------------
+      - name: Install Inno Setup (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: choco install innosetup -y --no-progress
+
+      - name: Install create-dmg (macOS)
+        if: runner.os == 'macOS'
+        run: brew install create-dmg
+
+      - name: Install Linux build deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libfuse2 patchelf desktop-file-utils \
+            python3-tk tk-dev \
+            libcairo2 librsvg2-bin
+
+      # -----------------------------------------------------------------
+      # Python + Node deps
+      # -----------------------------------------------------------------
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]" nuitka ordered-set zstandard cairosvg Pillow
+
+      - name: Install web-ui deps
+        working-directory: web-ui
+        run: bun install --frozen-lockfile
+
+      - name: Build SPA
+        working-directory: web-ui
+        run: bun run build
+
+      - name: Verify SPA output
+        shell: bash
+        run: test -f src/datasus_etl/web/static/index.html
+
+      - name: Generate icons
+        shell: bash
+        run: python scripts/generate_icons.py
+
+      # -----------------------------------------------------------------
+      # Nuitka build (cached) + smoke test
+      # -----------------------------------------------------------------
+      - name: Restore Nuitka cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/Nuitka
+            ~/Library/Caches/Nuitka
+            %LOCALAPPDATA%\Nuitka\Nuitka\Cache
+          key: nuitka-${{ matrix.target }}-${{ hashFiles('pyproject.toml', 'scripts/build_nuitka.py') }}
+          restore-keys: |
+            nuitka-${{ matrix.target }}-
+
+      - name: Build with Nuitka
+        env:
+          DATASUS_SKIP_UI_BUILD: '1'
+        run: python scripts/build_nuitka.py --skip-ui-build
+
+      - name: Smoke test — binary reports correct version (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $expected = (Get-Content VERSION -Raw).Trim()
+          $actual = & dist\datasus-etl.dist\datasus.exe version 2>&1 | Out-String
+          if (-not ($actual -match [regex]::Escape($expected))) {
+            Write-Error "Binary did not report version $expected. Output: $actual"
+            exit 1
+          }
+
+      - name: Smoke test — binary reports correct version (POSIX)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED=$(tr -d '[:space:]' < VERSION)
+          if [[ "${{ runner.os }}" == "macOS" ]]; then
+            BIN=$(find dist -name datasus -type f | head -n 1)
+          else
+            BIN=dist/datasus-etl.dist/datasus
+          fi
+          OUT=$("$BIN" version 2>&1 || true)
+          echo "$OUT"
+          echo "$OUT" | grep -F "$EXPECTED"
+
+      # -----------------------------------------------------------------
+      # Package — one step per platform
+      # -----------------------------------------------------------------
+      - name: Package (Windows — Inno Setup)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" `
+            "/DAppVersion=$env:VERSION" `
+            installer\windows\datasus-etl.iss
+
+      - name: Package (macOS — create-dmg)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP=$(ls -d dist/*.app | head -n 1)
+          test -d "$APP"
+          mkdir -p dist/dmg-staging
+          cp -R "$APP" dist/dmg-staging/
+          create-dmg \
+            --volname "DataSUS ETL ${VERSION}" \
+            --window-size 640 360 \
+            --icon-size 128 \
+            --app-drop-link 440 180 \
+            "dist/${ARTIFACT_NAME}.dmg" \
+            dist/dmg-staging/
+
+      - name: Package (Linux — AppImage)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          APPDIR=dist/AppDir
+          rm -rf "$APPDIR"
+          mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/applications" \
+                   "$APPDIR/usr/share/icons/hicolor/256x256/apps"
+          cp -r dist/datasus-etl.dist/* "$APPDIR/usr/bin/"
+          cp installer/linux/datasus-etl.desktop "$APPDIR/datasus-etl.desktop"
+          cp installer/linux/datasus-etl.desktop "$APPDIR/usr/share/applications/"
+          cp installer/icons/icon.png "$APPDIR/datasus-etl.png"
+          cp installer/icons/icon.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/datasus-etl.png"
+          cp installer/linux/AppRun "$APPDIR/AppRun"
+          chmod +x "$APPDIR/AppRun"
+
+          curl -L -o appimagetool \
+            https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+          ARCH=x86_64 ./appimagetool "$APPDIR" "dist/${ARTIFACT_NAME}.AppImage"
+
+      # -----------------------------------------------------------------
+      # Upload
+      # -----------------------------------------------------------------
+      - name: Locate artifact
+        id: locate
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${{ matrix.target }}" in
+            windows-x64)  ARTIFACT="dist/${ARTIFACT_NAME}.exe" ;;
+            macos-*)      ARTIFACT="dist/${ARTIFACT_NAME}.dmg" ;;
+            linux-x64)    ARTIFACT="dist/${ARTIFACT_NAME}.AppImage" ;;
+          esac
+          test -f "$ARTIFACT"
+          echo "path=$ARTIFACT" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.target }}
+          path: ${{ steps.locate.outputs.path }}
+          if-no-files-found: error
+
+  # -------------------------------------------------------------------------
+  # Changelog + tag + Release
+  # -------------------------------------------------------------------------
+  release:
+    name: Publish Release
+    needs: [validate, build]
+    runs-on: ubuntu-22.04
+    outputs:
+      tag: ${{ needs.validate.outputs.tag }}
+      version: ${{ needs.validate.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Generate changelog section
+        id: changelog
+        run: |
+          python scripts/generate_changelog.py \
+            --version "${{ needs.validate.outputs.version }}" \
+            --output changelog-section.md
+          {
+            echo 'body<<CHANGELOG_EOF'
+            cat changelog-section.md
+            echo 'CHANGELOG_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Prepend to CHANGELOG.md
+        run: |
+          TOUCHED=CHANGELOG.md
+          if [ ! -f "$TOUCHED" ]; then
+            echo "# Changelog" > "$TOUCHED"
+            echo "" >> "$TOUCHED"
+          fi
+          # Insert the new section right after the top heading.
+          awk -v new="$(cat changelog-section.md)" '
+            NR==1 { print; print ""; print new; next }
+            { print }
+          ' "$TOUCHED" > "$TOUCHED.tmp"
+          mv "$TOUCHED.tmp" "$TOUCHED"
+
+      - name: Commit CHANGELOG update
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add CHANGELOG.md
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(release): update CHANGELOG for ${{ needs.validate.outputs.tag }} [skip ci]"
+            git push origin HEAD:${{ github.ref_name }}
+          fi
+
+      - name: Create and push tag
+        run: |
+          git tag -a "${{ needs.validate.outputs.tag }}" \
+            -m "Release ${{ needs.validate.outputs.version }}"
+          git push origin "${{ needs.validate.outputs.tag }}"
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: installer-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -la artifacts/
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.validate.outputs.tag }}
+          name: DataSUS ETL ${{ needs.validate.outputs.version }}
+          body: ${{ steps.changelog.outputs.body }}
+          files: artifacts/*
+          draft: false
+          prerelease: false
+
+  # -------------------------------------------------------------------------
+  # Build and deploy the static site to GitHub Pages.
+  # -------------------------------------------------------------------------
+  pages:
+    name: Deploy site
+    needs: release
+    runs-on: ubuntu-22.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      - name: Install site deps
+        working-directory: site
+        run: npm ci
+
+      - name: Build site
+        working-directory: site
+        env:
+          SITE_VERSION: ${{ needs.release.outputs.version }}
+          SITE_REPO: nyckmaia/datasus-etl
+        run: npm run build
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/dist
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "datasus-etl"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Pipeline profissional para dados do DATASUS: extração, transformação e carga em formatos otimizados."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -92,6 +92,10 @@ Homepage = "https://github.com/user/datasus-etl"
 Documentation = "https://datasus-etl.readthedocs.io"
 Repository = "https://github.com/user/datasus-etl"
 Issues = "https://github.com/user/datasus-etl/issues"
+
+[tool.hatch.version]
+path = "VERSION"
+pattern = '^(?P<version>\d+\.\d+\.\d+)'
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/datasus_etl"]

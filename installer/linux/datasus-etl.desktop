@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=DataSUS ETL
+GenericName=Health Data ETL
+Comment=DATASUS data extraction and transformation
+Exec=AppRun ui
+Icon=datasus-etl
+Categories=Science;MedicalSoftware;Database;
+Terminal=false
+StartupWMClass=datasus-etl

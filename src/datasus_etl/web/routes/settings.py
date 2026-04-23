@@ -34,24 +34,23 @@ router = APIRouter()
 
 # Picker runs in a one-shot subprocess so tkinter gets its own main thread —
 # avoids the "Tk must run on main thread" failure mode that hits when called
-# from inside uvicorn's worker thread (especially on macOS).
-_PICKER_SCRIPT = """\
-import sys
-try:
-    import tkinter as tk
-    from tkinter import filedialog
-except ImportError:
-    sys.stderr.write("TK_MISSING")
-    sys.exit(2)
-root = tk.Tk()
-root.withdraw()
-root.attributes("-topmost", True)
-root.update()
-path = filedialog.askdirectory(parent=root, mustexist=False,
-                               title="Select DataSUS data directory")
-root.destroy()
-sys.stdout.write(path or "")
-"""
+# from inside uvicorn's worker thread (especially on macOS). The subprocess
+# is dispatched through the CLI's hidden `_pick-folder` subcommand so the
+# same invocation path works under a plain `pip install` (where
+# ``sys.executable`` is the system Python) and under a Nuitka-compiled
+# binary (where ``sys.executable`` is the packaged executable — Nuitka
+# explicitly supports re-invocation with subcommands).
+
+
+def _pick_folder_cmd() -> list[str]:
+    # Under a normal pip install, sys.executable is the Python interpreter —
+    # we have to invoke the CLI via ``python -m datasus_etl``. Under a
+    # Nuitka-compiled binary, sys.executable IS the CLI, so we invoke it
+    # directly with the hidden subcommand.
+    exe = Path(sys.executable).stem.lower()
+    if exe.startswith("python") or exe == "pypy" or exe.startswith("pypy"):
+        return [sys.executable, "-m", "datasus_etl", "_pick-folder"]
+    return [sys.executable, "_pick-folder"]
 
 
 class SubsystemInfo(BaseModel):
@@ -188,7 +187,7 @@ async def pick_directory() -> PickDirectoryResponse:
     try:
         proc = await asyncio.to_thread(
             subprocess.run,
-            [sys.executable, "-c", _PICKER_SCRIPT],
+            _pick_folder_cmd(),
             capture_output=True,
             text=True,
             timeout=120,

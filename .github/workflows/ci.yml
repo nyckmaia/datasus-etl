@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'VERSION'        # handled by release.yml
+      - 'site/**'
+      - '**.md'
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python lint + tests
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install project (dev extras)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Ruff lint
+        run: ruff check src tests
+
+      - name: Mypy
+        run: mypy src
+        continue-on-error: true  # mypy strict mode has legacy violations; tracked separately
+
+      - name: Pytest
+        env:
+          DATASUS_SKIP_UI_BUILD: '1'
+        run: pytest --no-cov -q
+
+  frontend:
+    name: Frontend lint + build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install web-ui deps
+        working-directory: web-ui
+        run: bun install --frozen-lockfile
+
+      - name: Lint (tsc --noEmit)
+        working-directory: web-ui
+        run: bun run lint
+
+      - name: Build SPA
+        working-directory: web-ui
+        run: bun run build
+
+      - name: Verify SPA output
+        run: test -f src/datasus_etl/web/static/index.html

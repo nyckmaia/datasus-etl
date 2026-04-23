@@ -26,8 +26,11 @@ class BuildUIHook(BuildHookInterface):
     PLUGIN_NAME = "build_ui"
 
     def initialize(self, version: str, build_data: dict) -> None:  # noqa: ARG002
-        ui_dir = Path(self.root) / "web-ui"
-        static_dir = Path(self.root) / "src" / "datasus_etl" / "web" / "static"
+        root = Path(self.root)
+        self._sync_version_module(root)
+
+        ui_dir = root / "web-ui"
+        static_dir = root / "src" / "datasus_etl" / "web" / "static"
 
         if not ui_dir.is_dir():
             self.app.display_info("web-ui/ not present; skipping SPA bundle.")
@@ -57,3 +60,24 @@ class BuildUIHook(BuildHookInterface):
                 f"SPA build did not produce {static_dir / 'index.html'} — "
                 "check the Vite config (build.outDir)."
             )
+
+    def _sync_version_module(self, root: Path) -> None:
+        version_file = root / "VERSION"
+        module_file = root / "src" / "datasus_etl" / "__version__.py"
+        if not version_file.is_file():
+            self.app.display_warning("VERSION file missing; leaving __version__.py untouched.")
+            return
+
+        version = version_file.read_text(encoding="utf-8").strip()
+        expected = (
+            '"""Version information for DataSUS-ETL.\n\n'
+            "This file is regenerated from the repository-root VERSION file by\n"
+            "the hatch build hook. Edit VERSION, not this file.\n"
+            '"""\n\n'
+            f'__version__ = "{version}"\n'
+            '__version_info__ = tuple(int(i) for i in __version__.split(".") if i.isdigit())\n'
+        )
+        current = module_file.read_text(encoding="utf-8") if module_file.exists() else ""
+        if current != expected:
+            module_file.write_text(expected, encoding="utf-8")
+            self.app.display_info(f"Synced __version__.py to VERSION ({version}).")

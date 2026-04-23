@@ -218,6 +218,38 @@ def version() -> None:
     ))
 
 
+@app.command(
+    name="_pick-folder",
+    hidden=True,
+    help="Internal: show the native folder picker and print the chosen path to stdout.",
+)
+def _pick_folder() -> None:
+    # Invoked as a child process by the web UI's /api/settings/pick-directory
+    # endpoint. Runs tkinter on its own main thread so it works under a
+    # uvicorn worker (where the parent thread can't host Tk). After Nuitka
+    # compilation this subcommand is dispatched via the compiled binary, so
+    # the exact same invocation works for pip installs and packaged installers.
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+    except ImportError:
+        sys.stderr.write("TK_MISSING")
+        sys.stderr.flush()
+        raise typer.Exit(code=2)
+
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes("-topmost", True)
+    root.update()
+    path = filedialog.askdirectory(
+        parent=root,
+        mustexist=False,
+        title="Select DataSUS data directory",
+    )
+    root.destroy()
+    sys.stdout.write(path or "")
+
+
 @app.command(name="pipeline")
 def pipeline_cmd(
     source: str = typer.Option(
