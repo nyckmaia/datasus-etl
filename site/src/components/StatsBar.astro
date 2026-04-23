@@ -1,0 +1,55 @@
+---
+// Data-sheet strip shown below the hero. Communicates "we're a real tool
+// with real data" through concrete numbers. The labels are intentionally
+// label-stamp (condensed uppercase) to feel like instrument readouts.
+import type { Locale } from '~/lib/i18n';
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+
+const COPY = {
+  en: {
+    subsystems: 'Subsystems',
+    states: 'States',
+    municipios: 'Municipalities',
+    formats: 'Output',
+    license: 'License',
+  },
+  pt: {
+    subsystems: 'Subsistemas',
+    states: 'UFs',
+    municipios: 'Municípios',
+    formats: 'Saída',
+    license: 'Licença',
+  },
+}[locale];
+---
+
+<section
+  class="stats-bar card mt-10 px-5 py-5 md:px-7 md:py-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-y-5 gap-x-6"
+  aria-label="Project metrics"
+>
+  <div class="data-row">
+    <span class="data-row__label">{COPY.subsystems}</span>
+    <span class="data-row__value">02</span>
+  </div>
+  <div class="data-row">
+    <span class="data-row__label">{COPY.states}</span>
+    <span class="data-row__value">27</span>
+  </div>
+  <div class="data-row">
+    <span class="data-row__label">{COPY.municipios}</span>
+    <span class="data-row__value">5,571</span>
+  </div>
+  <div class="data-row col-span-2 sm:col-span-2 md:col-span-1">
+    <span class="data-row__label">{COPY.formats}</span>
+    <span class="data-row__value text-[0.9rem]">parquet · duckdb</span>
+  </div>
+  <div class="data-row">
+    <span class="data-row__label">{COPY.license}</span>
+    <span class="data-row__value text-[0.9rem]">Apache&nbsp;2.0</span>
+  </div>
+</section>

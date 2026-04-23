@@ -10,18 +10,20 @@ import { repoUrl } from '~/lib/releases';
   currentKey="docs"
 >
   <section class="max-w-5xl mx-auto px-6 md:px-10 pt-16 md:pt-24 pb-24">
-    <p class="stamp text-clinic-red">
-      <a href="../" class="prose-editorial">Docs</a> / CLI reference
-    </p>
-    <h1 class="display-serif mt-3 text-display-lg text-ink">CLI reference.</h1>
-    <p class="mt-5 text-lead text-ink-800 max-w-prose-wide">
+    <div class="flex items-center gap-3 text-muted">
+      <a href="../" class="label-stamp hover:text-brand transition-colors">Docs</a>
+      <span class="text-muted/40">/</span>
+      <span class="label-stamp-strong">CLI reference</span>
+    </div>
+    <h1 class="mt-5 text-display-lg text-text font-semibold">CLI reference.</h1>
+    <p class="mt-4 text-lead text-muted max-w-prose-tech leading-relaxed">
       The installer ships a single binary. Both
-      <code class="font-mono">datasus</code> and
-      <code class="font-mono">datasus-etl</code> resolve to the same
+      <code class="font-mono text-text bg-surface-2 border border-border px-1 rounded text-[0.85em]">datasus</code> and
+      <code class="font-mono text-text bg-surface-2 border border-border px-1 rounded text-[0.85em]">datasus-etl</code> resolve to the same
       entry point — use whichever you prefer.
     </p>
 
-    <div class="prose-editorial">
+    <div class="prose-tech mt-6">
       <h2>Global flags</h2>
       <p>Available on every subcommand:</p>
       <pre><code>--help       Show help and exit
@@ -72,11 +74,11 @@ datasus ui --host 0.0.0.0               # expose on LAN (careful!)</code></pre>
         <li><code>130</code> — interrupted by Ctrl+C.</li>
       </ul>
 
-      <aside class="mt-12 border-l-2 border-clinic-sage pl-5">
-        <div class="stamp text-clinic-sage">Source</div>
-        <p class="!mt-2 text-sm text-ink-600">
+      <aside class="note mt-12">
+        <div class="label-stamp text-brand">Source</div>
+        <p class="!mt-2 text-sm text-muted">
           The authoritative CLI definition lives in
-          <a href={`${repoUrl()}/blob/main/src/datasus_etl/cli.py`} class="prose-editorial">
+          <a href={`${repoUrl()}/blob/main/src/datasus_etl/cli.py`}>
             <code>src/datasus_etl/cli.py</code>
           </a>.
         </p>

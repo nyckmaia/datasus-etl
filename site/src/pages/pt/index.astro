@@ -1,150 +1,176 @@
 ---
 import Page from '~/layouts/Page.astro';
 import DownloadButton from '~/components/DownloadButton.astro';
+import StatsBar from '~/components/StatsBar.astro';
+import FeatureCard from '~/components/FeatureCard.astro';
 import { VERSION } from '~/lib/releases';
 ---
 
 <Page
-  title="DataSUS ETL — Dados públicos de saúde, finalmente utilizáveis"
-  description="Aplicativo desktop gratuito e de código aberto que baixa, converte e organiza dados do DATASUS — para você usar de verdade."
+  title="DataSUS ETL — Dados públicos de saúde, do FTP ao parquet consultável"
+  description="ETL de código aberto que transforma arquivos brutos do DATASUS em parquet consultável. Feito para epidemiologistas e cientistas de dados."
   locale="pt"
   ptPath="/"
 >
-  <section class="relative overflow-hidden">
-    <div class="max-w-7xl mx-auto px-6 md:px-10 pt-16 md:pt-28 pb-20">
-      <div class="grid lg:grid-cols-[1.4fr_1fr] gap-16 items-end">
-        <div>
-          <p class="rise stamp text-clinic-red">Edição v{VERSION} · Apache 2.0</p>
-          <h1 class="rise rise-d1 display-serif mt-4 text-display-xl text-ink">
-            Dados públicos de saúde,<br />
-            <em class="italic font-normal text-ink-600">finalmente utilizáveis</em>.
-          </h1>
-          <p class="rise rise-d2 mt-8 text-lead text-ink-800 max-w-[54ch]">
-            O DataSUS ETL baixa, converte e organiza os arquivos que o
-            Ministério da Saúde publica no FTP — aqueles que consomem uma
-            semana de qualquer pesquisador antes mesmo de virar uma
-            planilha. Um instalador. Um clique. Parquet pronto na outra
-            ponta.
-          </p>
-          <div class="rise rise-d3 mt-10 flex flex-wrap items-center gap-6">
-            <DownloadButton locale="pt" />
-          </div>
+  <!-- HERO -->
+  <section class="max-w-7xl mx-auto px-6 md:px-10 pt-16 md:pt-24 pb-4">
+    <div class="grid lg:grid-cols-[1.35fr_1fr] gap-12 items-start">
+      <div>
+        <div class="flex items-center gap-3 text-muted">
+          <span class="pill pill-brand">
+            <span class="pill-dot"></span>
+            Estável
+          </span>
+          <span class="pill pill-mono">v{VERSION}</span>
+          <span class="label-stamp">Apache-2.0</span>
         </div>
+        <h1 class="mt-6 text-display-xl text-text font-semibold">
+          Dados públicos de saúde,<br />
+          <span class="text-brand">do FTP ao parquet consultável.</span>
+        </h1>
+        <p class="mt-6 text-lead text-muted max-w-[56ch] leading-relaxed">
+          Um ETL de código aberto para o DATASUS. Baixa do FTP, converte
+          DBC → DBF → DuckDB, enriquece com IBGE e CID-10, e escreve
+          parquet particionado — tudo em um comando. Feito para
+          pesquisadores que precisam dos dados, não da encanação.
+        </p>
 
-        <aside class="rise rise-d4 relative lg:pl-10 lg:border-l lg:border-ink/20 mt-10 lg:mt-0">
-          <div class="stamp text-ink-400">Nota de campo</div>
-          <blockquote class="mt-3 display-serif italic text-ink text-2xl leading-snug">
-            “Metade do tempo de um epidemiologista é gasto abrindo DBCs
-            que não deveriam existir em 2026.”
-          </blockquote>
-          <div class="mt-4 text-xs text-ink-400 stamp">— razão de existir do projeto</div>
-        </aside>
+        <div class="mt-8 flex flex-wrap items-center gap-5">
+          <DownloadButton locale="pt" />
+          <span class="text-sm text-muted">
+            ou <code class="font-mono text-text bg-surface-2 border border-border px-1.5 py-0.5 rounded text-[0.82rem]">pip install datasus-etl</code>
+          </span>
+        </div>
       </div>
+
+      <!-- Code preview panel -->
+      <aside class="card p-5 md:p-6 min-w-0">
+        <div class="flex items-center justify-between pb-3 mb-4 border-b border-border">
+          <span class="label-stamp-strong">Início rápido</span>
+          <span class="mono-val text-xs text-muted">bash</span>
+        </div>
+        <pre class="font-mono text-[0.82rem] leading-relaxed text-text whitespace-pre-wrap break-all"><code><span class="text-muted"># um comando; o resto é com a gente.</span>
+<span class="text-brand">$</span> datasus pipeline \
+    --source   sihsus \
+    --start-date 2023-01-01 \
+    --uf       SP,RJ,MG \
+    --data-dir ./data
+
+<span class="text-muted"># depois, consulte onde parquet for falado.</span>
+<span class="text-brand">$</span> datasus db</code></pre>
+      </aside>
     </div>
 
-    <div class="rise rise-d5 max-w-7xl mx-auto px-6 md:px-10">
-      <div class="hairline"></div>
-      <div class="py-4 flex flex-wrap gap-x-10 gap-y-2 stamp text-ink-400">
-        <span>SIHSUS · Internações hospitalares</span>
-        <span class="text-clinic-red">SIM · Mortalidade</span>
-        <span>SIASUS · Ambulatorial (em dev.)</span>
-        <span class="ml-auto">Windows · macOS · Linux</span>
-      </div>
-      <div class="hairline"></div>
-    </div>
+    <StatsBar locale="pt" />
   </section>
 
+  <!-- FEATURES -->
   <section class="max-w-7xl mx-auto px-6 md:px-10 mt-24">
-    <div class="grid md:grid-cols-12 gap-10">
-      <div class="md:col-span-4">
-        <p class="stamp text-clinic-red">§ 01</p>
-        <h2 class="display-serif mt-2 text-display-lg text-ink">O que ele faz</h2>
-        <p class="mt-5 text-ink-600 leading-relaxed max-w-prose-wide">
-          Quatro etapas, um comando. Sem precisar instalar Python. Sem
-          configurar DuckDB. Sem scripts avulsos de PowerShell copiados de
-          um fórum de 2014.
-        </p>
+    <div class="flex items-end justify-between gap-6 pb-5 border-b border-border">
+      <div>
+        <div class="label-stamp-strong">O que ele faz</div>
+        <h2 class="mt-2 text-display-lg text-text font-semibold">Quatro etapas, um comando.</h2>
       </div>
-      <div class="md:col-span-8 grid sm:grid-cols-2 gap-px bg-ink/10">
-        {[
-          ['01', 'Baixa', 'Puxa os DBCs direto do FTP do DATASUS. Você escolhe UF e intervalo de datas.'],
-          ['02', 'Converte', 'DBC → DBF → DuckDB → Parquet, tudo em um processo. Sem CSV intermediário, sem resíduo.'],
-          ['03', 'Enriquece', 'Junta códigos IBGE de municípios (5.571 entradas) e mapeamentos CID automaticamente.'],
-          ['04', 'Expõe', 'Navegue pela UI, consulte com SQL no DuckDB, ou leia os parquets particionados de qualquer lugar.'],
-        ].map(([n, title, body]) => (
-          <article class="bg-paper-50 p-6 md:p-8">
-            <div class="flex items-start gap-4">
-              <span class="font-mono text-clinic-red text-sm">{n}</span>
-              <div>
-                <h3 class="display-serif text-display text-ink leading-tight">{title}</h3>
-                <p class="mt-2 text-ink-600 text-sm leading-relaxed">{body}</p>
-              </div>
-            </div>
-          </article>
-        ))}
-      </div>
+      <span class="hidden md:block mono-val text-sm text-muted">§ pipeline</span>
+    </div>
+
+    <div class="mt-8 grid md:grid-cols-2 gap-4">
+      <FeatureCard
+        index="01"
+        title="Baixa"
+        body="Puxa os DBCs direto do FTP do DATASUS. Seleção por subsistema, intervalo de datas e UF — nada mais, nada menos."
+        icon="download"
+      />
+      <FeatureCard
+        index="02"
+        title="Converte"
+        body="DBC → DBF → DuckDB → Parquet, tudo em um processo, sem CSV intermediário. Inserts em streaming mantêm o uso de memória previsível em leituras de muitos GB."
+        icon="transform"
+      />
+      <FeatureCard
+        index="03"
+        title="Enriquece"
+        body="Junta códigos IBGE de municípios (5.571 entradas), validação CID-10 e mapeamentos categóricos automaticamente. A saída já vem com schema limpo."
+        icon="enrich"
+      />
+      <FeatureCard
+        index="04"
+        title="Expõe"
+        body="Navegue pela interface web local, consulte com DuckDB SQL, ou leia os parquets particionados de qualquer lugar — polars, pandas, R, Arrow."
+        icon="serve"
+      />
     </div>
   </section>
 
-  <section class="max-w-7xl mx-auto px-6 md:px-10 mt-32">
-    <div class="grid md:grid-cols-12 gap-10 items-start">
-      <div class="md:col-span-4">
-        <p class="stamp text-clinic-red">§ 02</p>
-        <h2 class="display-serif mt-2 text-display-lg text-ink">Para dois públicos</h2>
+  <!-- TWO AUDIENCES -->
+  <section class="max-w-7xl mx-auto px-6 md:px-10 mt-24">
+    <div class="flex items-end justify-between gap-6 pb-5 border-b border-border">
+      <div>
+        <div class="label-stamp-strong">Públicos</div>
+        <h2 class="mt-2 text-display-lg text-text font-semibold">Feito para dois tipos de usuário.</h2>
       </div>
-      <div class="md:col-span-8 grid md:grid-cols-2 gap-8">
-        <div class="marker">
-          <h3 class="display-serif text-display text-ink">Pesquisadores · clínicos</h3>
-          <p class="mt-3 text-ink-600 text-sm leading-relaxed">
-            Instale, clique no atalho, escolha uma pasta, selecione o
-            subsistema e o intervalo de datas. O app baixa e processa tudo
-            localmente. Depois você consulta pela interface web, com
-            filtros e dropdowns — sem SQL.
-          </p>
-          <a href="./tutorial/" class="stamp mt-4 inline-block prose-editorial">Veja o tutorial →</a>
-        </div>
-        <div class="marker">
-          <h3 class="display-serif text-display text-ink">Desenvolvedores · times de dados</h3>
-          <p class="mt-3 text-ink-600 text-sm leading-relaxed">
-            O mesmo instalador expõe o CLI completo <code class="font-mono text-ink">datasus</code>
-            no seu shell (checkbox opcional de PATH). Pipelines
-            automatizados, API Python e DuckDB como superfície de consulta
-            — leia os parquets particionados com polars, pandas, R, o que
-            preferir.
-          </p>
-          <a href="../docs/" class="stamp mt-4 inline-block prose-editorial">Documentação (EN) →</a>
-        </div>
-      </div>
+      <span class="hidden md:block mono-val text-sm text-muted">§ users</span>
+    </div>
+
+    <div class="mt-8 grid md:grid-cols-2 gap-4">
+      <article class="card p-6 md:p-7">
+        <div class="label-stamp">Pesquisador · clínico</div>
+        <h3 class="mt-2 text-display text-text font-semibold">Clique, escolha, rode.</h3>
+        <p class="mt-3 text-[0.94rem] leading-relaxed text-muted">
+          Instale o app, clique no atalho, escolha uma pasta. Selecione
+          subsistema e intervalo de datas. O aplicativo baixa e processa
+          tudo localmente. Consulta via interface web com dropdowns e
+          filtros — sem precisar de SQL.
+        </p>
+        <a href="./tutorial/" class="label-stamp text-brand hover:text-brand-hover mt-5 inline-block">Veja o tutorial →</a>
+      </article>
+
+      <article class="card p-6 md:p-7">
+        <div class="label-stamp">Desenvolvedor · time de dados</div>
+        <h3 class="mt-2 text-display text-text font-semibold">CLI de verdade, parquet de verdade.</h3>
+        <p class="mt-3 text-[0.94rem] leading-relaxed text-muted">
+          O mesmo instalador expõe o comando <code class="font-mono text-text bg-surface-2 border border-border px-1 rounded text-[0.85em]">datasus</code>
+          completo. Pipelines automatizados, API Python e DuckDB como
+          superfície de consulta. A saída é parquet particionado
+          (Hive) — plugável no seu stack existente.
+        </p>
+        <a href="../docs/" class="label-stamp text-brand hover:text-brand-hover mt-5 inline-block">Documentação (EN) →</a>
+      </article>
     </div>
   </section>
 
-  <section class="max-w-7xl mx-auto px-6 md:px-10 mt-32">
-    <div class="grid md:grid-cols-12 gap-10 items-end">
-      <div class="md:col-span-7">
-        <p class="stamp text-clinic-red">§ 03 — Baixar</p>
-        <h2 class="display-serif mt-2 text-display-lg text-ink">
-          Pronto quando você quiser.
-        </h2>
-        <p class="mt-5 text-ink-600 leading-relaxed max-w-prose-wide">
-          O botão detecta o sistema operacional. A lista completa, com
-          checksums, fica na página de download. Cada release é cortada a
-          partir do arquivo <code class="font-mono text-ink">VERSION</code> do
-          repositório — o mesmo número aparece no rodapé do app e é
-          impresso por <code class="font-mono text-ink">datasus version</code>.
+  <!-- DOWNLOAD CALLOUT -->
+  <section class="max-w-7xl mx-auto px-6 md:px-10 mt-24">
+    <div class="card p-8 md:p-10 md:grid md:grid-cols-[1.3fr_1fr] md:gap-10">
+      <div>
+        <div class="label-stamp-strong">Instalar</div>
+        <h2 class="mt-2 text-display-lg text-text font-semibold">Pronto quando você estiver.</h2>
+        <p class="mt-4 text-muted max-w-prose-tech leading-relaxed">
+          O botão detecta o seu SO. A tabela completa de plataformas,
+          checksums e notas de instalação está na página de download.
+          Cada release é cortada a partir do arquivo
+          <code class="font-mono text-text bg-surface-2 border border-border px-1 rounded text-[0.85em]">VERSION</code>
+          do repositório — o mesmo número aparece no rodapé do app e em
+          <code class="font-mono text-text bg-surface-2 border border-border px-1 rounded text-[0.85em]">datasus version</code>.
         </p>
-        <div class="mt-8"><DownloadButton locale="pt" /></div>
+        <div class="mt-6"><DownloadButton locale="pt" /></div>
       </div>
-      <div class="md:col-span-5">
-        <div class="border border-ink/15 bg-paper-50 p-6">
-          <div class="stamp text-ink-400">O que esperar</div>
-          <ul class="mt-3 space-y-2 text-sm text-ink-800">
-            <li>— Primeira abertura: ~20s para aquecer os índices parquet.</li>
-            <li>— Instalador sem assinatura. No Windows, um clique em "Mais
-              informações → Executar assim mesmo"; no macOS, "botão
-              direito → Abrir" na primeira vez.</li>
-            <li>— O SIM é publicado com ~2 anos de atraso — o app avisa.</li>
-          </ul>
-        </div>
+      <div class="mt-8 md:mt-0">
+        <div class="label-stamp">O que esperar</div>
+        <ul class="mt-3 space-y-2 text-sm text-muted">
+          <li class="flex items-start gap-2">
+            <span class="mono-val text-brand pt-0.5">—</span>
+            <span>Primeira abertura: ~20s para aquecer os índices parquet.</span>
+          </li>
+          <li class="flex items-start gap-2">
+            <span class="mono-val text-brand pt-0.5">—</span>
+            <span>Instalador sem assinatura; um clique em "Executar assim mesmo" no Windows; "botão direito → Abrir" no macOS.</span>
+          </li>
+          <li class="flex items-start gap-2">
+            <span class="mono-val text-brand pt-0.5">—</span>
+            <span>O SIM é publicado com ~2 anos de atraso; o app avisa.</span>
+          </li>
+        </ul>
       </div>
     </div>
   </section>

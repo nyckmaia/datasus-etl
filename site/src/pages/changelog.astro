@@ -49,18 +49,18 @@ function renderMarkdown(src: string): string {
     if ((m = line.match(/^##\s+\[?(.+?)\]?\s*-\s*(.+)$/))) {
       closeList();
       out.push(
-        `<section class="changelog-entry"><header><span class="stamp text-clinic-red">Release</span><h2 class="display-serif text-display text-ink">v${esc(m[1])}</h2><time class="font-mono text-sm text-ink-400">${esc(m[2])}</time></header>`,
+        `<section class="changelog-entry"><header><span class="pill pill-brand"><span class="pill-dot"></span>Release</span><h2 class="mono-val text-display text-text">v${esc(m[1])}</h2><time class="mono-val text-sm text-muted">${esc(m[2])}</time></header>`,
       );
       continue;
     }
     if ((m = line.match(/^##\s+(.+)$/))) {
       closeList();
-      out.push(`</section><section class="changelog-entry"><header><h2 class="display-serif text-display text-ink">${inline(m[1])}</h2></header>`);
+      out.push(`</section><section class="changelog-entry"><header><h2 class="text-display text-text font-semibold">${inline(m[1])}</h2></header>`);
       continue;
     }
     if ((m = line.match(/^###\s+(.+)$/))) {
       closeList();
-      out.push(`<h3 class="stamp text-clinic-sage mt-6">${inline(m[1])}</h3>`);
+      out.push(`<h3 class="label-stamp-strong mt-6 text-brand">${inline(m[1])}</h3>`);
       continue;
     }
     if ((m = line.match(/^-\s+(.+)$/))) {
@@ -72,7 +72,7 @@ function renderMarkdown(src: string): string {
       continue;
     }
     closeList();
-    out.push(`<p class="text-ink-800 max-w-prose-wide">${inline(line)}</p>`);
+    out.push(`<p class="text-text max-w-prose-tech">${inline(line)}</p>`);
   }
   closeList();
   // Close any still-open section.
@@ -92,11 +92,13 @@ const html = hasChangelog ? renderMarkdown(markdown) : '';
   currentKey="changelog"
 >
   <section class="max-w-5xl mx-auto px-6 md:px-10 pt-16 md:pt-24 pb-24">
-    <p class="stamp text-clinic-red">Changelog</p>
-    <h1 class="display-serif mt-3 text-display-lg text-ink">Release history.</h1>
-    <p class="mt-5 text-lead text-ink-800 max-w-prose-wide">
+    <div class="flex items-center gap-3 text-muted">
+      <span class="pill pill-brand"><span class="pill-dot"></span>Changelog</span>
+    </div>
+    <h1 class="mt-5 text-display-lg text-text font-semibold">Release history.</h1>
+    <p class="mt-4 text-lead text-muted max-w-prose-tech leading-relaxed">
       Generated automatically from
-      <a href="https://www.conventionalcommits.org/" class="prose-editorial">Conventional Commits</a>
+      <a href="https://www.conventionalcommits.org/" class="text-brand hover:text-brand-hover border-b border-brand/40 hover:border-brand-hover">Conventional Commits</a>
       at each release. Items are grouped into Added, Fixed, Changed,
       Performance, Documentation, and Other.
     </p>
@@ -104,12 +106,13 @@ const html = hasChangelog ? renderMarkdown(markdown) : '';
     {hasChangelog ? (
       <div class="mt-10 changelog" set:html={html} />
     ) : (
-      <div class="mt-12 border border-ink/15 bg-paper-50 p-8 text-center">
-        <p class="display-serif text-display text-ink">No releases yet.</p>
-        <p class="mt-3 text-sm text-ink-600 max-w-prose-wide mx-auto">
+      <div class="mt-12 card p-10 text-center">
+        <div class="label-stamp text-muted">Empty log</div>
+        <p class="mt-3 text-display text-text font-semibold">No releases yet.</p>
+        <p class="mt-3 text-sm text-muted max-w-prose-tech mx-auto">
           This page will populate automatically when the first versioned
           release is published. In the meantime, follow development on the
-          <a href={releasesIndexUrl()} class="prose-editorial">GitHub releases page</a>.
+          <a href={releasesIndexUrl()} class="text-brand hover:text-brand-hover border-b border-brand/40 hover:border-brand-hover">GitHub releases page</a>.
         </p>
       </div>
     )}
@@ -118,36 +121,42 @@ const html = hasChangelog ? renderMarkdown(markdown) : '';
 
 <style is:global>
   .changelog-entry {
-    padding-top: 2.5rem;
+    padding-top: 2rem;
     padding-bottom: 1.5rem;
-    border-top: 1px solid rgba(11, 30, 51, 0.12);
+    border-top: 1px solid rgb(var(--border));
   }
   .changelog-entry:first-of-type {
-    border-top: 3px solid #0b1e33;
+    border-top: 2px solid rgb(var(--brand));
   }
   .changelog-entry header {
     display: grid;
     grid-template-columns: auto 1fr auto;
     gap: 1rem;
     align-items: baseline;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.75rem;
   }
   .changelog-list {
     margin-top: 0.5rem;
-    padding-left: 1rem;
-    list-style: '— ';
+    padding-left: 1.2rem;
+    list-style: disc;
   }
   .changelog-list li {
-    padding-left: 0.35rem;
-    margin-top: 0.25rem;
+    padding-left: 0.25rem;
+    margin-top: 0.3rem;
     max-width: 72ch;
     line-height: 1.55;
+    color: rgb(var(--text));
+  }
+  .changelog-list li::marker {
+    color: rgb(var(--brand));
   }
   .changelog code {
     font-family: 'JetBrains Mono', ui-monospace, monospace;
     font-size: 0.86em;
-    background: rgba(11, 30, 51, 0.06);
-    padding: 0.1em 0.35em;
+    background: rgb(var(--surface-2));
+    border: 1px solid rgb(var(--border));
+    padding: 0.08em 0.35em;
     border-radius: 3px;
+    color: rgb(var(--text));
   }
 </style>

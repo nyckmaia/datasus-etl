@@ -10,19 +10,21 @@ import { repoUrl } from '~/lib/releases';
   currentKey="docs"
 >
   <section class="max-w-5xl mx-auto px-6 md:px-10 pt-16 md:pt-24 pb-24">
-    <p class="stamp text-clinic-red">
-      <a href="../" class="prose-editorial">Docs</a> / Architecture
-    </p>
-    <h1 class="display-serif mt-3 text-display-lg text-ink">Architecture.</h1>
-    <p class="mt-5 text-lead text-ink-800 max-w-prose-wide">
+    <div class="flex items-center gap-3 text-muted">
+      <a href="../" class="label-stamp hover:text-brand transition-colors">Docs</a>
+      <span class="text-muted/40">/</span>
+      <span class="label-stamp-strong">Architecture</span>
+    </div>
+    <h1 class="mt-5 text-display-lg text-text font-semibold">Architecture.</h1>
+    <p class="mt-4 text-lead text-muted max-w-prose-tech leading-relaxed">
       Opinionated notes on the parts of the system most likely to
       surprise a reader skimming the code.
     </p>
 
-    <div class="prose-editorial">
+    <div class="prose-tech">
       <h2>Storage paths — one rule</h2>
       <p>
-        <a href={`${repoUrl()}/blob/main/src/datasus_etl/storage/paths.py`} class="prose-editorial">
+        <a href={`${repoUrl()}/blob/main/src/datasus_etl/storage/paths.py`} class="prose-tech">
           <code>storage/paths.py::resolve_parquet_dir</code>
         </a>
         is the only function that decides where parquet lives. Every
@@ -36,7 +38,7 @@ import { repoUrl } from '~/lib/releases';
       <p>
         The original bug that motivated this module produced a
         double-nested <code>{`{base}/datasus_db/datasus_db/`}</code> layout;
-        <a href={`${repoUrl()}/blob/main/src/datasus_etl/storage/migration.py`} class="prose-editorial">
+        <a href={`${repoUrl()}/blob/main/src/datasus_etl/storage/migration.py`} class="prose-tech">
           <code>storage/migration.py</code>
         </a>
         detects and migrates it at CLI startup.
@@ -44,7 +46,7 @@ import { repoUrl } from '~/lib/releases';
 
       <h2>SIM filename parsing — a landmine</h2>
       <p>
-        <a href={`${repoUrl()}/blob/main/src/datasus_etl/datasets/sim/config.py`} class="prose-editorial">
+        <a href={`${repoUrl()}/blob/main/src/datasus_etl/datasets/sim/config.py`} class="prose-tech">
           <code>datasets/sim/config.py::parse_filename</code>
         </a>
         disambiguates CID9 vs. CID10 <strong>by stem length, not by prefix</strong>:
@@ -65,7 +67,7 @@ import { repoUrl } from '~/lib/releases';
         Vite into <code>src/datasus_etl/web/static/</code> — a gitignored
         directory. The wheel packaging picks up the built artifacts via
         a hatch custom build hook at
-        <a href={`${repoUrl()}/blob/main/hatch_build.py`} class="prose-editorial">
+        <a href={`${repoUrl()}/blob/main/hatch_build.py`} class="prose-tech">
           <code>hatch_build.py</code>
         </a>.
       </p>
@@ -93,11 +95,11 @@ import { repoUrl } from '~/lib/releases';
       </p>
       <p>
         The workflow lives at
-        <a href={`${repoUrl()}/blob/main/.github/workflows/release.yml`} class="prose-editorial">
+        <a href={`${repoUrl()}/blob/main/.github/workflows/release.yml`} class="prose-tech">
           <code>.github/workflows/release.yml</code>
         </a>. The Nuitka flags — one line per dependency, each there
         because it failed without it — live in
-        <a href={`${repoUrl()}/blob/main/scripts/build_nuitka.py`} class="prose-editorial">
+        <a href={`${repoUrl()}/blob/main/scripts/build_nuitka.py`} class="prose-tech">
           <code>scripts/build_nuitka.py</code>
         </a>.
       </p>

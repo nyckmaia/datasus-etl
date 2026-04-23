@@ -18,21 +18,40 @@ const canonicalRel = Astro.url.pathname;
 ---
 
 <!doctype html>
-<html lang={locale === 'pt' ? 'pt-BR' : 'en'}>
+<html lang={locale === 'pt' ? 'pt-BR' : 'en'} class="theme-dark">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title} · DataSUS ETL</title>
     {description && <meta name="description" content={description} />}
-    <meta name="color-scheme" content="light" />
-    <meta name="theme-color" content="#f3ece0" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#0b1220" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#fafbfc" media="(prefers-color-scheme: light)" />
     <link rel="icon" href={`${base}/favicon.svg`} type="image/svg+xml" />
     <link rel="canonical" href={`https://nyckmaia.github.io${canonicalRel}`} />
 
     <!--
-      First-visit redirect. Runs before paint so we don't flash the EN
-      version to a PT-speaking visitor. Only active on the EN default
-      pages; if the user already has a stored preference, respect it.
+      Anti-FOUC: read persisted theme (or fall back to dark) before the first
+      paint. This runs synchronously in the <head>, so the correct .theme-*
+      class is on <html> before any CSS is applied.
+    -->
+    <script is:inline set:html={`
+      (function() {
+        try {
+          var stored = localStorage.getItem('theme');
+          var root = document.documentElement;
+          root.classList.remove('theme-dark', 'theme-light');
+          root.classList.add(stored === 'light' ? 'theme-light' : 'theme-dark');
+        } catch (e) {
+          /* private mode — keep default theme-dark already on the html tag */
+        }
+      })();
+    `} />
+
+    <!--
+      First-visit i18n redirect. Runs before paint so we don't flash the EN
+      version to a PT-speaking visitor. Only redirects if a PT version of
+      this specific page exists (ptPath prop is truthy).
     -->
     <script is:inline set:html={`
       (function() {
@@ -59,7 +78,7 @@ const canonicalRel = Astro.url.pathname;
       })();
     `} />
   </head>
-  <body class="antialiased">
+  <body class="antialiased text-text">
     <TopBar locale={locale} currentKey={currentKey} ptPath={ptPath} />
     <main class="relative">
       <slot />

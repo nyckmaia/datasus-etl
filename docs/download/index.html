@@ -1,7 +1,22 @@
-<!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Download — DataSUS ETL · DataSUS ETL</title><meta name="description" content="Native installers for Windows, macOS, and Linux."><meta name="color-scheme" content="light"><meta name="theme-color" content="#f3ece0"><link rel="icon" href="/datasus-etl/favicon.svg" type="image/svg+xml"><link rel="canonical" href="https://nyckmaia.github.io/datasus-etl/download/"><!--
-      First-visit redirect. Runs before paint so we don't flash the EN
-      version to a PT-speaking visitor. Only active on the EN default
-      pages; if the user already has a stored preference, respect it.
+<!DOCTYPE html><html lang="en" class="theme-dark"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Download — DataSUS ETL · DataSUS ETL</title><meta name="description" content="Native installers for Windows, macOS, and Linux."><meta name="color-scheme" content="dark light"><meta name="theme-color" content="#0b1220" media="(prefers-color-scheme: dark)"><meta name="theme-color" content="#fafbfc" media="(prefers-color-scheme: light)"><link rel="icon" href="/datasus-etl/favicon.svg" type="image/svg+xml"><link rel="canonical" href="https://nyckmaia.github.io/datasus-etl/download/"><!--
+      Anti-FOUC: read persisted theme (or fall back to dark) before the first
+      paint. This runs synchronously in the <head>, so the correct .theme-*
+      class is on <html> before any CSS is applied.
+    --><script>
+      (function() {
+        try {
+          var stored = localStorage.getItem('theme');
+          var root = document.documentElement;
+          root.classList.remove('theme-dark', 'theme-light');
+          root.classList.add(stored === 'light' ? 'theme-light' : 'theme-dark');
+        } catch (e) {
+          /* private mode — keep default theme-dark already on the html tag */
+        }
+      })();
+    </script><!--
+      First-visit i18n redirect. Runs before paint so we don't flash the EN
+      version to a PT-speaking visitor. Only redirects if a PT version of
+      this specific page exists (ptPath prop is truthy).
     --><script>
       (function() {
         try {
@@ -25,46 +40,51 @@
           }
         } catch (e) { /* no-op */ }
       })();
-    </script><link rel="stylesheet" href="/datasus-etl/_astro/changelog.eV-4YdHv.css"></head> <body class="antialiased"> <header class="relative z-40"> <div class="max-w-7xl mx-auto px-6 md:px-10 pt-6 pb-3"> <div class="flex items-end justify-between gap-6"> <a href="/datasus-etl/" class="flex items-end gap-3 group"> <span class="display-serif leading-none text-[2rem] md:text-[2.4rem] font-black text-ink tracking-[-0.035em]">DATASUS<span class="text-clinic-red">·</span>ETL</span> <span class="stamp text-ink-400 pb-1 hidden md:inline"> Brazilian public-health data </span> </a> <nav class="hidden md:flex items-center gap-6 stamp text-ink-600"> <a href="/datasus-etl/download" class="relative pb-1 hover:text-ink transition-colors text-ink" aria-current="page"> Download <span class="absolute inset-x-0 -bottom-[2px] h-[2px] bg-clinic-red"></span> </a><a href="/datasus-etl/tutorial" class="relative pb-1 hover:text-ink transition-colors"> Tutorial  </a><a href="/datasus-etl/docs" class="relative pb-1 hover:text-ink transition-colors"> Docs  </a><a href="/datasus-etl/changelog" class="relative pb-1 hover:text-ink transition-colors"> Changelog  </a> <a href="https://github.com/nyckmaia/datasus-etl" rel="noopener noreferrer" target="_blank" class="hover:text-ink" aria-label="GitHub repository">
-GitHub <span aria-hidden="true">↗</span> </a> <div class="flex items-center gap-0 stamp text-ink-600"> <a href="/datasus-etl/" data-lang-set="en" class="px-2 py-1 transition-colors text-ink bg-ink/10" aria-current="true">EN</a> <span class="text-ink-200" aria-hidden="true">·</span> <a href="/datasus-etl/pt/download" data-lang-set="pt" class="px-2 py-1 transition-colors hover:text-ink">PT</a> </div> <script type="module">document.querySelectorAll("[data-lang-set]").forEach(t=>{t.addEventListener("click",()=>{try{localStorage.setItem("lang",t.dataset.langSet??"en")}catch{}})});</script> </nav> <!-- Mobile compact: only lang + GH --> <div class="md:hidden flex items-center gap-3"> <a href="https://github.com/nyckmaia/datasus-etl" rel="noopener noreferrer" target="_blank" class="stamp text-ink-600">GH</a> <div class="flex items-center gap-0 stamp text-ink-600"> <a href="/datasus-etl/" data-lang-set="en" class="px-2 py-1 transition-colors text-ink bg-ink/10" aria-current="true">EN</a> <span class="text-ink-200" aria-hidden="true">·</span> <a href="/datasus-etl/pt/download" data-lang-set="pt" class="px-2 py-1 transition-colors hover:text-ink">PT</a> </div>  </div> </div> <!-- Mobile nav row --> <nav class="md:hidden mt-4 flex flex-wrap gap-x-4 gap-y-2 stamp text-ink-600"> <a href="/datasus-etl/download" class="pb-1 text-ink border-b-2 border-clinic-red"> Download </a><a href="/datasus-etl/tutorial" class="pb-1"> Tutorial </a><a href="/datasus-etl/docs" class="pb-1"> Docs </a><a href="/datasus-etl/changelog" class="pb-1"> Changelog </a> </nav> </div> <div class="hairline max-w-7xl mx-auto"></div> </header> <main class="relative">  <section class="max-w-7xl mx-auto px-6 md:px-10 pt-16 md:pt-24 pb-24"> <div class="grid lg:grid-cols-12 gap-10"> <div class="lg:col-span-8"> <p class="stamp text-clinic-red">Release v0.1.5</p> <h1 class="display-serif mt-3 text-display-lg text-ink">Native installers.</h1> <p class="mt-5 text-lead text-ink-800 max-w-[56ch]">
+    </script><link rel="stylesheet" href="/datasus-etl/_astro/changelog.Dki2Q3Kt.css"></head> <body class="antialiased text-text"> <header class="relative z-40 border-b border-border bg-bg/95 backdrop-blur-sm"> <div class="max-w-7xl mx-auto px-6 md:px-10 py-4"> <div class="flex items-center justify-between gap-6"> <a href="/datasus-etl/" class="flex items-center gap-3 group"> <span class="font-mono text-[0.95rem] font-semibold text-text tracking-tight">
+datasus<span class="text-brand">-</span>etl
+</span> <span class="pill pill-mono hidden sm:inline-flex">v0.1.5</span> </a> <nav class="hidden md:flex items-center gap-5 label-stamp text-muted"> <a href="/datasus-etl/download" class="relative pb-0.5 hover:text-text transition-colors text-text" aria-current="page"> Download <span class="absolute inset-x-0 -bottom-[5px] h-[2px] bg-brand"></span> </a><a href="/datasus-etl/tutorial" class="relative pb-0.5 hover:text-text transition-colors"> Tutorial  </a><a href="/datasus-etl/docs" class="relative pb-0.5 hover:text-text transition-colors"> Docs  </a><a href="/datasus-etl/changelog" class="relative pb-0.5 hover:text-text transition-colors"> Changelog  </a> <a href="https://github.com/nyckmaia/datasus-etl" rel="noopener noreferrer" target="_blank" class="hover:text-text flex items-center gap-1" aria-label="GitHub repository">
+GitHub <span aria-hidden="true" class="text-brand">↗</span> </a> </nav> <div class="flex items-center gap-3"> <div class="flex items-center gap-0 label-stamp text-muted"> <a href="/datasus-etl/" data-lang-set="en" class="px-1.5 py-1 transition-colors rounded text-text bg-surface-2" aria-current="true">EN</a> <span class="mx-0.5 text-muted/40" aria-hidden="true">/</span> <a href="/datasus-etl/pt/download" data-lang-set="pt" class="px-1.5 py-1 transition-colors rounded hover:text-text">PT</a> </div> <script type="module">document.querySelectorAll("[data-lang-set]").forEach(t=>{t.addEventListener("click",()=>{try{localStorage.setItem("lang",t.dataset.langSet??"en")}catch{}})});</script> <div class="h-5 w-px bg-border"></div> <button type="button" id="theme-toggle" aria-label="Toggle theme" title="Toggle theme" class="theme-toggle inline-flex items-center justify-center w-8 h-8 border border-border hover:border-brand/60 transition-colors text-muted hover:text-text rounded" data-astro-cid-x3pjskd3> <!-- Sun icon (visible when theme is dark — clicking switches to light) --> <svg class="w-4 h-4 theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-astro-cid-x3pjskd3> <circle cx="12" cy="12" r="4" data-astro-cid-x3pjskd3></circle> <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" data-astro-cid-x3pjskd3></path> </svg> <!-- Moon icon (visible when theme is light — clicking switches to dark) --> <svg class="w-4 h-4 theme-icon-moon hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-astro-cid-x3pjskd3> <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" data-astro-cid-x3pjskd3></path> </svg> </button>  <script type="module">const c=document.getElementById("theme-toggle");c?.addEventListener("click",()=>{const t=document.documentElement,e=!t.classList.contains("theme-light");t.classList.remove("theme-dark","theme-light"),t.classList.add(e?"theme-light":"theme-dark");try{localStorage.setItem("theme",e?"light":"dark")}catch{}});</script> </div> </div> <!-- Mobile nav row --> <nav class="md:hidden mt-3 flex flex-wrap gap-x-4 gap-y-2 label-stamp text-muted"> <a href="/datasus-etl/download" class="pb-0.5 text-text border-b border-brand"> Download </a><a href="/datasus-etl/tutorial" class="pb-0.5"> Tutorial </a><a href="/datasus-etl/docs" class="pb-0.5"> Docs </a><a href="/datasus-etl/changelog" class="pb-0.5"> Changelog </a> <a href="https://github.com/nyckmaia/datasus-etl" rel="noopener noreferrer" target="_blank" class="hover:text-text">GitHub ↗</a> </nav> </div> </header> <main class="relative">  <section class="max-w-7xl mx-auto px-6 md:px-10 pt-16 md:pt-24 pb-24"> <div class="grid lg:grid-cols-12 gap-10"> <div class="lg:col-span-8"> <div class="flex items-center gap-3 text-muted"> <span class="pill pill-brand"><span class="pill-dot"></span>Release</span> <span class="pill pill-mono">v0.1.5</span> </div> <h1 class="mt-5 text-display-lg text-text font-semibold">Native installers.</h1> <p class="mt-4 text-lead text-muted max-w-[58ch] leading-relaxed">
 Each installer ships a self-contained binary — no Python,
           DuckDB, or toolchain required on your machine. Download, run,
           click the shortcut.
-</p> <div class="mt-4 border border-ink/15 bg-paper-50 overflow-hidden"> <table class="w-full text-sm"> <thead> <tr class="stamp text-ink-400 text-left"> <th class="px-4 py-3 border-b border-ink/10">Platform</th> <th class="px-4 py-3 border-b border-ink/10 hidden md:table-cell">Architecture</th> <th class="px-4 py-3 border-b border-ink/10 hidden md:table-cell">Format</th> <th class="px-4 py-3 border-b border-ink/10 hidden lg:table-cell">Notes</th> <th class="px-4 py-3 border-b border-ink/10 text-right">v0.1.5</th> </tr> </thead> <tbody> <tr class="odd:bg-paper-50 even:bg-paper-100/70 hover:bg-paper-200/50 transition-colors"> <td class="px-4 py-4 align-top"> <div class="font-medium text-ink">Windows</div> <div class="md:hidden mt-1 text-xs text-ink-400 font-mono">64-bit · 10 / 11</div> </td> <td class="px-4 py-4 align-top font-mono text-xs text-ink-600 hidden md:table-cell"> 64-bit · 10 / 11 </td> <td class="px-4 py-4 align-top font-mono text-xs text-ink-600 hidden md:table-cell">
-.exe </td> <td class="px-4 py-4 align-top text-xs text-ink-600 hidden lg:table-cell"> Inno Setup · creates a Start Menu shortcut </td> <td class="px-4 py-4 align-top text-right"> <a href="https://github.com/nyckmaia/datasus-etl/releases/download/v0.1.5/datasus-etl-0.1.5-windows-x64.exe" class="inline-flex items-center gap-2 px-3 py-1.5 bg-ink text-paper text-xs stamp hover:bg-clinic-red transition-colors">Download ↓</a> </td> </tr><tr class="odd:bg-paper-50 even:bg-paper-100/70 hover:bg-paper-200/50 transition-colors"> <td class="px-4 py-4 align-top"> <div class="font-medium text-ink">macOS (Apple Silicon)</div> <div class="md:hidden mt-1 text-xs text-ink-400 font-mono">arm64 · 11+</div> </td> <td class="px-4 py-4 align-top font-mono text-xs text-ink-600 hidden md:table-cell"> arm64 · 11+ </td> <td class="px-4 py-4 align-top font-mono text-xs text-ink-600 hidden md:table-cell">
-.dmg </td> <td class="px-4 py-4 align-top text-xs text-ink-600 hidden lg:table-cell"> Drag-to-Applications · right-click “Open” the first time </td> <td class="px-4 py-4 align-top text-right"> <a href="https://github.com/nyckmaia/datasus-etl/releases/download/v0.1.5/datasus-etl-0.1.5-macos-arm64.dmg" class="inline-flex items-center gap-2 px-3 py-1.5 bg-ink text-paper text-xs stamp hover:bg-clinic-red transition-colors">Download ↓</a> </td> </tr><tr class="odd:bg-paper-50 even:bg-paper-100/70 hover:bg-paper-200/50 transition-colors"> <td class="px-4 py-4 align-top"> <div class="font-medium text-ink">Linux</div> <div class="md:hidden mt-1 text-xs text-ink-400 font-mono">x86_64 · glibc 2.35+</div> </td> <td class="px-4 py-4 align-top font-mono text-xs text-ink-600 hidden md:table-cell"> x86_64 · glibc 2.35+ </td> <td class="px-4 py-4 align-top font-mono text-xs text-ink-600 hidden md:table-cell">
-.AppImage </td> <td class="px-4 py-4 align-top text-xs text-ink-600 hidden lg:table-cell"> chmod +x then double-click · no root required </td> <td class="px-4 py-4 align-top text-right"> <a href="https://github.com/nyckmaia/datasus-etl/releases/download/v0.1.5/datasus-etl-0.1.5-linux-x64.AppImage" class="inline-flex items-center gap-2 px-3 py-1.5 bg-ink text-paper text-xs stamp hover:bg-clinic-red transition-colors">Download ↓</a> </td> </tr> </tbody> </table> </div> <p class="mt-6 text-xs text-ink-400">
+</p> <div class="mt-5 card overflow-hidden"> <div class="flex items-center justify-between px-5 py-3 border-b border-border bg-surface-2"> <span class="label-stamp-strong">Release</span> <span class="mono-val text-sm">v0.1.5</span> </div> <table class="w-full text-sm"> <thead> <tr class="label-stamp text-left border-b border-border"> <th class="px-5 py-3 font-semibold">Platform</th> <th class="px-5 py-3 font-semibold hidden md:table-cell">Architecture</th> <th class="px-5 py-3 font-semibold hidden md:table-cell">Format</th> <th class="px-5 py-3 font-semibold hidden lg:table-cell">Notes</th> <th class="px-5 py-3 font-semibold text-right"></th> </tr> </thead> <tbody> <tr class="transition-colors hover:bg-surface-2 border-b border-border/70"> <td class="px-5 py-4 align-top"> <div class="font-medium text-text">Windows</div> <div class="md:hidden mt-1 mono-val text-xs text-muted">64-bit · 10 / 11</div> </td> <td class="px-5 py-4 align-top mono-val text-xs text-muted hidden md:table-cell"> 64-bit · 10 / 11 </td> <td class="px-5 py-4 align-top mono-val text-xs text-muted hidden md:table-cell">
+.exe </td> <td class="px-5 py-4 align-top text-xs text-muted hidden lg:table-cell max-w-[26ch] leading-relaxed"> Inno Setup · creates a Start Menu shortcut </td> <td class="px-5 py-4 align-top text-right whitespace-nowrap"> <a href="https://github.com/nyckmaia/datasus-etl/releases/download/v0.1.5/datasus-etl-0.1.5-windows-x64.exe" class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-border hover:border-brand hover:text-brand text-xs text-muted transition-colors rounded"> <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"> <path d="M12 3v12"></path> <path d="M7 10l5 5 5-5"></path> <path d="M4 20h16"></path> </svg> <span class="label-stamp">Get</span> </a> </td> </tr><tr class="transition-colors hover:bg-surface-2 border-b border-border/70"> <td class="px-5 py-4 align-top"> <div class="font-medium text-text">macOS (Apple Silicon)</div> <div class="md:hidden mt-1 mono-val text-xs text-muted">arm64 · 11+</div> </td> <td class="px-5 py-4 align-top mono-val text-xs text-muted hidden md:table-cell"> arm64 · 11+ </td> <td class="px-5 py-4 align-top mono-val text-xs text-muted hidden md:table-cell">
+.dmg </td> <td class="px-5 py-4 align-top text-xs text-muted hidden lg:table-cell max-w-[26ch] leading-relaxed"> Drag-to-Applications · right-click “Open” the first time </td> <td class="px-5 py-4 align-top text-right whitespace-nowrap"> <a href="https://github.com/nyckmaia/datasus-etl/releases/download/v0.1.5/datasus-etl-0.1.5-macos-arm64.dmg" class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-border hover:border-brand hover:text-brand text-xs text-muted transition-colors rounded"> <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"> <path d="M12 3v12"></path> <path d="M7 10l5 5 5-5"></path> <path d="M4 20h16"></path> </svg> <span class="label-stamp">Get</span> </a> </td> </tr><tr class="transition-colors hover:bg-surface-2"> <td class="px-5 py-4 align-top"> <div class="font-medium text-text">Linux</div> <div class="md:hidden mt-1 mono-val text-xs text-muted">x86_64 · glibc 2.35+</div> </td> <td class="px-5 py-4 align-top mono-val text-xs text-muted hidden md:table-cell"> x86_64 · glibc 2.35+ </td> <td class="px-5 py-4 align-top mono-val text-xs text-muted hidden md:table-cell">
+.AppImage </td> <td class="px-5 py-4 align-top text-xs text-muted hidden lg:table-cell max-w-[26ch] leading-relaxed"> chmod +x then double-click · no root required </td> <td class="px-5 py-4 align-top text-right whitespace-nowrap"> <a href="https://github.com/nyckmaia/datasus-etl/releases/download/v0.1.5/datasus-etl-0.1.5-linux-x64.AppImage" class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-border hover:border-brand hover:text-brand text-xs text-muted transition-colors rounded"> <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"> <path d="M12 3v12"></path> <path d="M7 10l5 5 5-5"></path> <path d="M4 20h16"></path> </svg> <span class="label-stamp">Get</span> </a> </td> </tr> </tbody> </table> </div> <p class="mt-4 text-xs text-muted">
 Released on GitHub:
-<a href="https://github.com/nyckmaia/datasus-etl/releases/tag/v0.1.5" class="prose-editorial">v0.1.5</a> ·
-<a href="https://github.com/nyckmaia/datasus-etl/releases" class="prose-editorial">all releases</a>.
-          Checksums are attached to every release page; verify with
-<code class="font-mono">sha256sum</code> (Linux),
-<code class="font-mono">shasum -a 256</code> (macOS), or
-<code class="font-mono">Get-FileHash</code> (PowerShell).
-</p> </div> <aside class="lg:col-span-4 lg:border-l lg:border-ink/20 lg:pl-8"> <div class="stamp text-ink-400">Unsigned installers</div> <h2 class="display-serif mt-2 text-display text-ink">A one-time click.</h2> <p class="mt-3 text-sm text-ink-600 leading-relaxed">
-Code-signing certificates cost money; this project doesn't carry
-          that cost yet. The first time you run the installer:
-</p> <dl class="mt-5 space-y-4 text-sm"> <div> <dt class="stamp text-clinic-red">Windows</dt> <dd class="mt-1 text-ink-800 leading-relaxed">
+<a href="https://github.com/nyckmaia/datasus-etl/releases/tag/v0.1.5" class="text-brand hover:text-brand-hover border-b border-brand/40 hover:border-brand-hover">v0.1.5</a> ·
+<a href="https://github.com/nyckmaia/datasus-etl/releases" class="text-brand hover:text-brand-hover border-b border-brand/40 hover:border-brand-hover">all releases</a>.
+          Verify checksums with
+<code class="font-mono text-text bg-surface-2 border border-border px-1 rounded text-[0.85em]">sha256sum</code> (Linux),
+<code class="font-mono text-text bg-surface-2 border border-border px-1 rounded text-[0.85em]">shasum -a 256</code> (macOS), or
+<code class="font-mono text-text bg-surface-2 border border-border px-1 rounded text-[0.85em]">Get-FileHash</code> (PowerShell).
+</p> </div> <aside class="lg:col-span-4 card p-6"> <div class="label-stamp-strong">Unsigned installers</div> <h2 class="mt-2 text-display text-text font-semibold">A one-time click.</h2> <p class="mt-3 text-sm text-muted leading-relaxed">
+Code-signing certificates cost money; this project doesn't
+          carry that cost yet. The first time you run the installer:
+</p> <dl class="mt-5 space-y-4 text-sm"> <div> <dt class="label-stamp text-brand">Windows</dt> <dd class="mt-1 text-text leading-relaxed">
 SmartScreen shows a blue banner. Click <b>More info</b>, then
 <b>Run anyway</b>.
-</dd> </div> <div> <dt class="stamp text-clinic-red">macOS</dt> <dd class="mt-1 text-ink-800 leading-relaxed">
+</dd> </div> <div> <dt class="label-stamp text-brand">macOS</dt> <dd class="mt-1 text-text leading-relaxed">
 Gatekeeper blocks the first launch. Right-click the app in
-<b>/Applications</b> and choose <b>Open</b>; confirm. Subsequent
-              launches work normally.
-</dd> </div> <div> <dt class="stamp text-clinic-red">Linux</dt> <dd class="mt-1 text-ink-800 leading-relaxed">
-AppImages need the executable bit: <code class="font-mono">chmod +x</code>
+<b>/Applications</b> and choose <b>Open</b>; confirm.
+              Subsequent launches work normally.
+</dd> </div> <div> <dt class="label-stamp text-brand">Linux</dt> <dd class="mt-1 text-text leading-relaxed">
+AppImages need the executable bit: <code class="font-mono bg-surface-2 border border-border px-1 rounded text-[0.85em]">chmod +x</code>
 the file, then double-click or run it directly.
-</dd> </div> </dl> </aside> </div> <hr class="hairline mt-24"> <section id="intel-mac" class="mt-16 grid md:grid-cols-12 gap-10 scroll-mt-24"> <div class="md:col-span-5"> <p class="stamp text-clinic-red">Intel Mac users</p> <h2 class="display-serif mt-2 text-display-lg text-ink">No native installer — build from source.</h2> <p class="mt-5 text-ink-600 leading-relaxed max-w-prose-wide">
-We ship a native <code class="font-mono">.dmg</code> only for Macs
-          with Apple Silicon (M-series chips). If your Mac has an Intel
-          processor, follow the steps opposite to install from source —
-          it works and uses the same code. About five minutes of terminal
-          time, and no programming experience required.
-</p> <p class="mt-4 text-xs text-ink-400 max-w-prose-wide leading-relaxed">
-Not sure which Mac you have? Click the Apple logo → <b>About This Mac</b>.
-          If it says "Apple M1/M2/M3/M4…", use the DMG in the table above.
-          If it says "Intel Core i…", follow the steps on the right.
-</p> </div> <div class="md:col-span-7 prose-editorial"> <h3 class="!mt-0">Step-by-step</h3> <ol class="intel-steps"> <li> <b>Install Python 3.11 or newer.</b> Open the
+</dd> </div> </dl> </aside> </div> <!-- ===================================================================
+         Intel Mac — source install walkthrough
+         =================================================================== --> <section id="intel-mac" class="mt-24 pt-10 border-t border-border grid md:grid-cols-12 gap-10 scroll-mt-24"> <div class="md:col-span-5"> <div class="label-stamp-strong">Intel Mac users</div> <h2 class="mt-2 text-display-lg text-text font-semibold">No native installer —<br><span class="text-brand">build from source.</span></h2> <p class="mt-4 text-muted leading-relaxed max-w-prose-tech">
+We ship a native <code class="font-mono text-text bg-surface-2 border border-border px-1 rounded text-[0.85em]">.dmg</code>
+only for Macs with Apple Silicon (M-series chips). If your Mac
+          has an Intel processor, follow the steps on the right to
+          install from source — it works, it uses exactly the same code,
+          and takes about five minutes of terminal time. No programming
+          experience required.
+</p> <aside class="note mt-6"> <div class="label-stamp text-brand">How to check</div> <p class="!mt-2 text-sm text-muted leading-relaxed">
+Click the Apple logo → <b>About This Mac</b>. If it says
+            "Apple M1/M2/M3/M4…", use the DMG in the table above. If it
+            says "Intel Core i…", follow the steps on the right.
+</p> </aside> </div> <div class="md:col-span-7 prose-tech"> <h3 class="!mt-0 !border-t-0 !pt-0">Step-by-step</h3> <ol class="intel-steps"> <li> <b>Install Python 3.11 or newer.</b> Open the
 <a href="https://www.python.org/downloads/macos/">python.org downloads page</a>,
             grab the latest <code>3.11.x</code> or <code>3.12.x</code> installer
             (the <b>macOS 64-bit universal2</b> one), and run it. Click
@@ -73,8 +93,8 @@ Not sure which Mac you have? Click the Apple logo → <b>About This Mac</b>.
             type <code>Terminal</code>, press Return. A black-and-white
             window will appear. That's where you'll type the next
             commands.
-</li> <li> <b>Copy the project to your Mac.</b> Paste this line into Terminal
-            and press Return:
+</li> <li> <b>Copy the project to your Mac.</b> Paste this line into
+            Terminal and press Return:
 <pre><code>git clone https://github.com/nyckmaia/datasus-etl.git</code></pre>
 If macOS asks whether to install "Developer Command Line
             Tools", click Install and wait for it to finish, then re-run
@@ -89,30 +109,34 @@ Your Terminal prompt should now start with <code>(.venv)</code>.
 <pre><code>pip install .</code></pre> </li> <li> <b>Launch the app.</b> <pre><code>datasus ui</code></pre>
 Your default browser will open at
 <code>http://127.0.0.1:8787</code> — you're in. To stop the
-            server, come back to the Terminal and press <kbd>Ctrl</kbd>+<kbd>C</kbd>.
-</li> <li> <b>Next time you want to use the app</b>, open Terminal and run:
+            server, come back to the Terminal and press
+<kbd>Ctrl</kbd>+<kbd>C</kbd>.
+</li> <li> <b>Next time you want to use the app</b>, open Terminal and
+            run:
 <pre><code>cd datasus-etl
 source .venv/bin/activate
-datasus ui</code></pre> </li> </ol> <aside class="mt-8 border-l-2 border-clinic-sage pl-5"> <div class="stamp text-clinic-sage">Hit a snag?</div> <p class="!mt-2 text-sm text-ink-600">
+datasus ui</code></pre> </li> </ol> <aside class="note"> <div class="label-stamp text-brand">Hit a snag?</div> <p class="!mt-2 text-sm text-muted">
 If a step fails, copy the exact error message and
-<a href="https://github.com/nyckmaia/datasus-etl/issues/new" class="prose-editorial">open an issue on GitHub</a>.
+<a href="https://github.com/nyckmaia/datasus-etl/issues/new">open an issue on GitHub</a>.
             Include the line of your Terminal that failed — we'll help.
-</p> </aside> </div> </section> <hr class="hairline mt-24"> <section class="mt-16 grid md:grid-cols-12 gap-10"> <div class="md:col-span-5"> <p class="stamp text-clinic-red">Technical</p> <h2 class="display-serif mt-2 text-display-lg text-ink">Package contents</h2> </div> <div class="md:col-span-7 prose-editorial"> <p>
-Each installer bundles the same Nuitka-compiled binary — the app
-          you run is the same one across platforms. The installer places
-          the files in the OS-standard location, creates a shortcut to
-          launch <code>datasus ui</code>, and (if you leave the checkbox
-          marked) adds the <code>datasus</code> CLI to your <code>PATH</code>
-so commands like <code>datasus pipeline</code> work from any
-          terminal.
+</p> </aside> </div> </section> <!-- ===================================================================
+         Technical package contents
+         =================================================================== --> <section class="mt-24 pt-10 border-t border-border grid md:grid-cols-12 gap-10"> <div class="md:col-span-5"> <div class="label-stamp-strong">Technical</div> <h2 class="mt-2 text-display-lg text-text font-semibold">Package contents</h2> </div> <div class="md:col-span-7 prose-tech"> <p class="!mt-0">
+Each installer bundles the same Nuitka-compiled binary — the
+          app you run is the same one across platforms. The installer
+          places the files in the OS-standard location, creates a
+          shortcut to launch <code>datasus ui</code>, and (if you leave
+          the checkbox marked) adds the <code>datasus</code> CLI to your
+<code>PATH</code> so commands like <code>datasus pipeline</code>
+work from any terminal.
 </p> <h3>On install</h3> <ul> <li>Windows → <code>%ProgramFiles%\DataSUS ETL\</code> + Start Menu shortcut + optional <code>PATH</code> update (HKCU).</li> <li>macOS → <code>/Applications/DataSUS ETL.app</code> + optional symlink in <code>/usr/local/bin/datasus</code>.</li> <li>Linux → AppImage is self-contained. Run it from anywhere. A <code>.desktop</code> entry registers automatically when you place it in <code>~/.local/share/applications/</code>.</li> </ul> <h3>On first launch</h3> <p>
 The app starts a local web server on
-<code>127.0.0.1:8787</code> and opens your default browser. The
-          server is loopback-only — nothing is exposed to the network.
+<code>127.0.0.1:8787</code> and opens your default browser.
+          The server is loopback-only — nothing is exposed to the
+          network.
 </p> <h3>User settings</h3> <p>
 Your data-directory preference and other settings are persisted
-          in <code>~/.config/datasus-etl/config.toml</code> (Linux/macOS) or
-          the equivalent location under <code>%APPDATA%</code> on Windows.
-</p> </div> </section> </section>  </main> <footer class="mt-24"> <div class="max-w-7xl mx-auto px-6 md:px-10"> <div class="rule-fat w-16"></div> <div class="mt-8 grid md:grid-cols-[2fr_1fr_1fr] gap-10 pb-10"> <div> <div class="stamp text-clinic-red">Colophon</div> <p class="mt-3 max-w-md text-ink-600 text-sm leading-relaxed">Built with Astro, Tailwind, Fraunces, Public Sans, and JetBrains Mono. No trackers. No cookies beyond your language preference.</p> <p class="mt-3 max-w-md text-ink-400 text-xs leading-relaxed"> DataSUS is a registered trademark of the Brazilian Ministry of Health. This project is an independent open-source tool and is not affiliated with DATASUS or the Ministry of Health. </p> </div> <div> <div class="stamp text-ink-400">Links</div> <ul class="mt-3 space-y-1.5 text-sm"> <li> <a href="https://github.com/nyckmaia/datasus-etl" class="prose-editorial inline-block" rel="noopener noreferrer" target="_blank">Repository</a> </li><li> <a href="https://github.com/nyckmaia/datasus-etl/releases" class="prose-editorial inline-block" rel="noopener noreferrer" target="_blank">Releases</a> </li><li> <a href="https://github.com/nyckmaia/datasus-etl/issues" class="prose-editorial inline-block" rel="noopener noreferrer" target="_blank">Issues</a> </li> </ul> </div> <div> <div class="stamp text-ink-400">Version</div> <div class="mt-3 font-mono text-ink text-lg">v0.1.5</div> <p class="mt-2 text-ink-400 text-xs leading-relaxed max-w-[22ch]"> Source of truth: the <code class="font-mono">repository VERSION file</code>.
-</p> <p class="mt-4 text-xs text-ink-400">
-© 2026 · Licensed under Apache 2.0. </p> </div> </div> </div> </footer> </body></html>
+          in <code>~/.config/datasus-etl/config.toml</code> (Linux/macOS)
+          or the equivalent location under <code>%APPDATA%</code> on
+          Windows.
+</p> </div> </section> </section>  </main> <footer class="mt-24 border-t border-border bg-surface"> <div class="max-w-7xl mx-auto px-6 md:px-10 py-12"> <div class="grid md:grid-cols-[1.6fr_1fr_1fr] gap-10"> <div> <div class="label-stamp-strong">Build</div> <dl class="mt-4 grid grid-cols-[auto_1fr] gap-x-5 gap-y-2 text-sm"> <dt class="label-stamp pt-0.5">Version</dt> <dd class="mono-val">v0.1.5</dd> <dt class="label-stamp pt-0.5">License</dt> <dd class="mono-val">Apache-2.0</dd> <dt class="label-stamp pt-0.5">Source</dt> <dd class="mono-val text-[0.9rem]">VERSION file</dd> </dl> <p class="mt-5 max-w-md text-xs text-muted leading-relaxed">Built with Astro, Tailwind, IBM Plex Sans, JetBrains Mono. No trackers; the only local storage entry is your language and theme preference.</p> </div> <div> <div class="label-stamp-strong">Navigation</div> <ul class="mt-4 space-y-2 text-sm"> <li><a href="https://github.com/nyckmaia/datasus-etl" rel="noopener noreferrer" target="_blank" class="text-muted hover:text-brand transition-colors">Repository ↗</a></li> <li><a href="https://github.com/nyckmaia/datasus-etl/releases" rel="noopener noreferrer" target="_blank" class="text-muted hover:text-brand transition-colors">Releases ↗</a></li> <li><a href="https://github.com/nyckmaia/datasus-etl/issues" rel="noopener noreferrer" target="_blank" class="text-muted hover:text-brand transition-colors">Issues ↗</a></li> </ul> </div> <div> <div class="label-stamp-strong">Legal</div> <p class="mt-4 text-xs text-muted leading-relaxed">DataSUS is a registered trademark of the Brazilian Ministry of Health. This project is an independent open-source tool and is not affiliated with DATASUS or the Ministry of Health.</p> <p class="mt-4 text-xs text-muted">© 2026</p> </div> </div> </div> </footer> </body></html>

@@ -10,20 +10,22 @@ import { repoUrl } from '~/lib/releases';
   currentKey="docs"
 >
   <section class="max-w-5xl mx-auto px-6 md:px-10 pt-16 md:pt-24 pb-24">
-    <p class="stamp text-clinic-red">
-      <a href="../" class="prose-editorial">Docs</a> / Schemas
-    </p>
-    <h1 class="display-serif mt-3 text-display-lg text-ink">Subsystem schemas.</h1>
-    <p class="mt-5 text-lead text-ink-800 max-w-prose-wide">
+    <div class="flex items-center gap-3 text-muted">
+      <a href="../" class="label-stamp hover:text-brand transition-colors">Docs</a>
+      <span class="text-muted/40">/</span>
+      <span class="label-stamp-strong">Schemas</span>
+    </div>
+    <h1 class="mt-5 text-display-lg text-text font-semibold">Subsystem schemas.</h1>
+    <p class="mt-4 text-lead text-muted max-w-prose-tech leading-relaxed">
       Each supported subsystem has a class describing its raw column
       list, output parquet schema, filename parser, and enrichment SQL.
     </p>
 
-    <div class="prose-editorial">
+    <div class="prose-tech">
       <h2>SIHSUS</h2>
       <p>
         Source of truth:
-        <a href={`${repoUrl()}/tree/main/src/datasus_etl/datasets/sihsus`} class="prose-editorial">
+        <a href={`${repoUrl()}/tree/main/src/datasus_etl/datasets/sihsus`} class="prose-tech">
           <code>datasets/sihsus/</code>
         </a>. Raw DBCs follow the DATASUS <code>RDUFYYMM</code> convention
         (reduced hospital admission, state, year, month). The output
@@ -44,7 +46,7 @@ import { repoUrl } from '~/lib/releases';
       <h2>SIM</h2>
       <p>
         Source of truth:
-        <a href={`${repoUrl()}/tree/main/src/datasus_etl/datasets/sim`} class="prose-editorial">
+        <a href={`${repoUrl()}/tree/main/src/datasus_etl/datasets/sim`} class="prose-tech">
           <code>datasets/sim/</code>
         </a>. Raw filenames include both CID9 (<code>DORUFYY</code>,
         1979–1995) and CID10 (<code>DOUFYYYY</code>, 1996+) variants — the
@@ -61,9 +63,9 @@ import { repoUrl } from '~/lib/releases';
           <code>BOOLEAN</code>.</li>
       </ul>
 
-      <aside class="mt-10 border-l-2 border-clinic-sage pl-5">
-        <div class="stamp text-clinic-sage">Scope</div>
-        <p class="!mt-2 text-sm text-ink-600">
+      <aside class="note mt-10">
+        <div class="label-stamp text-brand">Scope</div>
+        <p class="!mt-2 text-sm text-muted">
           Column-by-column reference is deferred to the source code
           linked above — the schemas are long and evolve. The intent of
           this page is to document the <em>shape</em> and the

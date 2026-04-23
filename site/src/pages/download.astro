@@ -14,9 +14,12 @@ import { VERSION, releaseUrl, releasesIndexUrl } from '~/lib/releases';
   <section class="max-w-7xl mx-auto px-6 md:px-10 pt-16 md:pt-24 pb-24">
     <div class="grid lg:grid-cols-12 gap-10">
       <div class="lg:col-span-8">
-        <p class="stamp text-clinic-red">Release v{VERSION}</p>
-        <h1 class="display-serif mt-3 text-display-lg text-ink">Native installers.</h1>
-        <p class="mt-5 text-lead text-ink-800 max-w-[56ch]">
+        <div class="flex items-center gap-3 text-muted">
+          <span class="pill pill-brand"><span class="pill-dot"></span>Release</span>
+          <span class="pill pill-mono">v{VERSION}</span>
+        </div>
+        <h1 class="mt-5 text-display-lg text-text font-semibold">Native installers.</h1>
+        <p class="mt-4 text-lead text-muted max-w-[58ch] leading-relaxed">
           Each installer ships a self-contained binary — no Python,
           DuckDB, or toolchain required on your machine. Download, run,
           click the shortcut.
@@ -24,44 +27,44 @@ import { VERSION, releaseUrl, releasesIndexUrl } from '~/lib/releases';
 
         <DownloadTable locale="en" />
 
-        <p class="mt-6 text-xs text-ink-400">
+        <p class="mt-4 text-xs text-muted">
           Released on GitHub:
-          <a href={releaseUrl()} class="prose-editorial">v{VERSION}</a> ·
-          <a href={releasesIndexUrl()} class="prose-editorial">all releases</a>.
-          Checksums are attached to every release page; verify with
-          <code class="font-mono">sha256sum</code> (Linux),
-          <code class="font-mono">shasum -a 256</code> (macOS), or
-          <code class="font-mono">Get-FileHash</code> (PowerShell).
+          <a href={releaseUrl()} class="text-brand hover:text-brand-hover border-b border-brand/40 hover:border-brand-hover">v{VERSION}</a> ·
+          <a href={releasesIndexUrl()} class="text-brand hover:text-brand-hover border-b border-brand/40 hover:border-brand-hover">all releases</a>.
+          Verify checksums with
+          <code class="font-mono text-text bg-surface-2 border border-border px-1 rounded text-[0.85em]">sha256sum</code> (Linux),
+          <code class="font-mono text-text bg-surface-2 border border-border px-1 rounded text-[0.85em]">shasum -a 256</code> (macOS), or
+          <code class="font-mono text-text bg-surface-2 border border-border px-1 rounded text-[0.85em]">Get-FileHash</code> (PowerShell).
         </p>
       </div>
 
-      <aside class="lg:col-span-4 lg:border-l lg:border-ink/20 lg:pl-8">
-        <div class="stamp text-ink-400">Unsigned installers</div>
-        <h2 class="display-serif mt-2 text-display text-ink">A one-time click.</h2>
-        <p class="mt-3 text-sm text-ink-600 leading-relaxed">
-          Code-signing certificates cost money; this project doesn't carry
-          that cost yet. The first time you run the installer:
+      <aside class="lg:col-span-4 card p-6">
+        <div class="label-stamp-strong">Unsigned installers</div>
+        <h2 class="mt-2 text-display text-text font-semibold">A one-time click.</h2>
+        <p class="mt-3 text-sm text-muted leading-relaxed">
+          Code-signing certificates cost money; this project doesn't
+          carry that cost yet. The first time you run the installer:
         </p>
         <dl class="mt-5 space-y-4 text-sm">
           <div>
-            <dt class="stamp text-clinic-red">Windows</dt>
-            <dd class="mt-1 text-ink-800 leading-relaxed">
+            <dt class="label-stamp text-brand">Windows</dt>
+            <dd class="mt-1 text-text leading-relaxed">
               SmartScreen shows a blue banner. Click <b>More info</b>, then
               <b>Run anyway</b>.
             </dd>
           </div>
           <div>
-            <dt class="stamp text-clinic-red">macOS</dt>
-            <dd class="mt-1 text-ink-800 leading-relaxed">
+            <dt class="label-stamp text-brand">macOS</dt>
+            <dd class="mt-1 text-text leading-relaxed">
               Gatekeeper blocks the first launch. Right-click the app in
-              <b>/Applications</b> and choose <b>Open</b>; confirm. Subsequent
-              launches work normally.
+              <b>/Applications</b> and choose <b>Open</b>; confirm.
+              Subsequent launches work normally.
             </dd>
           </div>
           <div>
-            <dt class="stamp text-clinic-red">Linux</dt>
-            <dd class="mt-1 text-ink-800 leading-relaxed">
-              AppImages need the executable bit: <code class="font-mono">chmod +x</code>
+            <dt class="label-stamp text-brand">Linux</dt>
+            <dd class="mt-1 text-text leading-relaxed">
+              AppImages need the executable bit: <code class="font-mono bg-surface-2 border border-border px-1 rounded text-[0.85em]">chmod +x</code>
               the file, then double-click or run it directly.
             </dd>
           </div>
@@ -69,27 +72,32 @@ import { VERSION, releaseUrl, releasesIndexUrl } from '~/lib/releases';
       </aside>
     </div>
 
-    <hr class="hairline mt-24" />
-
-    <section id="intel-mac" class="mt-16 grid md:grid-cols-12 gap-10 scroll-mt-24">
+    <!-- ===================================================================
+         Intel Mac — source install walkthrough
+         =================================================================== -->
+    <section id="intel-mac" class="mt-24 pt-10 border-t border-border grid md:grid-cols-12 gap-10 scroll-mt-24">
       <div class="md:col-span-5">
-        <p class="stamp text-clinic-red">Intel Mac users</p>
-        <h2 class="display-serif mt-2 text-display-lg text-ink">No native installer — build from source.</h2>
-        <p class="mt-5 text-ink-600 leading-relaxed max-w-prose-wide">
-          We ship a native <code class="font-mono">.dmg</code> only for Macs
-          with Apple Silicon (M-series chips). If your Mac has an Intel
-          processor, follow the steps opposite to install from source —
-          it works and uses the same code. About five minutes of terminal
-          time, and no programming experience required.
+        <div class="label-stamp-strong">Intel Mac users</div>
+        <h2 class="mt-2 text-display-lg text-text font-semibold">No native installer —<br /><span class="text-brand">build from source.</span></h2>
+        <p class="mt-4 text-muted leading-relaxed max-w-prose-tech">
+          We ship a native <code class="font-mono text-text bg-surface-2 border border-border px-1 rounded text-[0.85em]">.dmg</code>
+          only for Macs with Apple Silicon (M-series chips). If your Mac
+          has an Intel processor, follow the steps on the right to
+          install from source — it works, it uses exactly the same code,
+          and takes about five minutes of terminal time. No programming
+          experience required.
         </p>
-        <p class="mt-4 text-xs text-ink-400 max-w-prose-wide leading-relaxed">
-          Not sure which Mac you have? Click the Apple logo → <b>About This Mac</b>.
-          If it says "Apple M1/M2/M3/M4…", use the DMG in the table above.
-          If it says "Intel Core i…", follow the steps on the right.
-        </p>
+        <aside class="note mt-6">
+          <div class="label-stamp text-brand">How to check</div>
+          <p class="!mt-2 text-sm text-muted leading-relaxed">
+            Click the Apple logo → <b>About This Mac</b>. If it says
+            "Apple M1/M2/M3/M4…", use the DMG in the table above. If it
+            says "Intel Core i…", follow the steps on the right.
+          </p>
+        </aside>
       </div>
-      <div class="md:col-span-7 prose-editorial">
-        <h3 class="!mt-0">Step-by-step</h3>
+      <div class="md:col-span-7 prose-tech">
+        <h3 class="!mt-0 !border-t-0 !pt-0">Step-by-step</h3>
         <ol class="intel-steps">
           <li>
             <b>Install Python 3.11 or newer.</b> Open the
@@ -105,8 +113,8 @@ import { VERSION, releaseUrl, releasesIndexUrl } from '~/lib/releases';
             commands.
           </li>
           <li>
-            <b>Copy the project to your Mac.</b> Paste this line into Terminal
-            and press Return:
+            <b>Copy the project to your Mac.</b> Paste this line into
+            Terminal and press Return:
             <pre><code>{`git clone https://github.com/nyckmaia/datasus-etl.git`}</code></pre>
             If macOS asks whether to install "Developer Command Line
             Tools", click Install and wait for it to finish, then re-run
@@ -133,42 +141,45 @@ source .venv/bin/activate`}</code></pre>
             <pre><code>{`datasus ui`}</code></pre>
             Your default browser will open at
             <code>http://127.0.0.1:8787</code> — you're in. To stop the
-            server, come back to the Terminal and press <kbd>Ctrl</kbd>+<kbd>C</kbd>.
+            server, come back to the Terminal and press
+            <kbd>Ctrl</kbd>+<kbd>C</kbd>.
           </li>
           <li>
-            <b>Next time you want to use the app</b>, open Terminal and run:
+            <b>Next time you want to use the app</b>, open Terminal and
+            run:
             <pre><code>{`cd datasus-etl
 source .venv/bin/activate
 datasus ui`}</code></pre>
           </li>
         </ol>
-        <aside class="mt-8 border-l-2 border-clinic-sage pl-5">
-          <div class="stamp text-clinic-sage">Hit a snag?</div>
-          <p class="!mt-2 text-sm text-ink-600">
+        <aside class="note">
+          <div class="label-stamp text-brand">Hit a snag?</div>
+          <p class="!mt-2 text-sm text-muted">
             If a step fails, copy the exact error message and
-            <a href="https://github.com/nyckmaia/datasus-etl/issues/new" class="prose-editorial">open an issue on GitHub</a>.
+            <a href="https://github.com/nyckmaia/datasus-etl/issues/new">open an issue on GitHub</a>.
             Include the line of your Terminal that failed — we'll help.
           </p>
         </aside>
       </div>
     </section>
 
-    <hr class="hairline mt-24" />
-
-    <section class="mt-16 grid md:grid-cols-12 gap-10">
+    <!-- ===================================================================
+         Technical package contents
+         =================================================================== -->
+    <section class="mt-24 pt-10 border-t border-border grid md:grid-cols-12 gap-10">
       <div class="md:col-span-5">
-        <p class="stamp text-clinic-red">Technical</p>
-        <h2 class="display-serif mt-2 text-display-lg text-ink">Package contents</h2>
+        <div class="label-stamp-strong">Technical</div>
+        <h2 class="mt-2 text-display-lg text-text font-semibold">Package contents</h2>
       </div>
-      <div class="md:col-span-7 prose-editorial">
-        <p>
-          Each installer bundles the same Nuitka-compiled binary — the app
-          you run is the same one across platforms. The installer places
-          the files in the OS-standard location, creates a shortcut to
-          launch <code>datasus ui</code>, and (if you leave the checkbox
-          marked) adds the <code>datasus</code> CLI to your <code>PATH</code>
-          so commands like <code>datasus pipeline</code> work from any
-          terminal.
+      <div class="md:col-span-7 prose-tech">
+        <p class="!mt-0">
+          Each installer bundles the same Nuitka-compiled binary — the
+          app you run is the same one across platforms. The installer
+          places the files in the OS-standard location, creates a
+          shortcut to launch <code>datasus ui</code>, and (if you leave
+          the checkbox marked) adds the <code>datasus</code> CLI to your
+          <code>PATH</code> so commands like <code>datasus pipeline</code>
+          work from any terminal.
         </p>
         <h3>On install</h3>
         <ul>
@@ -179,14 +190,16 @@ datasus ui`}</code></pre>
         <h3>On first launch</h3>
         <p>
           The app starts a local web server on
-          <code>127.0.0.1:8787</code> and opens your default browser. The
-          server is loopback-only — nothing is exposed to the network.
+          <code>127.0.0.1:8787</code> and opens your default browser.
+          The server is loopback-only — nothing is exposed to the
+          network.
         </p>
         <h3>User settings</h3>
         <p>
           Your data-directory preference and other settings are persisted
-          in <code>~/.config/datasus-etl/config.toml</code> (Linux/macOS) or
-          the equivalent location under <code>%APPDATA%</code> on Windows.
+          in <code>~/.config/datasus-etl/config.toml</code> (Linux/macOS)
+          or the equivalent location under <code>%APPDATA%</code> on
+          Windows.
         </p>
       </div>
     </section>

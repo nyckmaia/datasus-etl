@@ -1,14 +1,10 @@
 ---
-// Language toggle — receives the current locale and the path-pair for the
-// current page. Writes the user's choice to localStorage under `lang`. On
-// first visit (no stored choice), a tiny inline script on the layout's
-// <head> redirects Portuguese-speaking browsers to /pt/ automatically.
 import type { Locale } from '~/lib/i18n';
 import { localePath } from '~/lib/i18n';
 
 interface Props {
   current: Locale;
-  ptPath?: string; // path for the PT version; if absent, PT link is hidden
+  ptPath?: string;
   base: string;
 }
 
@@ -17,42 +13,41 @@ const enHref = localePath('en', '/', base);
 const ptHref = ptPath ? localePath('pt', ptPath, base) : undefined;
 ---
 
-<div class="flex items-center gap-0 stamp text-ink-600">
+<div class="flex items-center gap-0 label-stamp text-muted">
   <a
     href={enHref}
     data-lang-set="en"
     class:list={[
-      'px-2 py-1 transition-colors',
-      current === 'en' ? 'text-ink bg-ink/10' : 'hover:text-ink',
+      'px-1.5 py-1 transition-colors rounded',
+      current === 'en' ? 'text-text bg-surface-2' : 'hover:text-text',
     ]}
     aria-current={current === 'en' ? 'true' : undefined}
   >EN</a>
 
-  <span class="text-ink-200" aria-hidden="true">·</span>
+  <span class="mx-0.5 text-muted/40" aria-hidden="true">/</span>
 
   {ptHref ? (
     <a
       href={ptHref}
       data-lang-set="pt"
       class:list={[
-        'px-2 py-1 transition-colors',
-        current === 'pt' ? 'text-ink bg-ink/10' : 'hover:text-ink',
+        'px-1.5 py-1 transition-colors rounded',
+        current === 'pt' ? 'text-text bg-surface-2' : 'hover:text-text',
       ]}
       aria-current={current === 'pt' ? 'true' : undefined}
     >PT</a>
   ) : (
-    <span class="px-2 py-1 text-ink-200 cursor-not-allowed" title="Portuguese not available on this page">PT</span>
+    <span class="px-1.5 py-1 text-muted/40 cursor-not-allowed" title="Portuguese not available on this page">PT</span>
   )}
 </div>
 
 <script>
-  // Persist the user's choice on click.
   document.querySelectorAll<HTMLAnchorElement>('[data-lang-set]').forEach((el) => {
     el.addEventListener('click', () => {
       try {
         localStorage.setItem('lang', el.dataset.langSet ?? 'en');
       } catch {
-        // private mode — ignore
+        /* private mode — ignore */
       }
     });
   });

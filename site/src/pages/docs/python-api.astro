@@ -10,17 +10,19 @@ import { repoUrl } from '~/lib/releases';
   currentKey="docs"
 >
   <section class="max-w-5xl mx-auto px-6 md:px-10 pt-16 md:pt-24 pb-24">
-    <p class="stamp text-clinic-red">
-      <a href="../" class="prose-editorial">Docs</a> / Python API
-    </p>
-    <h1 class="display-serif mt-3 text-display-lg text-ink">Python API.</h1>
-    <p class="mt-5 text-lead text-ink-800 max-w-prose-wide">
+    <div class="flex items-center gap-3 text-muted">
+      <a href="../" class="label-stamp hover:text-brand transition-colors">Docs</a>
+      <span class="text-muted/40">/</span>
+      <span class="label-stamp-strong">Python API</span>
+    </div>
+    <h1 class="mt-5 text-display-lg text-text font-semibold">Python API.</h1>
+    <p class="mt-4 text-lead text-muted max-w-prose-tech leading-relaxed">
       The installer is the convenient path. For integration with
       pipelines, notebooks, and custom workflows, install the same code
       from PyPI and call it directly.
     </p>
 
-    <div class="prose-editorial">
+    <div class="prose-tech">
       <pre><code>pip install datasus-etl</code></pre>
 
       <h2>Configuration</h2>
@@ -73,17 +75,17 @@ df = pl.scan_parquet("./data/datasus_db/sihsus/**/*.parquet").collect()</code></
 engine = DuckDBQueryEngine(data_dir="./data")
 print(engine.execute("SELECT uf, count(*) FROM sihsus GROUP BY uf").fetch_df())</code></pre>
 
-      <aside class="mt-12 border-l-2 border-clinic-sage pl-5">
-        <div class="stamp text-clinic-sage">Source</div>
-        <p class="!mt-2 text-sm text-ink-600">
+      <aside class="note mt-12">
+        <div class="label-stamp text-brand">Source</div>
+        <p class="!mt-2 text-sm text-muted">
           Module entry points:
-          <a href={`${repoUrl()}/tree/main/src/datasus_etl/pipeline`} class="prose-editorial">
+          <a href={`${repoUrl()}/tree/main/src/datasus_etl/pipeline`} class="prose-tech">
             <code>datasus_etl.pipeline</code>
           </a>,
-          <a href={`${repoUrl()}/tree/main/src/datasus_etl/storage`} class="prose-editorial">
+          <a href={`${repoUrl()}/tree/main/src/datasus_etl/storage`} class="prose-tech">
             <code>datasus_etl.storage</code>
           </a>,
-          <a href={`${repoUrl()}/blob/main/src/datasus_etl/config.py`} class="prose-editorial">
+          <a href={`${repoUrl()}/blob/main/src/datasus_etl/config.py`} class="prose-tech">
             <code>datasus_etl.config</code>
           </a>.
         </p>

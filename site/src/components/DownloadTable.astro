@@ -13,7 +13,8 @@ const copy = {
     architecture: 'Architecture',
     format: 'Format',
     notes: 'Notes',
-    download: 'Download',
+    download: 'Get',
+    release: 'Release',
   },
   pt: {
     platform: 'Plataforma',
@@ -21,42 +22,54 @@ const copy = {
     format: 'Formato',
     notes: 'Observações',
     download: 'Baixar',
+    release: 'Versão',
   },
 }[locale];
 ---
 
-<div class="mt-4 border border-ink/15 bg-paper-50 overflow-hidden">
+<div class="mt-5 card overflow-hidden">
+  <div class="flex items-center justify-between px-5 py-3 border-b border-border bg-surface-2">
+    <span class="label-stamp-strong">{copy.release}</span>
+    <span class="mono-val text-sm">v{VERSION}</span>
+  </div>
   <table class="w-full text-sm">
     <thead>
-      <tr class="stamp text-ink-400 text-left">
-        <th class="px-4 py-3 border-b border-ink/10">{copy.platform}</th>
-        <th class="px-4 py-3 border-b border-ink/10 hidden md:table-cell">{copy.architecture}</th>
-        <th class="px-4 py-3 border-b border-ink/10 hidden md:table-cell">{copy.format}</th>
-        <th class="px-4 py-3 border-b border-ink/10 hidden lg:table-cell">{copy.notes}</th>
-        <th class="px-4 py-3 border-b border-ink/10 text-right">v{VERSION}</th>
+      <tr class="label-stamp text-left border-b border-border">
+        <th class="px-5 py-3 font-semibold">{copy.platform}</th>
+        <th class="px-5 py-3 font-semibold hidden md:table-cell">{copy.architecture}</th>
+        <th class="px-5 py-3 font-semibold hidden md:table-cell">{copy.format}</th>
+        <th class="px-5 py-3 font-semibold hidden lg:table-cell">{copy.notes}</th>
+        <th class="px-5 py-3 font-semibold text-right"></th>
       </tr>
     </thead>
     <tbody>
-      {PLATFORMS.map((p) => (
-        <tr class="odd:bg-paper-50 even:bg-paper-100/70 hover:bg-paper-200/50 transition-colors">
-          <td class="px-4 py-4 align-top">
-            <div class="font-medium text-ink">{p.label}</div>
-            <div class="md:hidden mt-1 text-xs text-ink-400 font-mono">{p.architecture}</div>
+      {PLATFORMS.map((p, idx) => (
+        <tr class:list={['transition-colors hover:bg-surface-2', idx < PLATFORMS.length - 1 && 'border-b border-border/70']}>
+          <td class="px-5 py-4 align-top">
+            <div class="font-medium text-text">{p.label}</div>
+            <div class="md:hidden mt-1 mono-val text-xs text-muted">{p.architecture}</div>
           </td>
-          <td class="px-4 py-4 align-top font-mono text-xs text-ink-600 hidden md:table-cell">
+          <td class="px-5 py-4 align-top mono-val text-xs text-muted hidden md:table-cell">
             {p.architecture}
           </td>
-          <td class="px-4 py-4 align-top font-mono text-xs text-ink-600 hidden md:table-cell">
+          <td class="px-5 py-4 align-top mono-val text-xs text-muted hidden md:table-cell">
             .{p.extension}
           </td>
-          <td class="px-4 py-4 align-top text-xs text-ink-600 hidden lg:table-cell">
+          <td class="px-5 py-4 align-top text-xs text-muted hidden lg:table-cell max-w-[26ch] leading-relaxed">
             {p.note}
           </td>
-          <td class="px-4 py-4 align-top text-right">
+          <td class="px-5 py-4 align-top text-right whitespace-nowrap">
             <a
               href={downloadUrl(p)}
-              class="inline-flex items-center gap-2 px-3 py-1.5 bg-ink text-paper text-xs stamp hover:bg-clinic-red transition-colors"
-            >{copy.download} ↓</a>
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-border hover:border-brand hover:text-brand text-xs text-muted transition-colors rounded"
+            >
+              <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 3v12"></path>
+                <path d="M7 10l5 5 5-5"></path>
+                <path d="M4 20h16"></path>
+              </svg>
+              <span class="label-stamp">{copy.download}</span>
+            </a>
           </td>
         </tr>
       ))}

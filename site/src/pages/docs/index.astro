@@ -9,51 +9,63 @@ import Page from '~/layouts/Page.astro';
   currentKey="docs"
 >
   <section class="max-w-6xl mx-auto px-6 md:px-10 pt-16 md:pt-24 pb-24">
-    <p class="stamp text-clinic-red">Documentation</p>
-    <h1 class="display-serif mt-3 text-display-lg text-ink">Technical reference.</h1>
-    <p class="mt-5 text-lead text-ink-800 max-w-prose-wide">
+    <div class="flex items-center gap-3 text-muted">
+      <span class="pill pill-brand"><span class="pill-dot"></span>Docs</span>
+    </div>
+    <h1 class="mt-5 text-display-lg text-text font-semibold">Technical reference.</h1>
+    <p class="mt-4 text-lead text-muted max-w-prose-tech leading-relaxed">
       Everything a developer or data engineer needs to automate, embed,
       or extend DataSUS ETL. The desktop app is a convenience — the
       engine is the CLI, the Python API, and the partitioned parquet
       store underneath.
     </p>
 
-    <hr class="hairline mt-10" />
-
-    <nav class="mt-10 grid md:grid-cols-2 gap-8">
-      <a href="./cli/" class="group block border border-ink/15 hover:border-clinic-red transition-colors p-6 bg-paper-50">
-        <div class="stamp text-clinic-red">§ 01</div>
-        <h2 class="display-serif mt-2 text-display text-ink group-hover:text-clinic-red transition-colors">CLI reference</h2>
-        <p class="mt-3 text-sm text-ink-600 leading-relaxed">
-          <code class="font-mono">datasus pipeline</code>,
-          <code class="font-mono">update</code>,
-          <code class="font-mono">status</code>,
-          <code class="font-mono">db</code>,
-          <code class="font-mono">ui</code>. Shared flags, exit codes,
-          scripting recipes.
+    <nav class="mt-10 grid md:grid-cols-2 gap-4">
+      <a href="./cli/" class="card card-interactive p-6 block group">
+        <div class="flex items-center gap-3">
+          <span class="mono-val text-xs text-brand border border-brand/30 bg-brand/10 px-1.5 py-0.5 rounded">01</span>
+          <span class="label-stamp-strong">CLI reference</span>
+        </div>
+        <h2 class="mt-3 text-display text-text font-semibold group-hover:text-brand transition-colors">Command line</h2>
+        <p class="mt-2 text-sm text-muted leading-relaxed">
+          <code class="font-mono text-text bg-surface-2 border border-border px-1 rounded text-[0.85em]">pipeline</code>,
+          <code class="font-mono text-text bg-surface-2 border border-border px-1 rounded text-[0.85em]">update</code>,
+          <code class="font-mono text-text bg-surface-2 border border-border px-1 rounded text-[0.85em]">status</code>,
+          <code class="font-mono text-text bg-surface-2 border border-border px-1 rounded text-[0.85em]">db</code>,
+          <code class="font-mono text-text bg-surface-2 border border-border px-1 rounded text-[0.85em]">ui</code>.
+          Shared flags, exit codes, scripting recipes.
         </p>
       </a>
-      <a href="./python-api/" class="group block border border-ink/15 hover:border-clinic-red transition-colors p-6 bg-paper-50">
-        <div class="stamp text-clinic-red">§ 02</div>
-        <h2 class="display-serif mt-2 text-display text-ink group-hover:text-clinic-red transition-colors">Python API</h2>
-        <p class="mt-3 text-sm text-ink-600 leading-relaxed">
-          The same pipeline, imported as a library. Useful when you want
-          the ETL inside a larger workflow (Airflow, Prefect,
-          notebook-driven analysis).
+      <a href="./python-api/" class="card card-interactive p-6 block group">
+        <div class="flex items-center gap-3">
+          <span class="mono-val text-xs text-brand border border-brand/30 bg-brand/10 px-1.5 py-0.5 rounded">02</span>
+          <span class="label-stamp-strong">Python API</span>
+        </div>
+        <h2 class="mt-3 text-display text-text font-semibold group-hover:text-brand transition-colors">As a library</h2>
+        <p class="mt-2 text-sm text-muted leading-relaxed">
+          The same pipeline imported into your own Python code. Useful
+          when you want the ETL inside a larger workflow (Airflow,
+          Prefect, notebook-driven analysis).
         </p>
       </a>
-      <a href="./architecture/" class="group block border border-ink/15 hover:border-clinic-red transition-colors p-6 bg-paper-50">
-        <div class="stamp text-clinic-red">§ 03</div>
-        <h2 class="display-serif mt-2 text-display text-ink group-hover:text-clinic-red transition-colors">Architecture</h2>
-        <p class="mt-3 text-sm text-ink-600 leading-relaxed">
-          How the pieces fit. Path resolution, legacy migration, SPA
-          bundling, tkinter-in-subprocess, and the release pipeline.
+      <a href="./architecture/" class="card card-interactive p-6 block group">
+        <div class="flex items-center gap-3">
+          <span class="mono-val text-xs text-brand border border-brand/30 bg-brand/10 px-1.5 py-0.5 rounded">03</span>
+          <span class="label-stamp-strong">Architecture</span>
+        </div>
+        <h2 class="mt-3 text-display text-text font-semibold group-hover:text-brand transition-colors">How the pieces fit</h2>
+        <p class="mt-2 text-sm text-muted leading-relaxed">
+          Path resolution, legacy migration, SPA bundling,
+          tkinter-in-subprocess, and the release pipeline.
         </p>
       </a>
-      <a href="./schemas/" class="group block border border-ink/15 hover:border-clinic-red transition-colors p-6 bg-paper-50">
-        <div class="stamp text-clinic-red">§ 04</div>
-        <h2 class="display-serif mt-2 text-display text-ink group-hover:text-clinic-red transition-colors">Subsystem schemas</h2>
-        <p class="mt-3 text-sm text-ink-600 leading-relaxed">
+      <a href="./schemas/" class="card card-interactive p-6 block group">
+        <div class="flex items-center gap-3">
+          <span class="mono-val text-xs text-brand border border-brand/30 bg-brand/10 px-1.5 py-0.5 rounded">04</span>
+          <span class="label-stamp-strong">Schemas</span>
+        </div>
+        <h2 class="mt-3 text-display text-text font-semibold group-hover:text-brand transition-colors">Subsystem columns</h2>
+        <p class="mt-2 text-sm text-muted leading-relaxed">
           SIHSUS and SIM column lists, types, enrichments. What is
           identical to the DATASUS original, what has been cleaned, and
           where you can read the SQL that did it.
@@ -61,9 +73,9 @@ import Page from '~/layouts/Page.astro';
       </a>
     </nav>
 
-    <aside class="mt-16 border-l-2 border-clinic-sage pl-6">
-      <div class="stamp text-clinic-sage">Maintainer note</div>
-      <p class="mt-2 text-sm text-ink-600 max-w-prose-wide leading-relaxed">
+    <aside class="note mt-12">
+      <div class="label-stamp text-brand">Maintainer note</div>
+      <p class="mt-2 text-sm text-muted max-w-prose-tech leading-relaxed">
         The docs below are the user-facing summary. For the canonical
         source of truth on any detail, read the repository — every code
         path referenced here is linked directly to its file and line on

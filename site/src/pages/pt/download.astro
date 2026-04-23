@@ -14,9 +14,12 @@ import { VERSION, releaseUrl, releasesIndexUrl } from '~/lib/releases';
   <section class="max-w-7xl mx-auto px-6 md:px-10 pt-16 md:pt-24 pb-24">
     <div class="grid lg:grid-cols-12 gap-10">
       <div class="lg:col-span-8">
-        <p class="stamp text-clinic-red">Release v{VERSION}</p>
-        <h1 class="display-serif mt-3 text-display-lg text-ink">Instaladores nativos.</h1>
-        <p class="mt-5 text-lead text-ink-800 max-w-[56ch]">
+        <div class="flex items-center gap-3 text-muted">
+          <span class="pill pill-brand"><span class="pill-dot"></span>Release</span>
+          <span class="pill pill-mono">v{VERSION}</span>
+        </div>
+        <h1 class="mt-5 text-display-lg text-text font-semibold">Instaladores nativos.</h1>
+        <p class="mt-4 text-lead text-muted max-w-[58ch] leading-relaxed">
           Cada instalador entrega um binário autossuficiente — você não
           precisa ter Python, DuckDB ou qualquer ferramenta de
           desenvolvimento instalados. Baixe, execute, clique no atalho.
@@ -24,75 +27,76 @@ import { VERSION, releaseUrl, releasesIndexUrl } from '~/lib/releases';
 
         <DownloadTable locale="pt" />
 
-        <p class="mt-6 text-xs text-ink-400">
+        <p class="mt-4 text-xs text-muted">
           Publicado no GitHub:
-          <a href={releaseUrl()} class="prose-editorial">v{VERSION}</a> ·
-          <a href={releasesIndexUrl()} class="prose-editorial">todas as versões</a>.
-          Os checksums estão anexados em cada página de release — confira
-          com <code class="font-mono">sha256sum</code> (Linux),
-          <code class="font-mono">shasum -a 256</code> (macOS) ou
-          <code class="font-mono">Get-FileHash</code> (PowerShell).
+          <a href={releaseUrl()} class="text-brand hover:text-brand-hover border-b border-brand/40 hover:border-brand-hover">v{VERSION}</a> ·
+          <a href={releasesIndexUrl()} class="text-brand hover:text-brand-hover border-b border-brand/40 hover:border-brand-hover">todas as versões</a>.
+          Confira os checksums com
+          <code class="font-mono text-text bg-surface-2 border border-border px-1 rounded text-[0.85em]">sha256sum</code> (Linux),
+          <code class="font-mono text-text bg-surface-2 border border-border px-1 rounded text-[0.85em]">shasum -a 256</code> (macOS) ou
+          <code class="font-mono text-text bg-surface-2 border border-border px-1 rounded text-[0.85em]">Get-FileHash</code> (PowerShell).
         </p>
       </div>
 
-      <aside class="lg:col-span-4 lg:border-l lg:border-ink/20 lg:pl-8">
-        <div class="stamp text-ink-400">Instaladores sem assinatura</div>
-        <h2 class="display-serif mt-2 text-display text-ink">Um clique extra, na primeira vez.</h2>
-        <p class="mt-3 text-sm text-ink-600 leading-relaxed">
+      <aside class="lg:col-span-4 card p-6">
+        <div class="label-stamp-strong">Instaladores sem assinatura</div>
+        <h2 class="mt-2 text-display text-text font-semibold">Um clique extra, na primeira vez.</h2>
+        <p class="mt-3 text-sm text-muted leading-relaxed">
           Assinatura digital custa dinheiro; o projeto ainda não comporta
           esse custo. Na primeira execução:
         </p>
         <dl class="mt-5 space-y-4 text-sm">
           <div>
-            <dt class="stamp text-clinic-red">Windows</dt>
-            <dd class="mt-1 text-ink-800 leading-relaxed">
+            <dt class="label-stamp text-brand">Windows</dt>
+            <dd class="mt-1 text-text leading-relaxed">
               O SmartScreen mostra um banner azul. Clique em
-              <b>Mais informações</b>, depois em <b>Executar assim mesmo</b>.
+              <b>Mais informações</b>, depois <b>Executar assim mesmo</b>.
             </dd>
           </div>
           <div>
-            <dt class="stamp text-clinic-red">macOS</dt>
-            <dd class="mt-1 text-ink-800 leading-relaxed">
-              O Gatekeeper bloqueia a primeira abertura. Clique com o botão
-              direito sobre o app em <b>/Aplicativos</b> e escolha
-              <b>Abrir</b>; confirme. Nas próximas vezes, abre normalmente.
+            <dt class="label-stamp text-brand">macOS</dt>
+            <dd class="mt-1 text-text leading-relaxed">
+              O Gatekeeper bloqueia a primeira abertura. Clique com o
+              botão direito sobre o app em <b>/Aplicativos</b> e escolha
+              <b>Abrir</b>; confirme. Nas próximas vezes, abre
+              normalmente.
             </dd>
           </div>
           <div>
-            <dt class="stamp text-clinic-red">Linux</dt>
-            <dd class="mt-1 text-ink-800 leading-relaxed">
+            <dt class="label-stamp text-brand">Linux</dt>
+            <dd class="mt-1 text-text leading-relaxed">
               Dê permissão de execução ao AppImage:
-              <code class="font-mono">chmod +x</code>, depois clique duas
-              vezes ou rode direto.
+              <code class="font-mono bg-surface-2 border border-border px-1 rounded text-[0.85em]">chmod +x</code>,
+              depois clique duas vezes ou rode direto.
             </dd>
           </div>
         </dl>
       </aside>
     </div>
 
-    <hr class="hairline mt-24" />
-
-    <section id="intel-mac" class="mt-16 grid md:grid-cols-12 gap-10 scroll-mt-24">
+    <section id="intel-mac" class="mt-24 pt-10 border-t border-border grid md:grid-cols-12 gap-10 scroll-mt-24">
       <div class="md:col-span-5">
-        <p class="stamp text-clinic-red">Usuários de Mac Intel</p>
-        <h2 class="display-serif mt-2 text-display-lg text-ink">Sem instalador nativo — compile do código.</h2>
-        <p class="mt-5 text-ink-600 leading-relaxed max-w-prose-wide">
-          O arquivo <code class="font-mono">.dmg</code> nativo é entregue
-          apenas para Macs com Apple Silicon (chips da série M). Se o seu
-          Mac for Intel, siga os passos ao lado para instalar a partir do
-          código-fonte — funciona igual e usa exatamente o mesmo
-          software. São uns cinco minutos de Terminal, sem exigir
-          conhecimento de programação.
+        <div class="label-stamp-strong">Usuários de Mac Intel</div>
+        <h2 class="mt-2 text-display-lg text-text font-semibold">Sem instalador nativo —<br /><span class="text-brand">compile do código.</span></h2>
+        <p class="mt-4 text-muted leading-relaxed max-w-prose-tech">
+          O arquivo <code class="font-mono text-text bg-surface-2 border border-border px-1 rounded text-[0.85em]">.dmg</code>
+          nativo é entregue apenas para Macs com Apple Silicon (chips da
+          série M). Se o seu Mac for Intel, siga os passos ao lado para
+          instalar a partir do código-fonte — funciona igual, usa
+          exatamente o mesmo software, e leva uns cinco minutos de
+          Terminal. Sem exigir conhecimento de programação.
         </p>
-        <p class="mt-4 text-xs text-ink-400 max-w-prose-wide leading-relaxed">
-          Não sabe qual Mac você tem? Clique na maçã da Apple →
-          <b>Sobre Este Mac</b>. Se aparecer "Apple M1/M2/M3/M4…", use o
-          DMG da tabela acima. Se aparecer "Intel Core i…", siga os
-          passos ao lado.
-        </p>
+        <aside class="note mt-6">
+          <div class="label-stamp text-brand">Como saber</div>
+          <p class="!mt-2 text-sm text-muted leading-relaxed">
+            Clique na maçã da Apple → <b>Sobre Este Mac</b>. Se aparecer
+            "Apple M1/M2/M3/M4…", use o DMG da tabela acima. Se aparecer
+            "Intel Core i…", siga os passos ao lado.
+          </p>
+        </aside>
       </div>
-      <div class="md:col-span-7 prose-editorial">
-        <h3 class="!mt-0">Passo a passo</h3>
+      <div class="md:col-span-7 prose-tech">
+        <h3 class="!mt-0 !border-t-0 !pt-0">Passo a passo</h3>
         <ol class="intel-steps">
           <li>
             <b>Instale o Python 3.11 ou mais novo.</b> Abra a
@@ -142,39 +146,38 @@ source .venv/bin/activate`}</code></pre>
             <kbd>Ctrl</kbd>+<kbd>C</kbd>.
           </li>
           <li>
-            <b>Nas próximas vezes que quiser usar</b>, abra o Terminal e rode:
+            <b>Nas próximas vezes que quiser usar</b>, abra o Terminal e
+            rode:
             <pre><code>{`cd datasus-etl
 source .venv/bin/activate
 datasus ui`}</code></pre>
           </li>
         </ol>
-        <aside class="mt-8 border-l-2 border-clinic-sage pl-5">
-          <div class="stamp text-clinic-sage">Travou em algum passo?</div>
-          <p class="!mt-2 text-sm text-ink-600">
+        <aside class="note">
+          <div class="label-stamp text-brand">Travou em algum passo?</div>
+          <p class="!mt-2 text-sm text-muted">
             Se um passo falhar, copie a mensagem de erro exata e
-            <a href="https://github.com/nyckmaia/datasus-etl/issues/new" class="prose-editorial">abra uma issue no GitHub</a>.
+            <a href="https://github.com/nyckmaia/datasus-etl/issues/new">abra uma issue no GitHub</a>.
             Inclua a linha do Terminal que falhou — ajudamos a resolver.
           </p>
         </aside>
       </div>
     </section>
 
-    <hr class="hairline mt-24" />
-
-    <section class="mt-16 grid md:grid-cols-12 gap-10">
+    <section class="mt-24 pt-10 border-t border-border grid md:grid-cols-12 gap-10">
       <div class="md:col-span-5">
-        <p class="stamp text-clinic-red">Técnico</p>
-        <h2 class="display-serif mt-2 text-display-lg text-ink">O que vem no pacote</h2>
+        <div class="label-stamp-strong">Técnico</div>
+        <h2 class="mt-2 text-display-lg text-text font-semibold">O que vem no pacote</h2>
       </div>
-      <div class="md:col-span-7 prose-editorial">
-        <p>
+      <div class="md:col-span-7 prose-tech">
+        <p class="!mt-0">
           Cada instalador empacota o mesmo binário compilado com Nuitka —
           o programa é idêntico entre plataformas. O instalador copia os
           arquivos para o diretório padrão do SO, cria um atalho que
-          executa <code>datasus ui</code> e, se o checkbox estiver marcado,
-          adiciona o comando <code>datasus</code> ao seu <code>PATH</code>
-          para que comandos como <code>datasus pipeline</code> funcionem
-          em qualquer terminal.
+          executa <code>datasus ui</code> e, se o checkbox estiver
+          marcado, adiciona o comando <code>datasus</code> ao seu
+          <code>PATH</code> para que comandos como
+          <code>datasus pipeline</code> funcionem em qualquer terminal.
         </p>
         <h3>Na instalação</h3>
         <ul>
@@ -184,15 +187,15 @@ datasus ui`}</code></pre>
         </ul>
         <h3>Na primeira abertura</h3>
         <p>
-          O app sobe um servidor web local em <code>127.0.0.1:8787</code> e
-          abre seu navegador padrão. O servidor é loopback — nada é
-          exposto para a rede.
+          O app sobe um servidor web local em
+          <code>127.0.0.1:8787</code> e abre seu navegador padrão. O
+          servidor é loopback — nada é exposto para a rede.
         </p>
         <h3>Configurações do usuário</h3>
         <p>
           A pasta de dados e outras configurações ficam salvas em
-          <code>~/.config/datasus-etl/config.toml</code> (Linux/macOS) ou em
-          <code>%APPDATA%</code> no Windows.
+          <code>~/.config/datasus-etl/config.toml</code> (Linux/macOS) ou
+          em <code>%APPDATA%</code> no Windows.
         </p>
       </div>
     </section>

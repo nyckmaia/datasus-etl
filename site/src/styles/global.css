@@ -1,158 +1,278 @@
 /* ---------- Fonts ----------
-   Fraunces for display (variable serif with optical size),
-   Public Sans for body (civic, crisp, less ubiquitous than Inter),
-   JetBrains Mono for data/code (paths, versions, CLI).
-   Google Fonts API import must precede @tailwind per CSS spec.
+   IBM Plex Sans for prose and headings (designed by IBM for data-dense
+   technical systems), IBM Plex Sans Condensed for uppercase labels,
+   JetBrains Mono for code, paths, and numeric values.
 ------------------------------- */
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,700;9..144,900&family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Condensed:wght@500;600&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --paper: #f3ece0;
-  --ink: #0b1e33;
-  --rule: rgba(11, 30, 51, 0.18);
+/* ---------- Theme tokens ----------
+   Colors are stored as "R G B" triplets so Tailwind's alpha-value syntax
+   (rgb(var(--bg) / <alpha-value>)) can modulate transparency. Dark is the
+   default; `.theme-light` on <html> flips to the light palette.
+------------------------------- */
+:root, .theme-dark {
+  --bg: 11 18 32;
+  --surface: 18 27 45;
+  --surface-2: 26 37 56;
+  --border: 38 51 73;
+  --text: 230 237 243;
+  --muted: 135 148 168;
+  --brand: 20 184 166;
+  --brand-hover: 45 212 191;
+  --brand-dim: 15 118 110;
+  --warn: 245 158 11;
+  --danger: 239 68 68;
+  --code-bg: 8 16 28;
+  --grid-dot: rgba(230, 237, 243, 0.045);
+  color-scheme: dark;
+}
+
+.theme-light {
+  --bg: 250 251 252;
+  --surface: 255 255 255;
+  --surface-2: 241 245 249;
+  --border: 226 232 240;
+  --text: 10 22 40;
+  --muted: 71 85 105;
+  --brand: 13 148 136;
+  --brand-hover: 15 118 110;
+  --brand-dim: 204 251 241;
+  --warn: 180 83 9;
+  --danger: 185 28 28;
+  --code-bg: 15 23 42;
+  --grid-dot: rgba(10, 22, 40, 0.06);
   color-scheme: light;
 }
 
 html {
-  background: var(--paper);
-  color: var(--ink);
-  font-family: 'Public Sans', system-ui, sans-serif;
-  font-feature-settings: 'ss01' on, 'cv11' on;
+  background: rgb(var(--bg));
+  color: rgb(var(--text));
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  font-feature-settings: 'ss01' on, 'ss02' on;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  transition: background-color 180ms ease, color 180ms ease;
 }
 
 body {
   background:
-    theme('backgroundImage.grain'),
-    radial-gradient(1200px 800px at 90% -10%, rgba(196, 54, 77, 0.06), transparent 60%),
-    var(--paper);
+    radial-gradient(circle at 1px 1px, var(--grid-dot) 1px, transparent 1.5px) 0 0 / 32px 32px,
+    rgb(var(--bg));
   min-height: 100vh;
+  transition: background-color 180ms ease;
 }
 
 ::selection {
-  background: #0b1e33;
-  color: #f3ece0;
+  background: rgb(var(--brand));
+  color: rgb(var(--bg));
 }
 
-/* ---------- Editorial typography ---------- */
-.display-serif {
-  font-family: 'Fraunces', Georgia, serif;
-  font-variation-settings: 'opsz' 144, 'SOFT' 50;
-}
+/* ---------- Technical typography helpers ---------- */
 
-.stamp {
-  font-family: 'Public Sans', system-ui, sans-serif;
+.label-stamp {
+  font-family: 'IBM Plex Sans Condensed', 'IBM Plex Sans', system-ui, sans-serif;
   font-weight: 600;
-  font-size: 0.72rem;
-  letter-spacing: 0.22em;
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
+  color: rgb(var(--muted));
 }
 
-.hairline {
-  height: 1px;
-  background: var(--rule);
+.label-stamp-strong {
+  font-family: 'IBM Plex Sans Condensed', 'IBM Plex Sans', system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgb(var(--text));
 }
 
-.hairline-v {
-  width: 1px;
-  background: var(--rule);
+.mono-val {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  color: rgb(var(--text));
 }
 
-.rule-fat {
-  height: 3px;
-  background: var(--ink);
+/* ---------- Pill / status chip ---------- */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.15rem 0.55rem;
+  border: 1px solid rgb(var(--border));
+  border-radius: 999px;
+  background: rgb(var(--surface));
+  font-family: 'IBM Plex Sans Condensed', 'IBM Plex Sans', system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgb(var(--muted));
+  line-height: 1;
 }
 
-/* Vertical stroke marker used in headings and sidenotes */
-.marker {
-  position: relative;
-  padding-left: 1rem;
-}
-.marker::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0.25rem;
-  bottom: 0.25rem;
-  width: 3px;
-  background: #c4364d;
+.pill-brand {
+  color: rgb(var(--brand));
+  border-color: rgb(var(--brand) / 0.35);
+  background: rgb(var(--brand) / 0.08);
 }
 
-/* Links inside editorial body copy */
-.prose-editorial a {
-  color: inherit;
-  text-decoration: none;
-  background-image: linear-gradient(currentColor, currentColor);
-  background-position: 0 100%;
-  background-repeat: no-repeat;
-  background-size: 100% 1px;
-  transition: background-size 250ms ease;
-}
-.prose-editorial a:hover {
-  background-size: 100% 2px;
+.pill-warn {
+  color: rgb(var(--warn));
+  border-color: rgb(var(--warn) / 0.35);
+  background: rgb(var(--warn) / 0.08);
 }
 
-/* Body copy inside long-form pages */
-.prose-editorial p {
+.pill-mono {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+  color: rgb(var(--text));
+  background: rgb(var(--surface-2));
+  border-color: rgb(var(--border));
+}
+
+.pill-dot {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+/* ---------- Cards and surfaces ---------- */
+
+.card {
+  background: rgb(var(--surface));
+  border: 1px solid rgb(var(--border));
+  border-radius: 6px;
+  transition: border-color 180ms ease, background-color 180ms ease;
+}
+
+.card-elevated {
+  background: rgb(var(--surface));
+  border: 1px solid rgb(var(--border));
+  border-radius: 6px;
+  box-shadow: 0 1px 0 rgb(var(--border) / 1), 0 8px 24px -12px rgb(0 0 0 / 0.35);
+}
+
+.card-interactive:hover {
+  border-color: rgb(var(--brand) / 0.6);
+  background: rgb(var(--surface-2));
+}
+
+/* ---------- Technical prose for docs and long-form pages ---------- */
+
+.prose-tech {
+  color: rgb(var(--text));
+  font-size: 0.98rem;
+  line-height: 1.65;
+}
+.prose-tech > :where(*) {
   max-width: 68ch;
+}
+.prose-tech p {
   margin-top: 1rem;
+  color: rgb(var(--text));
 }
-.prose-editorial h2 {
-  font-family: 'Fraunces', Georgia, serif;
-  font-variation-settings: 'opsz' 72;
+.prose-tech h2 {
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
   font-weight: 700;
-  font-size: clamp(1.75rem, 2.5vw, 2.25rem);
-  margin-top: 3rem;
-  margin-bottom: 0.5rem;
-  letter-spacing: -0.02em;
+  font-size: clamp(1.4rem, 2vw, 1.75rem);
+  letter-spacing: -0.015em;
+  margin-top: 2.75rem;
+  margin-bottom: 0.4rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgb(var(--border));
+  color: rgb(var(--text));
 }
-.prose-editorial h3 {
-  font-family: 'Public Sans', system-ui, sans-serif;
-  font-weight: 700;
-  font-size: 1.15rem;
-  margin-top: 2rem;
+.prose-tech h3 {
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 1.05rem;
   letter-spacing: -0.005em;
+  margin-top: 1.75rem;
+  color: rgb(var(--text));
 }
-.prose-editorial code {
+.prose-tech a {
+  color: rgb(var(--brand));
+  text-decoration: none;
+  border-bottom: 1px solid rgb(var(--brand) / 0.4);
+  transition: border-color 180ms ease, color 180ms ease;
+}
+.prose-tech a:hover {
+  color: rgb(var(--brand-hover));
+  border-bottom-color: rgb(var(--brand-hover));
+}
+.prose-tech code {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 0.86em;
-  background: rgba(11, 30, 51, 0.06);
-  padding: 0.1em 0.35em;
+  background: rgb(var(--surface-2));
+  border: 1px solid rgb(var(--border));
+  padding: 0.08em 0.35em;
   border-radius: 3px;
+  color: rgb(var(--text));
 }
-.prose-editorial pre {
+.prose-tech pre {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
-  background: var(--ink);
-  color: #f3ece0;
-  padding: 1.25rem 1.5rem;
-  font-size: 0.85rem;
+  background: rgb(var(--code-bg));
+  color: rgb(230 237 243);
+  padding: 1.1rem 1.3rem;
+  font-size: 0.82rem;
   line-height: 1.6;
   overflow-x: auto;
-  border-radius: 4px;
-  margin-top: 1.25rem;
+  border-radius: 6px;
+  margin-top: 1.15rem;
+  border: 1px solid rgb(var(--border));
 }
-.prose-editorial pre code {
+.prose-tech pre code {
   background: transparent;
   padding: 0;
+  border: 0;
   color: inherit;
 }
-.prose-editorial ul {
+.prose-tech ul {
   margin-top: 0.75rem;
-  padding-left: 1.25rem;
-  list-style: '— ';
+  padding-left: 1.35rem;
+  list-style: disc;
 }
-.prose-editorial ul li {
-  padding-left: 0.35rem;
+.prose-tech ul li {
   margin-top: 0.35rem;
+  padding-left: 0.2rem;
+  max-width: 68ch;
+}
+.prose-tech ul li::marker {
+  color: rgb(var(--brand));
+}
+.prose-tech ol {
+  margin-top: 0.75rem;
+  padding-left: 1.35rem;
+  list-style: decimal;
+}
+.prose-tech ol li {
+  margin-top: 0.35rem;
+  padding-left: 0.2rem;
   max-width: 68ch;
 }
 
-/* Numbered onboarding lists (Intel Mac source install, etc.) */
+/* Aside blocks used throughout docs and tutorials */
+aside.note {
+  background: rgb(var(--surface));
+  border-left: 2px solid rgb(var(--brand));
+  padding: 0.9rem 1.1rem;
+  margin-top: 1rem;
+  border-radius: 0 4px 4px 0;
+}
+
+/* ---------- Numbered onboarding steps (Intel Mac, tutorial) ---------- */
+
 .intel-steps {
   counter-reset: step;
   list-style: none;
@@ -162,7 +282,7 @@ body {
 .intel-steps > li {
   counter-increment: step;
   position: relative;
-  padding-left: 2.5rem;
+  padding-left: 3rem;
   padding-bottom: 1.5rem;
   margin-top: 0;
   max-width: 68ch;
@@ -171,14 +291,18 @@ body {
   content: counter(step, decimal-leading-zero);
   position: absolute;
   left: 0;
-  top: 0.05rem;
+  top: 0.2rem;
   font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 0.8rem;
-  color: #c4364d;
+  font-size: 0.78rem;
   font-weight: 500;
+  color: rgb(var(--brand));
+  padding: 0.12rem 0.4rem;
+  border: 1px solid rgb(var(--brand) / 0.4);
+  border-radius: 3px;
+  background: rgb(var(--brand) / 0.08);
 }
 .intel-steps > li + li {
-  border-top: 1px dashed rgba(11, 30, 51, 0.15);
+  border-top: 1px dashed rgb(var(--border));
   padding-top: 1rem;
 }
 .intel-steps > li pre {
@@ -186,34 +310,48 @@ body {
   margin-bottom: 0.25rem;
 }
 
+/* ---------- Keyboard chips ---------- */
+
 kbd {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 0.78em;
-  background: rgba(11, 30, 51, 0.08);
-  border: 1px solid rgba(11, 30, 51, 0.18);
+  background: rgb(var(--surface-2));
+  border: 1px solid rgb(var(--border));
   border-bottom-width: 2px;
   border-radius: 3px;
   padding: 0.05em 0.4em;
   vertical-align: baseline;
+  color: rgb(var(--text));
 }
 
-/* Stagger page-load fade */
-@keyframes editorial-rise {
-  from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.rise {
-  animation: editorial-rise 700ms cubic-bezier(0.2, 0.7, 0, 1) both;
-}
-.rise-d1 { animation-delay: 80ms; }
-.rise-d2 { animation-delay: 180ms; }
-.rise-d3 { animation-delay: 300ms; }
-.rise-d4 { animation-delay: 440ms; }
-.rise-d5 { animation-delay: 600ms; }
+/* ---------- Focus ---------- */
 
-/* Focus visible for keyboard users */
 :where(a, button, [role='button']):focus-visible {
-  outline: 2px solid #c4364d;
+  outline: 2px solid rgb(var(--brand));
   outline-offset: 3px;
   border-radius: 2px;
+}
+
+/* ---------- Data-sheet row (used by StatsBar, Footer) ---------- */
+
+.data-row {
+  display: grid;
+  gap: 0.25rem;
+  align-content: start;
+}
+.data-row__label {
+  font-family: 'IBM Plex Sans Condensed', 'IBM Plex Sans', system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgb(var(--muted));
+}
+.data-row__value {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  font-size: 1.05rem;
+  color: rgb(var(--text));
+  line-height: 1.25;
 }

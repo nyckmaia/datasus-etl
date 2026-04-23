@@ -1,7 +1,8 @@
 ---
 import LanguageToggle from './LanguageToggle.astro';
+import ThemeToggle from './ThemeToggle.astro';
 import { NAV, localePath, type Locale } from '~/lib/i18n';
-import { repoUrl } from '~/lib/releases';
+import { repoUrl, VERSION } from '~/lib/releases';
 
 interface Props {
   locale: Locale;
@@ -13,19 +14,17 @@ const { locale, currentKey, ptPath } = Astro.props;
 const base = import.meta.env.BASE_URL;
 ---
 
-<header class="relative z-40">
-  <div class="max-w-7xl mx-auto px-6 md:px-10 pt-6 pb-3">
-    <div class="flex items-end justify-between gap-6">
-      <a href={localePath(locale, '/', base)} class="flex items-end gap-3 group">
-        <span
-          class="display-serif leading-none text-[2rem] md:text-[2.4rem] font-black text-ink tracking-[-0.035em]"
-        >DATASUS<span class="text-clinic-red">·</span>ETL</span>
-        <span class="stamp text-ink-400 pb-1 hidden md:inline">
-          {locale === 'pt' ? 'Dados públicos de saúde' : 'Brazilian public-health data'}
+<header class="relative z-40 border-b border-border bg-bg/95 backdrop-blur-sm">
+  <div class="max-w-7xl mx-auto px-6 md:px-10 py-4">
+    <div class="flex items-center justify-between gap-6">
+      <a href={localePath(locale, '/', base)} class="flex items-center gap-3 group">
+        <span class="font-mono text-[0.95rem] font-semibold text-text tracking-tight">
+          datasus<span class="text-brand">-</span>etl
         </span>
+        <span class="pill pill-mono hidden sm:inline-flex">v{VERSION}</span>
       </a>
 
-      <nav class="hidden md:flex items-center gap-6 stamp text-ink-600">
+      <nav class="hidden md:flex items-center gap-5 label-stamp text-muted">
         {NAV.map((item) => {
           const href = item.path[locale] ?? item.path.en;
           const target = `${base}${href}`.replace(/\/+/g, '/');
@@ -34,13 +33,13 @@ const base = import.meta.env.BASE_URL;
             <a
               href={target}
               class:list={[
-                'relative pb-1 hover:text-ink transition-colors',
-                active && 'text-ink',
+                'relative pb-0.5 hover:text-text transition-colors',
+                active && 'text-text',
               ]}
               aria-current={active ? 'page' : undefined}
             >
               {item.labels[locale]}
-              {active && <span class="absolute inset-x-0 -bottom-[2px] h-[2px] bg-clinic-red"></span>}
+              {active && <span class="absolute inset-x-0 -bottom-[5px] h-[2px] bg-brand"></span>}
             </a>
           );
         })}
@@ -48,23 +47,22 @@ const base = import.meta.env.BASE_URL;
           href={repoUrl()}
           rel="noopener noreferrer"
           target="_blank"
-          class="hover:text-ink"
+          class="hover:text-text flex items-center gap-1"
           aria-label="GitHub repository"
         >
-          GitHub <span aria-hidden="true">↗</span>
+          GitHub <span aria-hidden="true" class="text-brand">↗</span>
         </a>
-        <LanguageToggle current={locale} ptPath={ptPath} base={base} />
       </nav>
 
-      <!-- Mobile compact: only lang + GH -->
-      <div class="md:hidden flex items-center gap-3">
-        <a href={repoUrl()} rel="noopener noreferrer" target="_blank" class="stamp text-ink-600">GH</a>
+      <div class="flex items-center gap-3">
         <LanguageToggle current={locale} ptPath={ptPath} base={base} />
+        <div class="h-5 w-px bg-border"></div>
+        <ThemeToggle />
       </div>
     </div>
 
     <!-- Mobile nav row -->
-    <nav class="md:hidden mt-4 flex flex-wrap gap-x-4 gap-y-2 stamp text-ink-600">
+    <nav class="md:hidden mt-3 flex flex-wrap gap-x-4 gap-y-2 label-stamp text-muted">
       {NAV.map((item) => {
         const href = item.path[locale] ?? item.path.en;
         const target = `${base}${href}`.replace(/\/+/g, '/');
@@ -72,13 +70,13 @@ const base = import.meta.env.BASE_URL;
         return (
           <a
             href={target}
-            class:list={['pb-1', active ? 'text-ink border-b-2 border-clinic-red' : '']}
+            class:list={['pb-0.5', active ? 'text-text border-b border-brand' : '']}
           >
             {item.labels[locale]}
           </a>
         );
       })}
+      <a href={repoUrl()} rel="noopener noreferrer" target="_blank" class="hover:text-text">GitHub ↗</a>
     </nav>
   </div>
-  <div class="hairline max-w-7xl mx-auto"></div>
 </header>

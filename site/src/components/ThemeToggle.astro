@@ -1,0 +1,66 @@
+---
+// Light/dark theme toggle. The initial theme is applied by the anti-FOUC
+// script in Page.astro's <head> — this component only needs to provide the
+// user-facing control and persist the choice in localStorage.
+---
+
+<button
+  type="button"
+  id="theme-toggle"
+  aria-label="Toggle theme"
+  title="Toggle theme"
+  class="theme-toggle inline-flex items-center justify-center w-8 h-8 border border-border hover:border-brand/60 transition-colors text-muted hover:text-text rounded"
+>
+  <!-- Sun icon (visible when theme is dark — clicking switches to light) -->
+  <svg
+    class="w-4 h-4 theme-icon-sun"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.6"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+  >
+    <circle cx="12" cy="12" r="4"></circle>
+    <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path>
+  </svg>
+  <!-- Moon icon (visible when theme is light — clicking switches to dark) -->
+  <svg
+    class="w-4 h-4 theme-icon-moon hidden"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.6"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+  </svg>
+</button>
+
+<style>
+  /* The current theme dictates which icon is shown. The attribute is
+     synchronised by the inline script below; CSS handles the visibility
+     swap so there's no layout thrash. */
+  :global(.theme-light) .theme-icon-sun { display: none; }
+  :global(.theme-light) .theme-icon-moon { display: block; }
+  :global(.theme-dark) .theme-icon-sun { display: block; }
+  :global(.theme-dark) .theme-icon-moon { display: none; }
+</style>
+
+<script>
+  const btn = document.getElementById('theme-toggle');
+  btn?.addEventListener('click', () => {
+    const root = document.documentElement;
+    const toLight = !root.classList.contains('theme-light');
+    root.classList.remove('theme-dark', 'theme-light');
+    root.classList.add(toLight ? 'theme-light' : 'theme-dark');
+    try {
+      localStorage.setItem('theme', toLight ? 'light' : 'dark');
+    } catch {
+      /* private mode — ignore */
+    }
+  });
+</script>
