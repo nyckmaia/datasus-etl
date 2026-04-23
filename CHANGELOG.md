@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.5] - 2026-04-23
+
+### Fixed
+- untrack mkdocs-era /site ignore, add Astro source, sync docs to v0.1.4
+
+### Other
+- bump version to 0.1.5
+
 ## [0.1.4] - 2026-04-23
 
 ### Added
