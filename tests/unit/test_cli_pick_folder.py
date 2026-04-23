@@ -16,7 +16,12 @@ from typer.testing import CliRunner
 from datasus_etl.cli import app
 
 
-runner = CliRunner(mix_stderr=False)
+# Click 8.1 needs mix_stderr=False to split the streams; Click 8.2+ removed
+# the kwarg and always splits them. Instantiate compatibly with both.
+try:
+    runner = CliRunner(mix_stderr=False)  # type: ignore[call-arg]
+except TypeError:
+    runner = CliRunner()
 
 
 def _install_fake_tk(monkeypatch: pytest.MonkeyPatch, chosen: str) -> MagicMock:
