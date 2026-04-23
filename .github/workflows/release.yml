@@ -299,7 +299,7 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add CHANGELOG.md
           if ! git diff --cached --quiet; then
-            git commit -m "chore(release): update CHANGELOG for ${{ needs.validate.outputs.tag }} [skip ci]"
+            git commit -m "chore(release): update CHANGELOG for ${{ needs.validate.outputs.tag }}"
             git push origin HEAD:${{ github.ref_name }}
           fi
 
@@ -319,7 +319,7 @@ jobs:
         run: ls -la artifacts/
 
       - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.validate.outputs.tag }}
           name: DataSUS ETL ${{ needs.validate.outputs.version }}
@@ -369,6 +369,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "No changes to /docs — nothing to commit."
           else
-            git commit -m "chore(release): rebuild site for ${{ needs.release.outputs.tag }} [skip ci]"
+            git commit -m "chore(release): rebuild site for ${{ needs.release.outputs.tag }}"
             git push origin HEAD:main
           fi
