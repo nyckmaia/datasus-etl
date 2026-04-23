@@ -1,4 +1,3 @@
-import * as React from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { ArrowRight, Database } from "lucide-react";
 
