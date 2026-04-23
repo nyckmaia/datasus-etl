@@ -6,8 +6,7 @@ on:
     branches: [main]
     paths-ignore:
       - 'VERSION'        # handled by release.yml
-      - 'site/**'
-      - 'docs/**'        # rebuilt-site commits from release.yml
+      - 'docs/**'        # rebuilt-site commits from release.yml's bot
       - 'CHANGELOG.md'
       - '**.md'
 
@@ -15,12 +14,13 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-# Minimal CI: only confirms the React SPA still builds cleanly. Python lint,
-# mypy, and pytest are intentionally not run here — the release pipeline
-# exercises the Python code end-to-end via Nuitka builds.
+# Minimal CI: confirms the React SPA (web-ui/) and the static marketing site
+# (site/) still build cleanly. Python lint, mypy, and pytest are intentionally
+# not run here — the release pipeline exercises the Python code end-to-end
+# via Nuitka builds.
 jobs:
   frontend:
-    name: Frontend build
+    name: Frontend build (web-ui)
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v6
@@ -43,3 +43,30 @@ jobs:
 
       - name: Verify SPA output
         run: test -f src/datasus_etl/web/static/index.html
+
+  site:
+    name: Site build (Astro)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      - name: Install site deps
+        working-directory: site
+        run: npm ci
+
+      - name: Type-check
+        working-directory: site
+        run: npx astro check
+
+      - name: Build
+        working-directory: site
+        run: npm run build
+
+      - name: Verify site output
+        run: test -f docs/index.html

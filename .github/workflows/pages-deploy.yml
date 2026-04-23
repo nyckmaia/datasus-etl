@@ -1,0 +1,55 @@
+name: Pages Deploy
+
+# Replaces GitHub's auto-generated "pages build and deployment" workflow (which
+# runs on Node 20). By taking over the deploy with our own actions pinned to
+# Node 24 we eliminate the deprecation warnings and control future version
+# bumps ourselves.
+#
+# Prerequisite: Settings → Pages → Source must be set to "GitHub Actions"
+# (not "Deploy from a branch"). This workflow uploads the pre-built /docs
+# folder as-is; no rebuild happens here. The site is rebuilt and committed
+# to /docs either by release.yml (on VERSION bump) or by the developer
+# running `npm run build` locally.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/pages-deploy.yml'
+  workflow_dispatch:
+
+# Only one Pages deploy at a time. Do not cancel in-progress — each deploy
+# represents a complete, published version of the site.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    name: Deploy /docs to GitHub Pages
+    runs-on: ubuntu-22.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Verify docs/ exists
+        run: test -f docs/index.html || { echo "::error::docs/index.html missing — run 'cd site && npm run build' and commit the output first."; exit 1; }
+
+      - uses: actions/configure-pages@v6
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: docs
+
+      - name: Deploy to Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
