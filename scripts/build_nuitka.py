@@ -38,7 +38,14 @@ SRC_PKG = ROOT / "src" / "datasus_etl"
 WEB_STATIC = SRC_PKG / "web" / "static"
 DATA_DIR = SRC_PKG / "_data"
 ICONS_DIR = ROOT / "installer" / "icons"
-ENTRY_POINT = SRC_PKG / "__main__.py"
+VERSION_FILE = ROOT / "VERSION"
+
+# Pass the PACKAGE DIRECTORY (not __main__.py). Passing __main__.py directly
+# makes Nuitka treat it as a standalone script and produces a circular import
+# inside the stdlib (types.py -> pathlib -> fnmatch -> re -> enum -> types).
+# Nuitka itself warns about this if you pass __main__.py. See the docs at
+# https://nuitka.net/doc/user-manual.html (Tips → "Standalone and packages").
+ENTRY_POINT = SRC_PKG
 
 
 COMMON_FLAGS = [
@@ -80,11 +87,22 @@ COMMON_FLAGS = [
 ]
 
 
-def _platform_flags() -> list[str]:
+def _read_version() -> str:
+    return VERSION_FILE.read_text(encoding="utf-8").strip()
+
+
+def _windows_version(version: str) -> str:
+    # Nuitka on Windows emits a Win32 VERSIONINFO resource, which requires a
+    # 4-part version (major.minor.patch.build). Our VERSION is semver X.Y.Z.
+    return f"{version}.0" if version.count(".") == 2 else version
+
+
+def _platform_flags(version: str) -> list[str]:
     system = platform.system()
     flags: list[str] = []
 
     if system == "Windows":
+        win_version = _windows_version(version)
         flags += [
             "--msvc=latest",
             "--windows-console-mode=disable",
@@ -92,6 +110,10 @@ def _platform_flags() -> list[str]:
             "--company-name=DataSUS ETL",
             "--product-name=DataSUS ETL",
             "--file-description=Pipeline for Brazilian public-health data",
+            # Nuitka refuses to emit VERSIONINFO without explicit file/product
+            # versions once any of the name fields above is set.
+            f"--file-version={win_version}",
+            f"--product-version={win_version}",
         ]
     elif system == "Darwin":
         flags += [
@@ -99,6 +121,7 @@ def _platform_flags() -> list[str]:
             "--macos-app-name=DataSUS ETL",
             f"--macos-app-icon={ICONS_DIR / 'icon.icns'}",
             "--macos-app-mode=gui",
+            f"--macos-app-version={version}",
         ]
     # uvloop is POSIX-only (no Windows wheel); include it on Linux/macOS.
     if system in ("Linux", "Darwin"):
@@ -153,12 +176,13 @@ def _preflight() -> None:
 
 
 def _build(output_dir: Path, jobs: int | None) -> Path:
+    version = _read_version()
     cmd: list[str] = [
         sys.executable,
         "-m",
         "nuitka",
         *COMMON_FLAGS,
-        *_platform_flags(),
+        *_platform_flags(version),
         *_output_flags(output_dir),
     ]
     if jobs:
