@@ -65,9 +65,9 @@ jobs:
           - os: macos-14
             target: macos-arm64
             ext: dmg
-          - os: macos-13
-            target: macos-x86_64
-            ext: dmg
+          # Intel macOS (macos-13) was removed: GitHub's last x86_64 runner
+          # has extreme queue times since its deprecation. Intel Mac users
+          # install from source — see site/pages/download.astro.
           - os: ubuntu-22.04
             target: linux-x64
             ext: AppImage
