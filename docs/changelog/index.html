@@ -33,10 +33,135 @@ Generated automatically from
 <a href="https://www.conventionalcommits.org/" class="prose-editorial">Conventional Commits</a>
 at each release. Items are grouped into Added, Fixed, Changed,
       Performance, Documentation, and Other.
-</p> <div class="mt-12 border border-ink/15 bg-paper-50 p-8 text-center"> <p class="display-serif text-display text-ink">No releases yet.</p> <p class="mt-3 text-sm text-ink-600 max-w-prose-wide mx-auto">
-This page will populate automatically when the first versioned
-          release is published. In the meantime, follow development on the
-<a href="https://github.com/nyckmaia/datasus-etl/releases" class="prose-editorial">GitHub releases page</a>.
-</p> </div> </section>  </main> <footer class="mt-24"> <div class="max-w-7xl mx-auto px-6 md:px-10"> <div class="rule-fat w-16"></div> <div class="mt-8 grid md:grid-cols-[2fr_1fr_1fr] gap-10 pb-10"> <div> <div class="stamp text-clinic-red">Colophon</div> <p class="mt-3 max-w-md text-ink-600 text-sm leading-relaxed">Built with Astro, Tailwind, Fraunces, Public Sans, and JetBrains Mono. No trackers. No cookies beyond your language preference.</p> <p class="mt-3 max-w-md text-ink-400 text-xs leading-relaxed"> DataSUS is a registered trademark of the Brazilian Ministry of Health. This project is an independent open-source tool and is not affiliated with DATASUS or the Ministry of Health. </p> </div> <div> <div class="stamp text-ink-400">Links</div> <ul class="mt-3 space-y-1.5 text-sm"> <li> <a href="https://github.com/nyckmaia/datasus-etl" class="prose-editorial inline-block" rel="noopener noreferrer" target="_blank">Repository</a> </li><li> <a href="https://github.com/nyckmaia/datasus-etl/releases" class="prose-editorial inline-block" rel="noopener noreferrer" target="_blank">Releases</a> </li><li> <a href="https://github.com/nyckmaia/datasus-etl/issues" class="prose-editorial inline-block" rel="noopener noreferrer" target="_blank">Issues</a> </li> </ul> </div> <div> <div class="stamp text-ink-400">Version</div> <div class="mt-3 font-mono text-ink text-lg">v0.1.3</div> <p class="mt-2 text-ink-400 text-xs leading-relaxed max-w-[22ch]"> Source of truth: the <code class="font-mono">repository VERSION file</code>.
+</p> <div class="mt-10 changelog"><section class="changelog-entry"><header><span class="stamp text-clinic-red">Release</span><h2 class="display-serif text-display text-ink">v0.1.4</h2><time class="font-mono text-sm text-ink-400">2026-04-23</time></header>
+<h3 class="stamp text-clinic-sage mt-6">Added</h3>
+<ul class="changelog-list">
+<li>add version synchronization and build scripts</li>
+<li><strong>web-ui:</strong> implement subsystem selection in download steps and enhance navigation</li>
+<li>enhance SIM filename parsing and update FTP date range checks</li>
+<li>enhance settings and directory management</li>
+<li>new React+FastAPI web UI, fix double-nested datasus_db storage path</li>
+<li>Update storage paths to use 'datasus_db' for Parquet files and enhance compatibility with legacy structures</li>
+<li>Add SIM descriptive mappings and enhance VIEW creation for categorical fields</li>
+<li>Add new fields to SIM schema and update CID array transformation for maternal cause</li>
+<li>Implement custom BOOLEAN mappings and enhance CID array transformation for SIM subsystem</li>
+<li>Enhance SIM data processing with CID array transformation and subsystem-specific mappings</li>
+<li>Enhance SIM data processing with IDADE field transformation</li>
+<li>Add upload command for MotherDuck integration</li>
+<li>Implement TODO.md improvements (tasks 1-3)</li>
+<li>Update TODO with new features and enhancements</li>
+<li>Implement Unicode support and enhance logging in CLI and Web Interface</li>
+<li>Integrate progress callback with Web Interface</li>
+<li>Implement TODO improvements (CID cleanup, logs, cancellation, progress)</li>
+<li><strong>I8:</strong> Implement memory-aware processing for large datasets</li>
+<li><strong>I7:</strong> Improve Query page data dictionary with types and null stats</li>
+<li><strong>I6:</strong> Improve Status page with tables instead of charts</li>
+<li><strong>I4:</strong> Add download-estimate command to preview file sizes</li>
+<li><strong>I3:</strong> Improve DBC conversion with CSV output and single file support</li>
+<li><strong>I5:</strong> Rename CLI commands run→pipeline, download→download-only</li>
+<li><strong>I2:</strong> Configure Streamlit to skip email prompt on first run</li>
+<li><strong>I1:</strong> Rename project from pydatasus to datasus-etl</li>
+<li>Refactor project structure and enhance Web Interface functionality</li>
+<li>Update dataframe display settings to use 'stretch' width for improved layout</li>
+<li>Add CID validation transform for SQL data processing</li>
+<li>Enhance SQL transformation and validation, update web date inputs</li>
+<li><strong>web:</strong> Enhance SQL templates and editor functionality in web UI</li>
+<li><strong>web:</strong> Improve web UI for health researchers</li>
+<li>Enhance Bash permissions with additional commands for modular transformations</li>
+<li>Use original DBC filename for exported files (Melhoria 04)</li>
+<li>Add --output-format option for CSV export (Melhoria 03)</li>
+<li>Add --raw option for export without type conversions (Melhoria 05)</li>
+<li>Add modular SQL transform system (Melhoria 07)</li>
+<li>Add TODO.md for pipeline performance improvements and enhancements</li>
+<li>Update permissions and ignore virtual environment files</li>
+<li>Add SIM pipeline and base architecture (Melhoria 04)</li>
+<li>Add pre-download report with confirmation (Melhoria 03)</li>
+<li>Improve CLI UX with required params and examples (Melhoria 02)</li>
+<li>Add automatic cleanup of temporary DBC/DBF files (Melhoria 01)</li>
+<li>Add git reset command to permissions in settings.local.json</li>
+<li>Add IBGE municipality enrichment (Melhoria 02)</li>
+<li>Add automatic cleanup of temporary DBC/DBF files (Melhoria 01)</li>
+<li>Update .gitignore to include additional file types and add new IBGE report</li>
+<li>Add Streamlit web interface command to CLI</li>
+<li>Add Streamlit web interface (Melhoria 07)</li>
+<li>Add unit and integration tests (Melhoria 06)</li>
+<li>Add incremental update support (Melhoria 05)</li>
+<li>Modularize dataset configs with base class (Melhoria 04)</li>
+<li>Create datasus CLI with typer (Melhoria 03)</li>
+<li>Add source_file column to track origin DBC file (Melhoria 02)</li>
+<li>Add subsystem folder structure (Melhoria 01)</li>
+<li>Add TODO.md to .gitignore to prevent tracking of TODO file</li>
+<li>Add Hive-partitioned Parquet export with canonical schema</li>
+<li>Enhance configuration and processing pipeline with new constants and improved SQL transformations</li>
+<li>Add SQL auto-generation helpers to SIHSUS schema</li>
+<li>Add SIHSUS Parquet schema definition with DuckDB types</li>
+<li>Replace TABWIN with datasus-dbc for cross-platform support</li>
+<li>Add Phase 2 optimizations and comprehensive examples</li>
+<li>Optimize pipeline with DuckDB streaming and SQL transformations</li>
+</ul>
+<h3 class="stamp text-clinic-sage mt-6">Fixed</h3>
+<ul class="changelog-list">
+<li><strong>nuitka:</strong> compile package dir (not __main__.py); Windows 4-part version</li>
+<li><strong>web-ui:</strong> drop postcss.config.js from tsconfig.node includes, add bun.lock</li>
+<li>Correct MotherDuck upload to use direct connection</li>
+<li>Use subprocess + log file for Web Interface terminal output</li>
+<li>Use module-level dict for thread-safe progress updates</li>
+<li>Use st.session_state + st.rerun() for Web Interface progress</li>
+<li>Use threading for real-time progress updates in Web Interface</li>
+<li>Update PyPI metadata with expanded keywords and classifiers (Melhoria 06)</li>
+<li>Update repository URL in README for cloning instructions</li>
+<li>Delete empty dbc/ and dbf/ directories after cleanup</li>
+<li>Remove typer[all] extra to fix pip installation warning</li>
+<li>Use rglob for recursive cleanup of DBC/DBF files</li>
+<li>Correct IBGE code extraction and remove duplicate columns</li>
+<li>Use rglob for recursive cleanup of DBC/DBF files</li>
+</ul>
+<h3 class="stamp text-clinic-sage mt-6">Performance</h3>
+<ul class="changelog-list">
+<li>Optimize data transfer using Parquet instead of row-by-row inserts</li>
+<li>Add adaptive DBF insertion strategy for optimal performance</li>
+</ul>
+<h3 class="stamp text-clinic-sage mt-6">Changed</h3>
+<ul class="changelog-list">
+<li>Replace progress bar with terminal output in Web Interface</li>
+<li>Remove redundant output of generated files in basic usage example</li>
+<li>Remove PHASE3_SUMMARY.md as it is no longer needed</li>
+<li>Remove check_transform.py script as it is no longer needed</li>
+<li>Clean up export logging and remove unused date extraction - Remove file size control at 512MB per file (unsupported in Duckdb)</li>
+</ul>
+<h3 class="stamp text-clinic-sage mt-6">Documentation</h3>
+<ul class="changelog-list">
+<li><strong>I8:</strong> Add RAM analysis report for pipeline memory optimization</li>
+<li>Add research documents for improvements 01, 02, 09, 10</li>
+<li>Add example scripts for new features (Melhoria 08)</li>
+<li>Update README.md with complete usage examples (Melhoria 03)</li>
+<li>Add schema usage examples</li>
+<li>Remove all CSV references and legacy migration guide</li>
+<li>Add Phase 3 summary and update Phase 2 references</li>
+<li>Update README for optimized architecture</li>
+<li>Add comprehensive Phase 2 summary</li>
+<li>Add deprecation warnings to legacy modules</li>
+<li>Add usage example and optimization summary</li>
+</ul>
+<h3 class="stamp text-clinic-sage mt-6">Other</h3>
+<ul class="changelog-list">
+<li>update version to 0.1.2</li>
+<li>(feat): Try the first cloud build</li>
+<li>Remove outdated documentation and improve user experience with new tutorial and web UI enhancements</li>
+<li>fixÇ commit web-ui lib modules</li>
+<li>Better UI</li>
+<li>Fix datasus CLI</li>
+<li>Switch storage from duckdb to parquet</li>
+<li>Refactor DataSUS ETL: Replace Parquet with DuckDB integration</li>
+<li>Update README.md to correct descriptions, enhance CLI usage examples, and add memory-aware processing details</li>
+<li>Rename project from "pydatasus" to "datasus-etl" and update related documentation; add DuckDB CLI integration in the command line interface.</li>
+<li>Fix in Paulo's house</li>
+<li>Enhance ParquetQueryEngine and SQLTransformer for improved schema handling and error logging</li>
+<li>Update examples to remove CSV references and reset version to 0.1.0</li>
+<li>Remove deprecated code and unused dependencies (v2.0)</li>
+<li>Init repo</li>
+<li>Initial commit</li>
+</ul>
+</section></div> </section>  </main> <footer class="mt-24"> <div class="max-w-7xl mx-auto px-6 md:px-10"> <div class="rule-fat w-16"></div> <div class="mt-8 grid md:grid-cols-[2fr_1fr_1fr] gap-10 pb-10"> <div> <div class="stamp text-clinic-red">Colophon</div> <p class="mt-3 max-w-md text-ink-600 text-sm leading-relaxed">Built with Astro, Tailwind, Fraunces, Public Sans, and JetBrains Mono. No trackers. No cookies beyond your language preference.</p> <p class="mt-3 max-w-md text-ink-400 text-xs leading-relaxed"> DataSUS is a registered trademark of the Brazilian Ministry of Health. This project is an independent open-source tool and is not affiliated with DATASUS or the Ministry of Health. </p> </div> <div> <div class="stamp text-ink-400">Links</div> <ul class="mt-3 space-y-1.5 text-sm"> <li> <a href="https://github.com/nyckmaia/datasus-etl" class="prose-editorial inline-block" rel="noopener noreferrer" target="_blank">Repository</a> </li><li> <a href="https://github.com/nyckmaia/datasus-etl/releases" class="prose-editorial inline-block" rel="noopener noreferrer" target="_blank">Releases</a> </li><li> <a href="https://github.com/nyckmaia/datasus-etl/issues" class="prose-editorial inline-block" rel="noopener noreferrer" target="_blank">Issues</a> </li> </ul> </div> <div> <div class="stamp text-ink-400">Version</div> <div class="mt-3 font-mono text-ink text-lg">v0.1.4</div> <p class="mt-2 text-ink-400 text-xs leading-relaxed max-w-[22ch]"> Source of truth: the <code class="font-mono">repository VERSION file</code>.
 </p> <p class="mt-4 text-xs text-ink-400">
 © 2026 · Licensed under Apache 2.0. </p> </div> </div> </div> </footer> </body></html> 
