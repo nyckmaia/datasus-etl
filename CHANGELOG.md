@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.8] - 2026-04-24
+
+### Other
+- **release:** bump version to 0.1.8 and update build settings
+- **release:** rebuild site for v0.1.7
+
 ## [0.1.7] - 2026-04-24
 
 ### Documentation
