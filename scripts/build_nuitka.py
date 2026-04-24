@@ -81,6 +81,11 @@ COMMON_FLAGS = [
     # without it the whole web server fails to import at startup.
     "--include-package=tomli_w",
     "--include-package=psutil",
+    # rich lazy-loads per-Unicode-version submodules from rich._unicode_data
+    # (e.g. unicode17-0-0) via importlib; Nuitka's static analysis cannot see
+    # those names, so include the whole package + data explicitly.
+    "--include-package=rich",
+    "--include-package-data=rich",
     # Trim the fat.
     "--nofollow-import-to=pandas.tests",
     "--nofollow-import-to=pyarrow.tests",
