@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.6] - 2026-04-24
+
+### Other
+- add TODO.md to .gitignore
+- **site:** clinical-instrument aesthetic, dark-first with theme toggle
+- **release:** rebuild site for v0.1.5 [skip ci]
+
 ## [0.1.5] - 2026-04-23
 
 ### Fixed
