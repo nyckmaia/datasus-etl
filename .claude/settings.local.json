@@ -42,7 +42,10 @@
       "Bash(git reset *)",
       "Bash(rm src/datasus_etl/web/app.py)",
       "Bash(rm -rf ../docs/*)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(rm -rf dist/*.whl dist/*.tar.gz)",
+      "Bash(DATASUS_SKIP_UI_BUILD=1 python -m build --wheel)",
+      "Bash(DATASUS_SKIP_UI_BUILD=1 python -m build)"
     ]
   }
 }

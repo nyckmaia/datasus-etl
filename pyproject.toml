@@ -98,9 +98,11 @@ Changelog = "https://github.com/nyckmaia/datasus-etl/blob/main/CHANGELOG.md"
 path = "VERSION"
 pattern = '^(?P<version>\d+\.\d+\.\d+)'
 
+[tool.hatch.build]
+artifacts = ["src/datasus_etl/web/static/**/*"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/datasus_etl"]
-artifacts = ["src/datasus_etl/web/static/**/*"]
 
 [tool.hatch.build.targets.wheel.sources]
 "src/datasus_etl/_data" = "datasus_etl/_data"
