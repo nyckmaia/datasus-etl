@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.7] - 2026-04-24
+
+### Documentation
+- **release:** document PyPI + Pages one-time setup for maintainers
+
+### Other
+- **release:** bump version to 0.1.7
+- **pkg:** fill in PyPI metadata (author, URLs) before first publish
+- **release:** rebuild site for v0.1.6
+
 ## [0.1.6] - 2026-04-24
 
 ### Other
