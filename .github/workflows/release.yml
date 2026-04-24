@@ -329,24 +329,109 @@ jobs:
           prerelease: false
 
   # -------------------------------------------------------------------------
-  # Rebuild the static site with the new VERSION and commit the output back
-  # to main under /docs. GitHub Pages is configured in the repo UI as
-  # "Deploy from a branch" (main, /docs), so committing the build output is
-  # what publishes it — no separate deploy step needed.
+  # Publish sdist + wheel to PyPI via Trusted Publishing (OIDC).
+  # Runs only after `release` so a failed installer or tag step aborts PyPI
+  # upload too. First-time setup: add a "pending publisher" at
+  # https://pypi.org/manage/account/publishing/ naming workflow release.yml
+  # and environment `pypi`.
   # -------------------------------------------------------------------------
-  pages:
-    name: Rebuild site into /docs
-    needs: release
+  publish-pypi:
+    name: Publish to PyPI
+    needs: [validate, release]
     runs-on: ubuntu-22.04
+    environment:
+      name: pypi
+      url: https://pypi.org/p/datasus-etl
+    permissions:
+      id-token: write   # OIDC for Trusted Publishing
+      contents: read
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: main             # always build against latest main (post-release commit)
+          # Checkout the freshly-tagged commit so the wheel we upload matches
+          # the tarball attached to the GitHub Release.
+          ref: ${{ needs.validate.outputs.tag }}
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install web-ui deps
+        working-directory: web-ui
+        run: bun install --frozen-lockfile
+
+      - name: Build SPA
+        working-directory: web-ui
+        run: bun run build
+
+      - name: Verify SPA output
+        shell: bash
+        run: test -f src/datasus_etl/web/static/index.html
+
+      - name: Install build tooling
+        run: python -m pip install --upgrade pip build
+
+      - name: Build sdist + wheel
+        env:
+          DATASUS_SKIP_UI_BUILD: '1'   # SPA built above; skip hatch_build.py re-run
+        run: python -m build
+
+      - name: Verify built artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          ls -la dist/
+          VERSION="${{ needs.validate.outputs.version }}"
+          test -f "dist/datasus_etl-${VERSION}-py3-none-any.whl"
+          test -f "dist/datasus_etl-${VERSION}.tar.gz"
+          python -m zipfile -l "dist/datasus_etl-${VERSION}-py3-none-any.whl" \
+            | grep -q "datasus_etl/web/static/index.html"
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        # Trusted Publishing — no `password`/`user` needed; OIDC is automatic.
+
+  # -------------------------------------------------------------------------
+  # Rebuild the static site with the new VERSION and deploy to GitHub Pages.
+  # We do BOTH:
+  #   1. Commit the rebuilt /docs back to main so the diff is visible in
+  #      history and `pages-deploy.yml` remains the authoritative deployer
+  #      for manual /docs edits.
+  #   2. Deploy directly here via upload-pages-artifact + deploy-pages.
+  #      Step 1 alone is not enough: pushes authored by the default
+  #      GITHUB_TOKEN do NOT trigger downstream workflows, so relying on
+  #      pages-deploy.yml to fire in cascade would leave Pages stale and
+  #      require a manual workflow_dispatch.
+  # Prerequisite: Settings → Pages → Source must be "GitHub Actions".
+  # -------------------------------------------------------------------------
+  pages:
+    name: Rebuild site and deploy to Pages
+    needs: release
+    runs-on: ubuntu-22.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      contents: write   # push rebuilt /docs to main
+      pages: write      # deploy to Pages
+      id-token: write   # OIDC for deploy-pages
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
           fetch-depth: 0
 
       - uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '24'
           cache: npm
           cache-dependency-path: site/package-lock.json
 
@@ -361,6 +446,9 @@ jobs:
           SITE_REPO: nyckmaia/datasus-etl
         run: npm run build
 
+      - name: Verify build output
+        run: test -f docs/index.html
+
       - name: Commit regenerated /docs
         run: |
           git config user.name 'github-actions[bot]'
@@ -372,3 +460,14 @@ jobs:
             git commit -m "chore(release): rebuild site for ${{ needs.release.outputs.tag }}"
             git push origin HEAD:main
           fi
+
+      - uses: actions/configure-pages@v6
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: docs
+
+      - name: Deploy to Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
