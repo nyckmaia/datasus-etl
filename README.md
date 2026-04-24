@@ -364,3 +364,22 @@ Apache License 2.0
 3. Commit suas mudancas (`git commit -m 'feat: adiciona nova feature'`)
 4. Push para a branch (`git push origin feature/nova-feature`)
 5. Abra um Pull Request
+
+## Processo de Release (maintainers)
+
+Um release e disparado ao commitar um novo semver no arquivo `VERSION` em `main`.
+O workflow `release.yml` entao executa, em ordem:
+
+1. Valida a string de versao e confere que a tag ainda nao existe.
+2. Builda os instaladores Nuitka (Windows / macOS arm64 / Linux) em runners paralelos.
+3. Cria a tag `vX.Y.Z` e o GitHub Release com os instaladores anexados.
+4. Publica `datasus-etl` no PyPI via **Trusted Publishing** (sem segredos).
+5. Rebuilda o site Astro em `/docs` e faz deploy direto ao GitHub Pages.
+
+### Setup inicial (uma unica vez por clone do projeto)
+
+| Onde | Acao |
+|------|------|
+| https://pypi.org/manage/account/publishing/ | Adicionar um **pending publisher** — project `datasus-etl`, owner `nyckmaia`, repo `datasus-etl`, workflow `release.yml`, environment `pypi`. |
+| Repo -> Settings -> Environments | Criar um Environment chamado `pypi` (sem reviewers, sem secrets). |
+| Repo -> Settings -> Pages | Source = **"GitHub Actions"**. Remove o workflow auto-gerado `pages-build-deployment`. |
