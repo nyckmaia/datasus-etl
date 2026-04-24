@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
 authors = [
-    {name = "Seu Nome", email = "seu@email.com"},
+    {name = "Nycholas Maia", email = "nyckmaia@gmail.com"},
 ]
 keywords = [
     "datasus",
@@ -88,10 +88,11 @@ datasus = "datasus_etl.cli:app" # Alias
 datasus-etl = "datasus_etl.cli:app"  
 
 [project.urls]
-Homepage = "https://github.com/user/datasus-etl"
-Documentation = "https://datasus-etl.readthedocs.io"
-Repository = "https://github.com/user/datasus-etl"
-Issues = "https://github.com/user/datasus-etl/issues"
+Homepage = "https://nyckmaia.github.io/datasus-etl/"
+Documentation = "https://nyckmaia.github.io/datasus-etl/"
+Repository = "https://github.com/nyckmaia/datasus-etl"
+Issues = "https://github.com/nyckmaia/datasus-etl/issues"
+Changelog = "https://github.com/nyckmaia/datasus-etl/blob/main/CHANGELOG.md"
 
 [tool.hatch.version]
 path = "VERSION"
