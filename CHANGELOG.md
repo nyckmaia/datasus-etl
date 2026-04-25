@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.11] - 2026-04-25
+
+### Added
+- integrate i18next for internationalization across multiple pages
+
+### Other
+- **release:** rebuild site for v0.1.10
+
 ## [0.1.10] - 2026-04-25
 
 ### Added
