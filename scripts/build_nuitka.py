@@ -86,6 +86,12 @@ COMMON_FLAGS = [
     # those names, so include the whole package + data explicitly.
     "--include-package=rich",
     "--include-package-data=rich",
+    # `datasus ui` calls uvicorn.run("datasus_etl.web.server:create_app", ...)
+    # as a STRING — Nuitka can't trace string-based imports, so without this
+    # the whole web subpackage (server, routes/*, runtime, user_config) is
+    # missing from the bundle and the UI crashes with ModuleNotFoundError on
+    # startup.
+    "--include-package=datasus_etl.web",
     # Trim the fat.
     "--nofollow-import-to=pandas.tests",
     "--nofollow-import-to=pyarrow.tests",
