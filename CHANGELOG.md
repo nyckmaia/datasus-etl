@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.9] - 2026-04-25
+
+### Fixed
+- **build:** include datasus_etl.web package to prevent ModuleNotFoundError
+- **windows:** bundle rich._unicode_data; default desktop icon; i18n README
+
+### Other
+- **release:** rebuild site for v0.1.8
+
 ## [0.1.8] - 2026-04-24
 
 ### Other
