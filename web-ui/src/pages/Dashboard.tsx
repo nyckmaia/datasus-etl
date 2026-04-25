@@ -1,6 +1,7 @@
 import * as React from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
 import {
   Download,
   Database,
@@ -27,6 +28,7 @@ import {
 import { formatBytes, formatCompact, formatNumber } from "@/lib/format";
 
 export function DashboardPage() {
+  const { t } = useTranslation();
   const settings = useSettings();
   const overview = useStatsOverview(true);
   const updateDataDir = useUpdateDataDir();
@@ -70,24 +72,24 @@ export function DashboardPage() {
         if (res.cancelled || !res.path) return;
         updateDataDir.mutate(res.path, {
           onSuccess: (data) =>
-            toast.success("Data directory set", {
+            toast.success(t("dashboard.dataDirSet"), {
               description: data.data_dir_resolved ?? data.data_dir ?? "",
             }),
           onError: (err: Error) =>
-            toast.error("Failed to set data directory", {
+            toast.error(t("dashboard.setDataDirFailed"), {
               description: err.message,
             }),
         });
       },
       onError: (err: Error) =>
-        toast.error("Folder picker failed", { description: err.message }),
+        toast.error(t("dashboard.folderPickerFailed"), { description: err.message }),
     });
   };
 
   const goToDownload = () => {
     if (!hasDataDir) {
-      toast.error("Configure a data directory first", {
-        description: "Use the Set Data Directory button or open Settings.",
+      toast.error(t("dashboard.configureFirstTitle"), {
+        description: t("dashboard.configureFirstDesc"),
       });
       return;
     }
@@ -98,40 +100,40 @@ export function DashboardPage() {
     <div className="space-y-6">
       <div className="flex items-end justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">
-            Overview of your local DataSUS parquet storage.
-          </p>
+          <h1 className="text-2xl font-semibold tracking-tight">{t("dashboard.title")}</h1>
+          <p className="text-sm text-muted-foreground">{t("dashboard.subtitle")}</p>
         </div>
         <Button onClick={goToDownload}>
           <Download className="h-4 w-4" />
-          New download
+          {t("dashboard.newDownload")}
         </Button>
       </div>
 
       {!settings.isLoading && !hasDataDir ? (
         <Card className="border-amber-500/40 bg-amber-500/5">
           <CardHeader>
-            <CardTitle className="text-base">
-              No data directory configured
-            </CardTitle>
+            <CardTitle className="text-base">{t("dashboard.noDataDirTitle")}</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-4 text-sm sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-muted-foreground">
-              Pick a base folder for your local DataSUS storage. A{" "}
-              <code className="font-mono">datasus_db/</code> subfolder will be
-              created inside it — that's where every parquet file will live.
-            </p>
+            <p
+              className="text-muted-foreground"
+              dangerouslySetInnerHTML={{
+                __html: t("dashboard.noDataDirBody", {
+                  folder: '<code class="font-mono">datasus_db/</code>',
+                  interpolation: { escapeValue: false },
+                }),
+              }}
+            />
             <Button
               onClick={handlePick}
               disabled={pickDir.isPending || updateDataDir.isPending}
             >
               <FolderOpen className="h-4 w-4" />
               {pickDir.isPending
-                ? "Opening picker…"
+                ? t("common.opening")
                 : updateDataDir.isPending
-                  ? "Saving…"
-                  : "Set Data Directory"}
+                  ? t("common.saving")
+                  : t("dashboard.setDataDir")}
             </Button>
           </CardContent>
         </Card>
@@ -146,32 +148,34 @@ export function DashboardPage() {
       ) : (
         <div className="grid gap-4 md:grid-cols-4">
           <StatCard
-            label="Subsystems"
+            label={t("dashboard.stats.subsystems")}
             value={formatNumber(data.filter((d) => d.files > 0).length)}
             icon={Database}
-            hint={`${data.length} registered`}
+            hint={t("dashboard.stats.subsystemsHint", { count: data.length })}
           />
           <StatCard
-            label="Total files"
+            label={t("dashboard.stats.totalFiles")}
             value={formatCompact(totalFiles)}
             icon={Files}
-            hint={`${formatNumber(totalFiles)} parquet files`}
+            hint={t("dashboard.stats.totalFilesHint", { count: totalFiles })}
           />
           <StatCard
-            label="On disk"
+            label={t("dashboard.stats.onDisk")}
             value={formatBytes(totalSize)}
             icon={HardDrive}
             hint={
               settings.data?.free_disk_bytes != null
-                ? `${formatBytes(settings.data.free_disk_bytes)} free`
+                ? t("dashboard.stats.onDiskHintFree", {
+                    free: formatBytes(settings.data.free_disk_bytes),
+                  })
                 : "—"
             }
           />
           <StatCard
-            label="Rows"
+            label={t("dashboard.stats.rows")}
             value={formatCompact(totalRows)}
             icon={Rows3}
-            hint={`${distinctUfs.size} UFs covered`}
+            hint={t("dashboard.stats.rowsHint", { count: distinctUfs.size })}
           />
         </div>
       )}
@@ -179,8 +183,12 @@ export function DashboardPage() {
       {overview.error && hasDataDir ? (
         <Card>
           <CardContent className="p-6 text-sm text-destructive">
-            Failed to load overview:{" "}
-            {overview.error instanceof Error ? overview.error.message : "unknown error"}
+            {t("dashboard.loadFailed", {
+              error:
+                overview.error instanceof Error
+                  ? overview.error.message
+                  : t("common.unknownError"),
+            })}
           </CardContent>
         </Card>
       ) : null}
@@ -188,12 +196,12 @@ export function DashboardPage() {
       {noData ? (
         <EmptyState
           icon={Download}
-          title="No datasets yet"
-          description="Once you download DataSUS data into your local store, this dashboard will show file counts, storage size, and a coverage map."
+          title={t("dashboard.noDatasetsTitle")}
+          description={t("dashboard.noDatasetsDesc")}
           action={
             <Button onClick={goToDownload}>
               <Download className="h-4 w-4" />
-              Download your first dataset
+              {t("dashboard.downloadFirst")}
             </Button>
           }
         />
@@ -201,7 +209,7 @@ export function DashboardPage() {
         <>
           <section>
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Subsystems
+              {t("dashboard.subsystemsHeading")}
             </h2>
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {overview.isLoading
@@ -227,7 +235,7 @@ export function DashboardPage() {
             <Card className="lg:col-span-2">
               <CardHeader className="flex flex-row items-center justify-between space-y-0">
                 <CardTitle className="text-base">
-                  Volume over time
+                  {t("dashboard.volumeOverTime")}
                   {chartSubsystem ? (
                     <span className="ml-2 font-mono text-xs font-normal uppercase text-muted-foreground">
                       {chartSubsystem}
@@ -255,7 +263,7 @@ export function DashboardPage() {
               <CardContent>
                 {!chartSubsystem || !timeline.data || timeline.data.length === 0 ? (
                   <p className="py-8 text-center text-sm text-muted-foreground">
-                    Download a subsystem to populate the timeline.
+                    {t("dashboard.populateTimeline")}
                   </p>
                 ) : (
                   <VolumeChart data={timeline.data} />
@@ -264,7 +272,7 @@ export function DashboardPage() {
             </Card>
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Coverage by UF</CardTitle>
+                <CardTitle className="text-base">{t("dashboard.coverageByUf")}</CardTitle>
               </CardHeader>
               <CardContent>
                 <BrazilMap valuesByUf={valuesByUf} readOnly />

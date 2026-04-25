@@ -1,15 +1,15 @@
 import { FolderOpen, HardDrive } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 import { useSettings } from "@/hooks/useSettings";
 import { formatBytes } from "@/lib/format";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ThemeToggle } from "./ThemeToggle";
+import { LanguageToggle } from "./LanguageToggle";
 
 export function TopBar() {
+  const { t } = useTranslation();
   const { data: settings, isLoading } = useSettings();
-  // The resolved path always ends in datasus_db/ (the subfolder the backend
-  // appends and creates). Fall back to the raw input only while the backend
-  // hasn't finished resolving (e.g. right after a save before refetch).
   const displayPath = settings?.data_dir_resolved ?? settings?.data_dir ?? "";
 
   return (
@@ -17,7 +17,7 @@ export function TopBar() {
       <div className="flex min-w-0 items-center gap-6">
         <div className="flex min-w-0 items-center gap-2 text-sm">
           <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <span className="shrink-0 text-muted-foreground">Data dir:</span>
+          <span className="shrink-0 text-muted-foreground">{t("topBar.dataDir")}</span>
           {isLoading ? (
             <Skeleton className="h-4 w-64" />
           ) : displayPath ? (
@@ -26,7 +26,7 @@ export function TopBar() {
             </span>
           ) : (
             <span className="text-xs italic text-muted-foreground">
-              not configured
+              {t("topBar.notConfigured")}
             </span>
           )}
         </div>
@@ -34,13 +34,16 @@ export function TopBar() {
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <HardDrive className="h-3.5 w-3.5" />
             <span className="tabular-nums">
-              {formatBytes(settings.free_disk_bytes)} free of{" "}
-              {formatBytes(settings.total_disk_bytes)}
+              {t("topBar.freeOf", {
+                free: formatBytes(settings.free_disk_bytes),
+                total: formatBytes(settings.total_disk_bytes),
+              })}
             </span>
           </div>
         ) : null}
       </div>
       <div className="flex items-center gap-2">
+        <LanguageToggle />
         <ThemeToggle />
       </div>
     </header>

@@ -184,13 +184,25 @@ async def pick_directory() -> PickDirectoryResponse:
     Assumes the server and user share a display — this endpoint is meant for
     the local ``datasus ui`` launcher and has no use in remote deployments.
     """
+    # Windows 10 throws WinError 6 (invalid handle) when capture_output is set
+    # but stdin is left to inherit from a parent process that has no console
+    # (the Nuitka-built binary launched from Explorer). DEVNULL gives the
+    # child a valid handle in every case. CREATE_NO_WINDOW also suppresses a
+    # cmd.exe flash on Windows. Other platforms ignore creationflags.
+    spawn_kwargs: dict = {
+        "capture_output": True,
+        "text": True,
+        "timeout": 120,
+        "stdin": subprocess.DEVNULL,
+    }
+    if sys.platform == "win32":
+        spawn_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+
     try:
         proc = await asyncio.to_thread(
             subprocess.run,
             _pick_folder_cmd(),
-            capture_output=True,
-            text=True,
-            timeout=120,
+            **spawn_kwargs,
         )
     except subprocess.TimeoutExpired:
         return PickDirectoryResponse(error="Folder picker timed out")

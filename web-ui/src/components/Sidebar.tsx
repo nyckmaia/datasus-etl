@@ -1,5 +1,6 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { BarChart3, Download, Database, Settings, Zap } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 import { cn } from "@/lib/utils";
 import { useSettings } from "@/hooks/useSettings";
@@ -7,18 +8,19 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 interface NavItem {
   to: string;
-  label: string;
+  labelKey: string;
   icon: React.ElementType;
 }
 
 const NAV: NavItem[] = [
-  { to: "/", label: "Dashboard", icon: BarChart3 },
-  { to: "/download", label: "Download", icon: Download },
-  { to: "/query", label: "Query", icon: Database },
-  { to: "/settings", label: "Settings", icon: Settings },
+  { to: "/", labelKey: "sidebar.dashboard", icon: BarChart3 },
+  { to: "/download", labelKey: "sidebar.download", icon: Download },
+  { to: "/query", labelKey: "sidebar.query", icon: Database },
+  { to: "/settings", labelKey: "sidebar.settings", icon: Settings },
 ];
 
 export function Sidebar() {
+  const { t } = useTranslation();
   const { location } = useRouterState();
   const { data: settings } = useSettings();
 
@@ -57,14 +59,16 @@ export function Sidebar() {
               )}
             >
               <Icon className="h-4 w-4" />
-              {item.label}
+              {t(item.labelKey)}
             </Link>
           );
         })}
       </nav>
 
       <div className="border-t px-4 py-3 text-xs text-muted-foreground">
-        <div className="truncate font-medium text-foreground">Available subsystems</div>
+        <div className="truncate font-medium text-foreground">
+          {t("sidebar.availableSubsystems")}
+        </div>
         <div className="mt-2 flex flex-wrap gap-1">
           {settings ? (
             settings.subsystems.map((s) => (

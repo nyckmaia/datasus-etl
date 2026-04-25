@@ -3,6 +3,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, Play, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,6 +16,7 @@ import { useSettings } from "@/hooks/useSettings";
 import { useWizard } from "../DownloadWizard";
 
 export function Step3EstimatePage() {
+  const { t } = useTranslation();
   const { state, update } = useWizard();
   const settings = useSettings();
   const navigate = useNavigate();
@@ -56,7 +58,7 @@ export function Step3EstimatePage() {
       navigate({ to: "/download/step-4" });
     },
     onError: (err: Error) => {
-      toast.error("Failed to start", { description: err.message });
+      toast.error(t("step3.failedToStart"), { description: err.message });
     },
   });
 
@@ -74,38 +76,36 @@ export function Step3EstimatePage() {
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="text-xl font-semibold">Review estimate</h2>
-        <p className="text-sm text-muted-foreground">
-          Verify the file count and expected disk usage before kicking off.
-        </p>
+        <h2 className="text-xl font-semibold">{t("step3.title")}</h2>
+        <p className="text-sm text-muted-foreground">{t("step3.subtitle")}</p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Selection</CardTitle>
+          <CardTitle className="text-base">{t("step3.selection")}</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-3 text-sm md:grid-cols-2">
           <div>
             <div className="text-xs uppercase tracking-wide text-muted-foreground">
-              Subsystem
+              {t("step3.subsystem")}
             </div>
             <div className="font-mono font-semibold uppercase">{state.subsystem}</div>
           </div>
           <div>
             <div className="text-xs uppercase tracking-wide text-muted-foreground">
-              Date range
+              {t("step3.dateRange")}
             </div>
             <div className="font-mono">
-              {state.start_date} → {state.end_date || "latest"}
+              {state.start_date} → {state.end_date || t("step3.latest")}
             </div>
           </div>
           <div className="md:col-span-2">
             <div className="text-xs uppercase tracking-wide text-muted-foreground">
-              UFs
+              {t("step3.ufs")}
             </div>
             <div className="mt-1 flex flex-wrap gap-1">
               {state.ufs.length === 0 ? (
-                <Badge variant="secondary">All</Badge>
+                <Badge variant="secondary">{t("common.all")}</Badge>
               ) : (
                 state.ufs.map((u) => (
                   <Badge key={u} variant="secondary">
@@ -120,7 +120,7 @@ export function Step3EstimatePage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Download estimate</CardTitle>
+          <CardTitle className="text-base">{t("step3.downloadEstimate")}</CardTitle>
         </CardHeader>
         <CardContent>
           {estimateMutation.isPending ? (
@@ -135,20 +135,28 @@ export function Step3EstimatePage() {
             </div>
           ) : estimate ? (
             <div className="grid gap-4 md:grid-cols-3">
-              <Stat label="Files" value={formatNumber(estimate.file_count)} />
-              <Stat label="Download size" value={formatBytes(estimate.total_download_bytes)} />
-              <Stat label="Storage on disk" value={formatBytes(estimate.estimated_duckdb_bytes)} />
+              <Stat label={t("step3.files")} value={formatNumber(estimate.file_count)} />
+              <Stat
+                label={t("step3.downloadSize")}
+                value={formatBytes(estimate.total_download_bytes)}
+              />
+              <Stat
+                label={t("step3.storageOnDisk")}
+                value={formatBytes(estimate.estimated_duckdb_bytes)}
+              />
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">No estimate yet.</p>
+            <p className="text-sm text-muted-foreground">{t("step3.noEstimate")}</p>
           )}
 
           {!enoughDisk && estimate ? (
             <div className="mt-4 flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-600 dark:text-amber-400">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               <div>
-                Estimated storage ({formatBytes(needed)}) exceeds available disk
-                space ({free != null ? formatBytes(free) : "unknown"}).
+                {t("step3.diskWarning", {
+                  needed: formatBytes(needed),
+                  free: free != null ? formatBytes(free) : t("step3.diskUnknown"),
+                })}
               </div>
             </div>
           ) : null}
@@ -158,7 +166,7 @@ export function Step3EstimatePage() {
       <div className="flex items-center justify-between">
         <Button variant="ghost" onClick={() => navigate({ to: "/download/step-2" })}>
           <ArrowLeft className="h-4 w-4" />
-          Back
+          {t("common.back")}
         </Button>
         <div className="flex items-center gap-2">
           <Button
@@ -166,14 +174,14 @@ export function Step3EstimatePage() {
             disabled={estimateMutation.isPending}
             onClick={() => estimateMutation.mutate()}
           >
-            Re-estimate
+            {t("step3.reEstimate")}
           </Button>
           <Button
             disabled={!estimate || startMutation.isPending}
             onClick={() => startMutation.mutate()}
           >
             <Play className="h-4 w-4" />
-            {startMutation.isPending ? "Starting..." : "Start download"}
+            {startMutation.isPending ? t("step3.starting") : t("step3.startDownload")}
           </Button>
         </div>
       </div>

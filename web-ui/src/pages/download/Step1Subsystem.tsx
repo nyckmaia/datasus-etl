@@ -1,5 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { ArrowRight, Database } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -9,6 +10,7 @@ import { useSettings } from "@/hooks/useSettings";
 import { useWizard } from "../DownloadWizard";
 
 export function Step1SubsystemPage() {
+  const { t } = useTranslation();
   const settings = useSettings();
   const { state, update } = useWizard();
   const navigate = useNavigate();
@@ -18,10 +20,8 @@ export function Step1SubsystemPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="text-xl font-semibold">Choose a subsystem</h2>
-        <p className="text-sm text-muted-foreground">
-          Each DataSUS subsystem has its own schema, columns, and filename convention.
-        </p>
+        <h2 className="text-xl font-semibold">{t("step1.title")}</h2>
+        <p className="text-sm text-muted-foreground">{t("step1.subtitle")}</p>
       </div>
 
       {settings.isLoading ? (
@@ -65,7 +65,7 @@ export function Step1SubsystemPage() {
                       </span>
                     </div>
                     <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">
-                      {s.description || "DataSUS subsystem"}
+                      {s.description || t("step1.fallbackDescription")}
                     </p>
                   </CardContent>
                 </Card>
@@ -80,7 +80,7 @@ export function Step1SubsystemPage() {
           disabled={!canProceed}
           onClick={() => navigate({ to: "/download/step-2" })}
         >
-          Continue
+          {t("common.continue")}
           <ArrowRight className="h-4 w-4" />
         </Button>
       </div>

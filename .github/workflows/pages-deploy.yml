@@ -1,26 +1,26 @@
 name: Pages Deploy
 
-# Replaces GitHub's auto-generated "pages build and deployment" workflow (which
-# runs on Node 20). By taking over the deploy with our own actions pinned to
-# Node 24 we eliminate the deprecation warnings and control future version
-# bumps ourselves.
+# Builds the static marketing site (Astro source under /site) inside CI and
+# deploys to GitHub Pages. The /docs build output is NOT committed back —
+# Actions is the only thing that touches Pages, so the local working tree
+# never falls out of sync after a push.
 #
 # Prerequisite: Settings → Pages → Source must be set to "GitHub Actions"
-# (not "Deploy from a branch"). This workflow uploads the pre-built /docs
-# folder as-is; no rebuild happens here. The site is rebuilt and committed
-# to /docs either by release.yml (on VERSION bump) or by the developer
-# running `npm run build` locally.
+# (not "Deploy from a branch").
 
 on:
   push:
     branches: [main]
     paths:
-      - 'docs/**'
+      - 'site/**'
+      - 'VERSION'
       - '.github/workflows/pages-deploy.yml'
   workflow_dispatch:
 
 # Only one Pages deploy at a time. Do not cancel in-progress — each deploy
-# represents a complete, published version of the site.
+# represents a complete, published version of the site. Shared with the
+# `pages` job in release.yml so a release rebuild and a site-only push
+# serialize cleanly instead of racing.
 concurrency:
   group: pages
   cancel-in-progress: false
@@ -32,7 +32,7 @@ permissions:
 
 jobs:
   deploy:
-    name: Deploy /docs to GitHub Pages
+    name: Build site and deploy to GitHub Pages
     runs-on: ubuntu-22.04
     environment:
       name: github-pages
@@ -40,8 +40,33 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Verify docs/ exists
-        run: test -f docs/index.html || { echo "::error::docs/index.html missing — run 'cd site && npm run build' and commit the output first."; exit 1; }
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      - name: Read VERSION
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=$(tr -d '[:space:]' < VERSION)
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Install site deps
+        working-directory: site
+        run: npm ci
+
+      - name: Build site into /docs
+        working-directory: site
+        env:
+          SITE_VERSION: ${{ steps.version.outputs.version }}
+          SITE_REPO: nyckmaia/datasus-etl
+        run: npm run build
+
+      - name: Verify build output
+        run: test -f docs/index.html
 
       - uses: actions/configure-pages@v6
 

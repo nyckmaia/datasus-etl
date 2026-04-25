@@ -274,32 +274,19 @@ aside.note {
 /* ---------- Numbered onboarding steps (Intel Mac, tutorial) ---------- */
 
 .intel-steps {
-  counter-reset: step;
-  list-style: none;
-  padding-left: 0;
+  list-style: decimal;
+  padding-left: 1.5rem;
   margin-top: 1.25rem;
 }
 .intel-steps > li {
-  counter-increment: step;
-  position: relative;
-  padding-left: 3rem;
+  padding-left: 0.4rem;
   padding-bottom: 1.5rem;
   margin-top: 0;
   max-width: 68ch;
 }
-.intel-steps > li::before {
-  content: counter(step, decimal-leading-zero);
-  position: absolute;
-  left: 0;
-  top: 0.2rem;
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 0.78rem;
-  font-weight: 500;
+.intel-steps > li::marker {
   color: rgb(var(--brand));
-  padding: 0.12rem 0.4rem;
-  border: 1px solid rgb(var(--brand) / 0.4);
-  border-radius: 3px;
-  background: rgb(var(--brand) / 0.08);
+  font-weight: 600;
 }
 .intel-steps > li + li {
   border-top: 1px dashed rgb(var(--border));

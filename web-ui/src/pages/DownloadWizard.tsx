@@ -1,20 +1,21 @@
 import * as React from "react";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { Check } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 import { cn } from "@/lib/utils";
 
 interface StepDef {
   index: number;
-  label: string;
+  labelKey: string;
   to: "/download/step-1" | "/download/step-2" | "/download/step-3" | "/download/step-4";
 }
 
 const STEPS: StepDef[] = [
-  { index: 1, label: "Subsystem", to: "/download/step-1" },
-  { index: 2, label: "Scope", to: "/download/step-2" },
-  { index: 3, label: "Estimate", to: "/download/step-3" },
-  { index: 4, label: "Run", to: "/download/step-4" },
+  { index: 1, labelKey: "wizard.stepSubsystem", to: "/download/step-1" },
+  { index: 2, labelKey: "wizard.stepScope", to: "/download/step-2" },
+  { index: 3, labelKey: "wizard.stepEstimate", to: "/download/step-3" },
+  { index: 4, labelKey: "wizard.stepRun", to: "/download/step-4" },
 ];
 
 export interface WizardState {
@@ -57,6 +58,7 @@ export function useWizard(): WizardContextValue {
 }
 
 export function DownloadWizardPage() {
+  const { t } = useTranslation();
   const { location } = useRouterState();
   const [state, setState] = React.useState<WizardState>(makeDefaultState);
 
@@ -82,14 +84,12 @@ export function DownloadWizardPage() {
     <WizardContext.Provider value={value}>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Download wizard</h1>
-          <p className="text-sm text-muted-foreground">
-            Pick a subsystem, choose scope, review the estimate, and watch it run.
-          </p>
+          <h1 className="text-2xl font-semibold tracking-tight">{t("wizard.title")}</h1>
+          <p className="text-sm text-muted-foreground">{t("wizard.subtitle")}</p>
         </div>
 
         <nav
-          aria-label="Download steps"
+          aria-label={t("wizard.stepsAria")}
           className="flex items-center gap-3 overflow-x-auto"
         >
           {STEPS.map((step, i) => {
@@ -119,7 +119,7 @@ export function DownloadWizardPage() {
                 >
                   {done ? <Check className="h-3.5 w-3.5" /> : step.index}
                 </div>
-                <span>{step.label}</span>
+                <span>{t(step.labelKey)}</span>
               </div>
             );
 

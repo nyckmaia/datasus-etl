@@ -45,7 +45,9 @@
       "Bash(npm run *)",
       "Bash(rm -rf dist/*.whl dist/*.tar.gz)",
       "Bash(DATASUS_SKIP_UI_BUILD=1 python -m build --wheel)",
-      "Bash(DATASUS_SKIP_UI_BUILD=1 python -m build)"
+      "Bash(DATASUS_SKIP_UI_BUILD=1 python -m build)",
+      "Bash(git rm *)",
+      "Bash(rm -rf ../docs/* ../docs/.nojekyll)"
     ]
   }
 }

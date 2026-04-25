@@ -8,9 +8,9 @@ export default defineConfig({
   site: 'https://nyckmaia.github.io',
   base: '/datasus-etl',
   trailingSlash: 'ignore',
-  // Emit directly into the repo-root /docs folder. GitHub Pages is
-  // configured as "Deploy from a branch" with source = main, folder =
-  // /docs, so the built files live in git alongside the source.
+  // Emit into the repo-root /docs folder. The directory is gitignored —
+  // the site is rebuilt on every push that touches site/** or VERSION,
+  // then deployed via actions/upload-pages-artifact + deploy-pages.
   outDir: '../docs',
   integrations: [
     tailwind({

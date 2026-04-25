@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import Editor from "@monaco-editor/react";
 import { Play, Download, FileSpreadsheet, History, BookOpen } from "lucide-react";
 import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -34,7 +35,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import type { SqlResult } from "@/lib/api";
-import { formatMs, formatNumber } from "@/lib/format";
+import { formatMs } from "@/lib/format";
 import { useStatsOverview } from "@/hooks/useStats";
 import { useSqlQuery } from "@/hooks/useSqlQuery";
 import { useTheme } from "@/components/ThemeProvider";
@@ -50,6 +51,7 @@ interface HistoryItem {
 const DEFAULT_SQL = "SELECT 1 AS n;";
 
 export function QueryPage() {
+  const { t } = useTranslation();
   const { resolvedTheme } = useTheme();
   // The subsystem dropdown is populated from the overview endpoint (which
   // reports actual file counts) rather than the registry, so subsystems
@@ -81,9 +83,6 @@ export function QueryPage() {
   });
 
   React.useEffect(() => {
-    // Auto-pick the first available subsystem on mount, and reset when the
-    // currently-selected one no longer has data (e.g. the user navigated
-    // away, deleted files, and came back).
     const stillAvailable = availableSubsystems.some((d) => d.subsystem === subsystem);
     if (!stillAvailable) {
       setSubsystem(availableSubsystems[0]?.subsystem ?? "");
@@ -115,10 +114,10 @@ export function QueryPage() {
         );
       },
       onError: (err: Error) => {
-        toast.error("Query failed", { description: err.message });
+        toast.error(t("query.queryFailed"), { description: err.message });
       },
     });
-  }, [sql, limit, runSql]);
+  }, [sql, limit, runSql, t]);
 
   const onExport = React.useCallback(
     async (format: "csv" | "xlsx") => {
@@ -137,31 +136,29 @@ export function QueryPage() {
         a.click();
         a.remove();
         URL.revokeObjectURL(url);
-        toast.success(`Exported as ${format.toUpperCase()}`);
+        toast.success(t("query.exportedAs", { format: format.toUpperCase() }));
       } catch (err) {
-        toast.error("Export failed", {
-          description: err instanceof Error ? err.message : "unknown",
+        toast.error(t("query.exportFailed"), {
+          description: err instanceof Error ? err.message : t("common.unknown"),
         });
       }
     },
-    [sql, limit],
+    [sql, limit, t],
   );
 
   return (
     <div className="flex h-[calc(100vh-8rem)] flex-col gap-4">
       <div className="flex items-end justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Query</h1>
-          <p className="text-sm text-muted-foreground">
-            Ad-hoc SQL against your local parquet store.
-          </p>
+          <h1 className="text-2xl font-semibold tracking-tight">{t("query.title")}</h1>
+          <p className="text-sm text-muted-foreground">{t("query.subtitle")}</p>
         </div>
       </div>
 
       <div className="grid flex-1 min-h-0 gap-4 lg:grid-cols-[280px_1fr_280px]">
         <Card className="overflow-hidden">
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm">Subsystem</CardTitle>
+            <CardTitle className="text-sm">{t("query.subsystem")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <Select
@@ -173,10 +170,10 @@ export function QueryPage() {
                 <SelectValue
                   placeholder={
                     overview.isLoading
-                      ? "Loading…"
+                      ? t("common.loading")
                       : availableSubsystems.length === 0
-                        ? "No data downloaded yet"
-                        : "Select subsystem"
+                        ? t("query.noDataDownloaded")
+                        : t("query.selectSubsystem")
                   }
                 />
               </SelectTrigger>
@@ -189,19 +186,17 @@ export function QueryPage() {
               </SelectContent>
             </Select>
             {!overview.isLoading && availableSubsystems.length === 0 ? (
-              <p className="text-xs text-muted-foreground">
-                Run a download to query data here.
-              </p>
+              <p className="text-xs text-muted-foreground">{t("query.downloadToQuery")}</p>
             ) : null}
 
             <Tabs defaultValue="templates">
               <TabsList className="w-full">
                 <TabsTrigger value="templates" className="flex-1">
                   <BookOpen className="h-3.5 w-3.5" />
-                  Templates
+                  {t("query.templates")}
                 </TabsTrigger>
                 <TabsTrigger value="dictionary" className="flex-1">
-                  Columns
+                  {t("query.columns")}
                 </TabsTrigger>
               </TabsList>
               <TabsContent value="templates">
@@ -211,18 +206,18 @@ export function QueryPage() {
                       <Skeleton className="h-16" />
                     ) : filteredTemplates.length === 0 ? (
                       <div className="px-2 py-4 text-xs text-muted-foreground">
-                        No templates.
+                        {t("query.noTemplates")}
                       </div>
                     ) : (
-                      filteredTemplates.map((t, i) => (
+                      filteredTemplates.map((tpl, i) => (
                         <button
-                          key={`${t.subsystem}-${i}`}
-                          onClick={() => setSql(t.sql)}
+                          key={`${tpl.subsystem}-${i}`}
+                          onClick={() => setSql(tpl.sql)}
                           className="w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-secondary"
                         >
-                          <div className="font-medium">{t.name}</div>
+                          <div className="font-medium">{tpl.name}</div>
                           <div className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">
-                            {t.sql.split("\n")[0]}
+                            {tpl.sql.split("\n")[0]}
                           </div>
                         </button>
                       ))
@@ -237,7 +232,7 @@ export function QueryPage() {
                       <Skeleton className="h-16" />
                     ) : !dictionary.data || dictionary.data.length === 0 ? (
                       <div className="px-2 py-4 text-xs text-muted-foreground">
-                        No dictionary entries for this subsystem.
+                        {t("query.noDictionary")}
                       </div>
                     ) : (
                       dictionary.data.map((entry) => (
@@ -263,7 +258,7 @@ export function QueryPage() {
           <Card className="flex flex-col overflow-hidden">
             <div className="flex items-center justify-between border-b px-3 py-2">
               <span className="text-xs font-medium text-muted-foreground">
-                SQL editor — Ctrl+Enter to run
+                {t("query.sqlEditorHint")}
               </span>
               <div className="flex items-center gap-2">
                 <Input
@@ -278,23 +273,23 @@ export function QueryPage() {
                   <DropdownMenuTrigger asChild>
                     <Button size="sm" variant="outline" disabled={!result}>
                       <Download className="h-3.5 w-3.5" />
-                      Export
+                      {t("query.export")}
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem onClick={() => onExport("csv")}>
                       <Download className="h-4 w-4" />
-                      CSV
+                      {t("query.csv")}
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => onExport("xlsx")}>
                       <FileSpreadsheet className="h-4 w-4" />
-                      Excel (XLSX)
+                      {t("query.excel")}
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
                 <Button size="sm" onClick={onRun} disabled={runSql.isPending}>
                   <Play className="h-3.5 w-3.5" />
-                  {runSql.isPending ? "Running..." : "Run"}
+                  {runSql.isPending ? t("query.running") : t("query.run")}
                 </Button>
               </div>
             </div>
@@ -326,17 +321,17 @@ export function QueryPage() {
           <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
             <div className="flex items-center justify-between border-b px-3 py-2 text-xs">
               <div className="flex items-center gap-3">
-                <span className="font-medium">Results</span>
+                <span className="font-medium">{t("query.results")}</span>
                 {result ? (
                   <>
                     <Badge variant="secondary">
-                      {formatNumber(result.row_count)} rows
+                      {t("query.rowsCount", { count: result.row_count })}
                     </Badge>
                     <span className="text-muted-foreground tabular-nums">
                       {formatMs(result.elapsed_ms)}
                     </span>
                     {result.truncated ? (
-                      <Badge variant="outline">Truncated</Badge>
+                      <Badge variant="outline">{t("query.truncated")}</Badge>
                     ) : null}
                   </>
                 ) : null}
@@ -353,7 +348,7 @@ export function QueryPage() {
                 <ResultTable result={result} />
               ) : (
                 <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
-                  Run a query to see results.
+                  {t("query.runToSeeResults")}
                 </div>
               )}
             </div>
@@ -364,14 +359,14 @@ export function QueryPage() {
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-sm">
               <History className="h-4 w-4" />
-              History
+              {t("query.history")}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <ScrollArea className="h-[calc(100vh-20rem)]">
               <div className="space-y-2 pr-2">
                 {history.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">No queries yet.</p>
+                  <p className="text-xs text-muted-foreground">{t("query.noQueriesYet")}</p>
                 ) : (
                   history.map((h) => (
                     <button

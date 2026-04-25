@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write   # to create tags, releases, and push rebuilt docs/
+  contents: write   # to create tags, releases, and push CHANGELOG updates
 
 jobs:
   # -------------------------------------------------------------------------
@@ -398,15 +398,12 @@ jobs:
 
   # -------------------------------------------------------------------------
   # Rebuild the static site with the new VERSION and deploy to GitHub Pages.
-  # We do BOTH:
-  #   1. Commit the rebuilt /docs back to main so the diff is visible in
-  #      history and `pages-deploy.yml` remains the authoritative deployer
-  #      for manual /docs edits.
-  #   2. Deploy directly here via upload-pages-artifact + deploy-pages.
-  #      Step 1 alone is not enough: pushes authored by the default
-  #      GITHUB_TOKEN do NOT trigger downstream workflows, so relying on
-  #      pages-deploy.yml to fire in cascade would leave Pages stale and
-  #      require a manual workflow_dispatch.
+  # /docs is gitignored — Actions is the only thing that publishes the site.
+  # The pages-deploy.yml workflow ALSO fires on this same push (it watches
+  # VERSION); both share the `pages` concurrency group, so they serialize
+  # rather than race. Keeping the rebuild here ensures the release pipeline
+  # is self-contained: a release ships its site without depending on a
+  # second workflow's success.
   # Prerequisite: Settings → Pages → Source must be "GitHub Actions".
   # -------------------------------------------------------------------------
   pages:
@@ -417,7 +414,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     permissions:
-      contents: write   # push rebuilt /docs to main
+      contents: read    # site is gitignored — nothing pushed back to main
       pages: write      # deploy to Pages
       id-token: write   # OIDC for deploy-pages
     concurrency:
@@ -448,18 +445,6 @@ jobs:
 
       - name: Verify build output
         run: test -f docs/index.html
-
-      - name: Commit regenerated /docs
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add docs/
-          if git diff --cached --quiet; then
-            echo "No changes to /docs — nothing to commit."
-          else
-            git commit -m "chore(release): rebuild site for ${{ needs.release.outputs.tag }}"
-            git push origin HEAD:main
-          fi
 
       - uses: actions/configure-pages@v6
 
