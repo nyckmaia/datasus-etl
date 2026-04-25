@@ -15,10 +15,10 @@ def main():
     # This creates the directory structure: ./data/datasus/sihsus/dbc|dbf|parquet/
     config = PipelineConfig.create(
         base_dir=Path("./data/datasus"),
-        subsystem="sihsus",  # DataSUS subsystem (sihsus, sim, siasus, etc)
+        subsystem="sihsus",  # DataSUS subsystem (sihsus or sim)
         start_date="2023-01-01",
         end_date="2023-03-31",
-        uf_list=["SP"],  # Only São Paulo and Rio de Janeiro states
+        uf_list=["SP"],
         compression="zstd",  # Better compression
         chunk_size=10000,  # Rows per chunk (adjust based on available RAM)
     )

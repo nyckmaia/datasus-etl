@@ -1,7 +1,7 @@
 # datasus-etl
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 
 An open-source ETL for **DATASUS**, Brazil's public-health data warehouse.
 It downloads DBC files from the DATASUS FTP, converts them through DBF into

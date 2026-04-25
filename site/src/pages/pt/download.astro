@@ -100,57 +100,27 @@ import { VERSION, releaseUrl, releasesIndexUrl } from '~/lib/releases';
         <ol class="intel-steps">
           <li>
             <b>Instale o Python 3.11 ou mais novo.</b> Abra a
-            <a href="https://www.python.org/downloads/macos/">página de downloads do python.org</a>,
-            baixe o instalador mais recente <code>3.11.x</code> ou
-            <code>3.12.x</code> (o <b>macOS 64-bit universal2</b>) e
-            execute. Clique em Continuar, Aceitar, Instalar.
+            <a href="https://www.python.org/downloads/macos/">página de downloads do python.org</a>
+            e rode o instalador <b>macOS 64-bit universal2</b> mais recente
+            (<code>3.11.x</code> ou <code>3.12.x</code>).
           </li>
           <li>
-            <b>Abra o Terminal.</b> Pressione <kbd>⌘</kbd>+<kbd>Espaço</kbd>,
-            digite <code>Terminal</code>, pressione Return. Uma janela
-            preta e branca vai aparecer. É nela que você vai digitar os
-            próximos comandos.
+            <b>Abra o Terminal</b> (<kbd>⌘</kbd>+<kbd>Espaço</kbd> →
+            digite <code>Terminal</code> → Return) e rode:
+            <pre><code>{`pip install datasus-etl`}</code></pre>
           </li>
           <li>
-            <b>Copie o projeto para o seu Mac.</b> Cole esta linha no
-            Terminal e pressione Return:
-            <pre><code>{`git clone https://github.com/nyckmaia/datasus-etl.git`}</code></pre>
-            Se o macOS perguntar se quer instalar as "Developer Command
-            Line Tools", clique em Install e espere terminar; depois
-            rode o comando acima novamente.
-          </li>
-          <li>
-            <b>Entre na pasta do projeto.</b>
-            <pre><code>{`cd datasus-etl`}</code></pre>
-          </li>
-          <li>
-            <b>Crie um ambiente Python isolado</b> (mantém as
-            dependências do app separadas do resto do sistema):
-            <pre><code>{`python3 -m venv .venv
-source .venv/bin/activate`}</code></pre>
-            O prompt do Terminal deve passar a começar com
-            <code>(.venv)</code>.
-          </li>
-          <li>
-            <b>Instale o aplicativo.</b> Aqui o comando baixa e compila
-            todas as dependências — leva 2–5 minutos dependendo da sua
-            conexão.
-            <pre><code>{`pip install .`}</code></pre>
-          </li>
-          <li>
-            <b>Abra o aplicativo.</b>
-            <pre><code>{`datasus ui`}</code></pre>
-            Seu navegador padrão vai abrir em
-            <code>http://127.0.0.1:8787</code> — pronto. Para encerrar o
-            servidor, volte ao Terminal e pressione
-            <kbd>Ctrl</kbd>+<kbd>C</kbd>.
-          </li>
-          <li>
-            <b>Nas próximas vezes que quiser usar</b>, abra o Terminal e
-            rode:
-            <pre><code>{`cd datasus-etl
-source .venv/bin/activate
-datasus ui`}</code></pre>
+            <b>Escolha um tutorial</b> de acordo com o seu uso:
+            <ul class="!mt-2 !mb-0 !pl-5 list-disc space-y-1">
+              <li>
+                <a href="../docs/cli/">Uso via CLI (EN) →</a>
+                — comandos no terminal, scripts, automação.
+              </li>
+              <li>
+                <a href="../docs/python-api/">Uso via biblioteca Python (EN) →</a>
+                — importar como módulo nos seus próprios scripts ou notebooks.
+              </li>
+            </ul>
           </li>
         </ol>
         <aside class="note">

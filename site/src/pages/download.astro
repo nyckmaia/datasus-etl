@@ -101,55 +101,27 @@ import { VERSION, releaseUrl, releasesIndexUrl } from '~/lib/releases';
         <ol class="intel-steps">
           <li>
             <b>Install Python 3.11 or newer.</b> Open the
-            <a href="https://www.python.org/downloads/macos/">python.org downloads page</a>,
-            grab the latest <code>3.11.x</code> or <code>3.12.x</code> installer
-            (the <b>macOS 64-bit universal2</b> one), and run it. Click
-            Continue, Agree, Install.
+            <a href="https://www.python.org/downloads/macos/">python.org downloads page</a>
+            and run the latest <b>macOS 64-bit universal2</b> installer
+            (<code>3.11.x</code> or <code>3.12.x</code>).
           </li>
           <li>
-            <b>Open the Terminal app.</b> Press <kbd>⌘</kbd>+<kbd>Space</kbd>,
-            type <code>Terminal</code>, press Return. A black-and-white
-            window will appear. That's where you'll type the next
-            commands.
+            <b>Open the Terminal app</b> (<kbd>⌘</kbd>+<kbd>Space</kbd> →
+            type <code>Terminal</code> → Return) and run:
+            <pre><code>{`pip install datasus-etl`}</code></pre>
           </li>
           <li>
-            <b>Copy the project to your Mac.</b> Paste this line into
-            Terminal and press Return:
-            <pre><code>{`git clone https://github.com/nyckmaia/datasus-etl.git`}</code></pre>
-            If macOS asks whether to install "Developer Command Line
-            Tools", click Install and wait for it to finish, then re-run
-            the command above.
-          </li>
-          <li>
-            <b>Enter the project folder.</b>
-            <pre><code>{`cd datasus-etl`}</code></pre>
-          </li>
-          <li>
-            <b>Create an isolated Python environment</b> (keeps the app's
-            dependencies away from the rest of your system):
-            <pre><code>{`python3 -m venv .venv
-source .venv/bin/activate`}</code></pre>
-            Your Terminal prompt should now start with <code>(.venv)</code>.
-          </li>
-          <li>
-            <b>Install the app.</b> This downloads and builds all the
-            dependencies — takes 2–5 minutes depending on your connection.
-            <pre><code>{`pip install .`}</code></pre>
-          </li>
-          <li>
-            <b>Launch the app.</b>
-            <pre><code>{`datasus ui`}</code></pre>
-            Your default browser will open at
-            <code>http://127.0.0.1:8787</code> — you're in. To stop the
-            server, come back to the Terminal and press
-            <kbd>Ctrl</kbd>+<kbd>C</kbd>.
-          </li>
-          <li>
-            <b>Next time you want to use the app</b>, open Terminal and
-            run:
-            <pre><code>{`cd datasus-etl
-source .venv/bin/activate
-datasus ui`}</code></pre>
+            <b>Pick a tutorial</b> for how you want to use it:
+            <ul class="!mt-2 !mb-0 !pl-5 list-disc space-y-1">
+              <li>
+                <a href="./docs/cli/">CLI workflow →</a>
+                — terminal commands, scripts, automation.
+              </li>
+              <li>
+                <a href="./docs/python-api/">Python library →</a>
+                — import as a module from your own scripts or notebooks.
+              </li>
+            </ul>
           </li>
         </ol>
         <aside class="note">

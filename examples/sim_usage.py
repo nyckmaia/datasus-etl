@@ -18,7 +18,7 @@ def main():
         subsystem="sim",  # Mortality Information System
         start_date="2022-01-01",
         end_date="2022-12-31",
-        uf_list=["SP"],  # São Paulo only
+        uf_list=["SP"],
         compression="zstd",
         chunk_size=10000,
     )

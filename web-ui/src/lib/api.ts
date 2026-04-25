@@ -22,6 +22,14 @@ export interface SettingsResponse {
   config_file: string;
 }
 
+export interface VersionCheckResponse {
+  current: string;
+  latest: string | null;
+  update_available: boolean;
+  release_url?: string;
+  error?: string;
+}
+
 export interface SubsystemSummary {
   subsystem: string;
   files: number;
@@ -211,6 +219,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ path }),
     });
+  },
+
+  versionCheck(): Promise<VersionCheckResponse> {
+    return request("/api/version/check");
   },
 
   // ------------------------------------------------------------------------ //

@@ -18,11 +18,29 @@ const ptHref = ptPath ? localePath('pt', ptPath, base) : undefined;
     href={enHref}
     data-lang-set="en"
     class:list={[
-      'px-1.5 py-1 transition-colors rounded',
+      'px-1.5 py-1 transition-colors rounded inline-flex items-center gap-1.5',
       current === 'en' ? 'text-text bg-surface-2' : 'hover:text-text',
     ]}
     aria-current={current === 'en' ? 'true' : undefined}
-  >EN</a>
+  >
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 7410 3900"
+      width="16"
+      height="12"
+      class="rounded-[1px] shadow-sm"
+      aria-hidden="true"
+    >
+      <rect width="7410" height="3900" fill="#b22234" />
+      <path
+        d="M0,450H7410M0,1050H7410M0,1650H7410M0,2250H7410M0,2850H7410M0,3450H7410"
+        stroke="#fff"
+        stroke-width="300"
+      />
+      <rect width="2964" height="2100" fill="#3c3b6e" />
+    </svg>
+    EN
+  </a>
 
   <span class="mx-0.5 text-muted/40" aria-hidden="true">/</span>
 
@@ -31,13 +49,47 @@ const ptHref = ptPath ? localePath('pt', ptPath, base) : undefined;
       href={ptHref}
       data-lang-set="pt"
       class:list={[
-        'px-1.5 py-1 transition-colors rounded',
+        'px-1.5 py-1 transition-colors rounded inline-flex items-center gap-1.5',
         current === 'pt' ? 'text-text bg-surface-2' : 'hover:text-text',
       ]}
       aria-current={current === 'pt' ? 'true' : undefined}
-    >PT</a>
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 720 504"
+        width="16"
+        height="12"
+        class="rounded-[1px] shadow-sm"
+        aria-hidden="true"
+      >
+        <rect width="720" height="504" fill="#009c3b" />
+        <path d="M360,57 L678,252 L360,447 L42,252 Z" fill="#ffdf00" />
+        <circle cx="360" cy="252" r="84" fill="#002776" />
+        <path
+          d="M280,260 Q360,225 440,260"
+          stroke="#fff"
+          stroke-width="10"
+          fill="none"
+        />
+      </svg>
+      PT
+    </a>
   ) : (
-    <span class="px-1.5 py-1 text-muted/40 cursor-not-allowed" title="Portuguese not available on this page">PT</span>
+    <span class="px-1.5 py-1 text-muted/40 cursor-not-allowed inline-flex items-center gap-1.5 opacity-60" title="Portuguese not available on this page">
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 720 504"
+        width="16"
+        height="12"
+        class="rounded-[1px] shadow-sm grayscale"
+        aria-hidden="true"
+      >
+        <rect width="720" height="504" fill="#009c3b" />
+        <path d="M360,57 L678,252 L360,447 L42,252 Z" fill="#ffdf00" />
+        <circle cx="360" cy="252" r="84" fill="#002776" />
+      </svg>
+      PT
+    </span>
   )}
 </div>
 
