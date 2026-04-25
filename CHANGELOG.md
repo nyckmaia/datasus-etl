@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.10] - 2026-04-25
+
+### Added
+- add version check endpoint and update UI for notifications
+
+### Other
+- **release:** rebuild site for v0.1.9
+
 ## [0.1.9] - 2026-04-25
 
 ### Fixed
