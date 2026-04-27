@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.12] - 2026-04-27
+
+### Added
+- update version to 0.1.12 and enhance SQL query endpoint documentation
+
 ## [0.1.11] - 2026-04-25
 
 ### Added
