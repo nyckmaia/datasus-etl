@@ -1,8 +1,11 @@
 """Ad-hoc SQL query endpoints.
 
-DuckDB is opened in-memory per request and the user's parquet tree is exposed
-as one VIEW per subsystem via :meth:`ParquetManager.create_duckdb_view`. Only
-read-only statements are accepted — see :func:`_validate_sql`.
+DuckDB is opened in-memory per request. For each registered subsystem we expose
+two VIEWs — a raw `{name}_all` over the parquet tree, and an enriched `{name}`
+that LEFT JOINs `ibge_locais` to add `uf_res`, `municipio_res`, `rg_imediata_res`,
+and `rg_intermediaria_res`. This mirrors the `datasus db` CLI shell so manual
+queries and web queries see the same view shape. Only read-only statements are
+accepted — see :func:`_validate_sql`.
 """
 
 from __future__ import annotations
@@ -95,6 +98,22 @@ def _data_dir_or_400(request: Request) -> Path:
 
 def _connect_with_views(data_dir: Path) -> duckdb.DuckDBPyConnection:
     con = duckdb.connect(database=":memory:")
+
+    # Expose the IBGE parquet (single file, not Hive-partitioned) as a VIEW so
+    # the per-subsystem enriched views below can LEFT JOIN against it. Mirrors
+    # the CLI's `datasus db` interactive shell (cli.py:2168-2177).
+    ibge_mgr = ParquetManager(data_dir, "ibge")
+    ibge_parquet = ibge_mgr.parquet_dir / "ibge_locais.parquet"
+    has_ibge = ibge_parquet.exists()
+    if has_ibge:
+        try:
+            con.execute(
+                f"CREATE OR REPLACE VIEW ibge_locais AS "
+                f"SELECT * FROM read_parquet('{ibge_parquet}')"
+            )
+        except Exception:  # noqa: BLE001 — best-effort; fall back to no enrichment
+            has_ibge = False
+
     for name in DatasetRegistry.list_available():
         mgr = ParquetManager(data_dir, name)
         if not mgr.parquet_dir.exists():
@@ -102,7 +121,30 @@ def _connect_with_views(data_dir: Path) -> duckdb.DuckDBPyConnection:
         if not any(mgr.parquet_dir.rglob("*.parquet")):
             continue
         try:
-            mgr.create_duckdb_view(con, name)
+            # Raw view named `{name}_all` (e.g. `sihsus_all`).
+            mgr.create_duckdb_view(con, f"{name}_all")
+            if has_ibge:
+                # Enriched view named `{name}` (e.g. `sihsus`) with the
+                # uf_res / municipio_res / rg_imediata_res / rg_intermediaria_res
+                # columns from the IBGE join — same shape as cli.py:2172-2177.
+                con.execute(
+                    f"""
+                    CREATE OR REPLACE VIEW {name} AS
+                    SELECT
+                        s.*,
+                        i.sigla_uf AS uf_res,
+                        i.nome_municipio AS municipio_res,
+                        i.nome_regiao_geografica_imediata AS rg_imediata_res,
+                        i.nome_regiao_geografica_intermediaria AS rg_intermediaria_res
+                    FROM {name}_all s
+                    LEFT JOIN ibge_locais i
+                        ON s.munic_res = i.codigo_municipio_6_digitos
+                    """
+                )
+            else:
+                con.execute(
+                    f"CREATE OR REPLACE VIEW {name} AS SELECT * FROM {name}_all"
+                )
         except Exception:  # noqa: BLE001 — the view is best-effort per subsystem
             continue
     return con
