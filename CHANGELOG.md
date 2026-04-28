@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.13] - 2026-04-28
+
+### Added
+- enhance Query page with sidebar functionality and SQL editor improvements
+
 ## [0.1.12] - 2026-04-27
 
 ### Added
