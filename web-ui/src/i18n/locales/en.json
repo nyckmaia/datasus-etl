@@ -28,7 +28,14 @@
   "topBar": {
     "dataDir": "Data dir:",
     "notConfigured": "not configured",
-    "freeOf": "{{free}} free of {{total}}"
+    "freeOf": "{{free}} free of {{total}}",
+    "disk": {
+      "tooltipTitle": "Disk usage",
+      "used": "Used",
+      "free": "free",
+      "total": "Total",
+      "aria": "Disk usage: {{used}} used of {{total}} ({{percent}}); {{free}} free."
+    }
   },
   "sidebar": {
     "dashboard": "Dashboard",
@@ -151,7 +158,12 @@
     "fillPctApprox": "~{{pct}}% — upper bound based on the join column. Actual value may be lower if some codes aren't present in ibge_locais.",
     "distinctCountTooltip": "~{{count}} distinct values. Click to view the histogram of this column.",
     "distinctCountTooltipApprox": "~{{count}} distinct values (upper bound, inherited from ibge_locais). Click to view the histogram of this column.",
-    "distinctCountUnknown": "Distinct value count not yet computed"
+    "distinctCountUnknown": "Distinct value count not yet computed",
+    "tabs": {
+      "newTab": "New query tab",
+      "close": "Close tab",
+      "rename": "Rename tab"
+    }
   },
   "wizard": {
     "title": "Download wizard",

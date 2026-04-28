@@ -28,7 +28,14 @@
   "topBar": {
     "dataDir": "Diretório de dados:",
     "notConfigured": "não configurado",
-    "freeOf": "{{free}} livres de {{total}}"
+    "freeOf": "{{free}} livres de {{total}}",
+    "disk": {
+      "tooltipTitle": "Uso do disco",
+      "used": "Em uso",
+      "free": "livres",
+      "total": "Total",
+      "aria": "Uso do disco: {{used}} em uso de {{total}} ({{percent}}); {{free}} livres."
+    }
   },
   "sidebar": {
     "dashboard": "Painel",
@@ -151,7 +158,12 @@
     "fillPctApprox": "~{{pct}}% — limite superior baseado na coluna de junção. O valor real pode ser menor se houver códigos não cadastrados em ibge_locais.",
     "distinctCountTooltip": "~{{count}} valores distintos. Clique para ver o histograma desta coluna.",
     "distinctCountTooltipApprox": "~{{count}} valores distintos (limite superior, herdado de ibge_locais). Clique para ver o histograma desta coluna.",
-    "distinctCountUnknown": "Contagem de valores distintos ainda não calculada"
+    "distinctCountUnknown": "Contagem de valores distintos ainda não calculada",
+    "tabs": {
+      "newTab": "Nova aba de consulta",
+      "close": "Fechar aba",
+      "rename": "Renomear aba"
+    }
   },
   "wizard": {
     "title": "Assistente de download",

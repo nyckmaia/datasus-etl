@@ -8,9 +8,11 @@ import logging
 import unicodedata
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 import xlrd
+
+IBGE_PARQUET_FILENAME = "ibge_locais.parquet"
 
 logger = logging.getLogger(__name__)
 
@@ -340,3 +342,37 @@ def generate_ibge_parquet(output_path: Path) -> Path:
     logger.info("Added derived columns: sigla_uf, codigo_municipio_6_digitos")
 
     return output_path
+
+
+def ensure_ibge_parquet(
+    data_dir: Path,
+    *,
+    on_progress: Optional[Callable[[str], None]] = None,
+) -> Path:
+    """Ensure the IBGE municipalities parquet exists under ``data_dir``.
+
+    The ``ibge_locais`` DuckDB VIEW depends on this file but it is not bundled
+    with the installer — it is generated dynamically. Every download/update
+    flow calls this before starting work so the post-pipeline VIEWs always
+    have a valid IBGE source to read from.
+
+    Args:
+        data_dir: User's configured data directory (``--data-dir``).
+        on_progress: Optional callback invoked with a single status string
+            *only* when generation is actually performed (skipped when the
+            file already exists).
+
+    Returns:
+        Path to the existing or freshly generated parquet file.
+    """
+    from datasus_etl.storage.paths import resolve_parquet_dir
+
+    target = resolve_parquet_dir(data_dir, "ibge") / IBGE_PARQUET_FILENAME
+
+    if target.exists() and target.stat().st_size > 0:
+        return target
+
+    if on_progress is not None:
+        on_progress("Gerando dados do IBGE...")
+
+    return generate_ibge_parquet(target)

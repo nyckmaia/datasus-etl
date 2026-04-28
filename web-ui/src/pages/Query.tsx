@@ -50,6 +50,7 @@ import { ColumnTypeBadge } from "@/components/ColumnTypeBadge";
 import { ColumnFillBadge } from "@/components/ColumnFillBadge";
 import { ColumnFillBar } from "@/components/ColumnFillBar";
 import { ColumnDistinctBadge } from "@/components/ColumnDistinctBadge";
+import { QueryTabsBar, type QueryTab } from "@/components/QueryTabsBar";
 import { api } from "@/lib/api";
 import type { SqlResult } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -71,12 +72,43 @@ interface HistoryItem {
   elapsed_ms: number;
 }
 
+// Persisted shape of a SQL editor tab. Results are intentionally NOT persisted
+// — they can be huge (multi-MB) and bloat localStorage.
+interface PersistedTab {
+  id: string;
+  name: string;
+  sql: string;
+  // Once `true`, switching subsystems no longer overwrites this tab's SQL
+  // with the default template. Per-tab so each editor scratchpad keeps its
+  // own "user-edited?" state independently.
+  userEdited: boolean;
+}
+
 // Default SQL seeded into the editor on first load and refreshed whenever
 // the user switches the subsystem (until they type something custom — see
-// `userEditedSql` below). Lowercase keywords match the wording requested in
-// the original feature ticket.
+// `userEdited` flag below). Lowercase keywords match the wording requested
+// in the original feature ticket.
 const buildDefaultSql = (subsystem: string) =>
   `SELECT * FROM ${subsystem} LIMIT 10;`;
+
+const QUERY_TAB_PREFIX = "Query";
+
+function nextQueryName(tabs: PersistedTab[]): string {
+  // Pick the lowest unused integer suffix so newly opened tabs get the
+  // next "Query N" without ever reusing a number that's already on screen.
+  const used = new Set<number>();
+  for (const tab of tabs) {
+    const match = tab.name.match(/^Query\s+(\d+)$/i);
+    if (match) used.add(Number(match[1]));
+  }
+  let n = 1;
+  while (used.has(n)) n += 1;
+  return `${QUERY_TAB_PREFIX} ${n}`;
+}
+
+function makeTab(name: string, sql: string): PersistedTab {
+  return { id: crypto.randomUUID(), name, sql, userEdited: false };
+}
 
 // Sidebar widths — kept tight so the Monaco editor can breathe. The "rail"
 // width matches the height of the toggle button so collapsed sidebars feel
@@ -104,20 +136,133 @@ export function QueryPage() {
   );
 
   const [subsystem, setSubsystem] = React.useState<string>(search.subsystem ?? "");
-  // If the URL already names a subsystem we can seed the template synchronously
-  // — otherwise the editor starts empty and the resolution effect below fills
-  // it in once we know which subsystem is active.
-  const [sql, setSql] = React.useState<string>(
-    search.subsystem ? buildDefaultSql(search.subsystem) : "",
+  // SQL editor tabs are persisted across reloads. The first tab is seeded
+  // synchronously when the URL already names a subsystem so the editor doesn't
+  // flash empty content before the resolution effect fills it in.
+  const [tabs, setTabs] = useLocalStorage<PersistedTab[]>(
+    "query.tabs",
+    [
+      makeTab(
+        `${QUERY_TAB_PREFIX} 1`,
+        search.subsystem ? buildDefaultSql(search.subsystem) : "",
+      ),
+    ],
   );
-  // Once the user types something that diverges from the auto template, we
-  // stop overwriting their work on subsystem changes. A ref (not state) keeps
-  // this out of the render path.
-  const userEditedSql = React.useRef<boolean>(false);
-  const [result, setResult] = React.useState<SqlResult | null>(null);
+  const [activeTabId, setActiveTabId] = useLocalStorage<string>(
+    "query.activeTabId",
+    "",
+  );
+  // Per-tab last result kept in memory only — too heavy for localStorage.
+  const [resultsByTab, setResultsByTab] = React.useState<Record<string, SqlResult>>({});
+  // Tracks which tabs have an in-flight Run so the per-tab Run button can show
+  // "Running…" only on the tab that initiated the query (the user can keep
+  // working in another tab while one is still executing).
+  const [runningTabs, setRunningTabs] = React.useState<Record<string, boolean>>({});
   const [history, setHistory] = React.useState<HistoryItem[]>([]);
   const [limit, setLimit] = React.useState<number>(1000);
   const [columnFilter, setColumnFilter] = React.useState<string>("");
+
+  // Defensive: if the persisted active id no longer matches a tab (or was
+  // never set on a fresh install), snap to the first tab on first render.
+  React.useEffect(() => {
+    if (tabs.length === 0) {
+      const seed = makeTab(`${QUERY_TAB_PREFIX} 1`, subsystem ? buildDefaultSql(subsystem) : "");
+      setTabs([seed]);
+      setActiveTabId(seed.id);
+      return;
+    }
+    if (!tabs.some((tab) => tab.id === activeTabId)) {
+      setActiveTabId(tabs[0].id);
+    }
+    // We deliberately only run when tab structure changes, not on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tabs.length]);
+
+  const activeTab = React.useMemo(
+    () => tabs.find((tab) => tab.id === activeTabId) ?? tabs[0],
+    [tabs, activeTabId],
+  );
+
+  const sql = activeTab?.sql ?? "";
+  const result = activeTab ? resultsByTab[activeTab.id] ?? null : null;
+  const isActiveRunning = activeTab ? Boolean(runningTabs[activeTab.id]) : false;
+
+  // Derived list shown to the QueryTabsBar — keep it lean (id + name).
+  const tabBarItems: QueryTab[] = React.useMemo(
+    () => tabs.map((tab) => ({ id: tab.id, name: tab.name })),
+    [tabs],
+  );
+
+  // Tab mutation helpers.
+  const patchTab = React.useCallback(
+    (id: string, patch: Partial<PersistedTab>) => {
+      setTabs((prev) =>
+        prev.map((tab) => (tab.id === id ? { ...tab, ...patch } : tab)),
+      );
+    },
+    [setTabs],
+  );
+
+  const onAddTab = React.useCallback(() => {
+    const seedSql = subsystem ? buildDefaultSql(subsystem) : "";
+    const tab = makeTab(nextQueryName(tabs), seedSql);
+    setTabs((prev) => [...prev, tab]);
+    setActiveTabId(tab.id);
+  }, [tabs, subsystem, setTabs, setActiveTabId]);
+
+  const onCloseTab = React.useCallback(
+    (id: string) => {
+      const idx = tabs.findIndex((tab) => tab.id === id);
+      if (idx < 0) return;
+      const next = tabs.filter((tab) => tab.id !== id);
+
+      setResultsByTab((prev) => {
+        if (!(id in prev)) return prev;
+        const { [id]: _removed, ...rest } = prev;
+        return rest;
+      });
+      setRunningTabs((prev) => {
+        if (!(id in prev)) return prev;
+        const { [id]: _running, ...rest } = prev;
+        return rest;
+      });
+
+      if (next.length === 0) {
+        // Always keep at least one tab so the editor never shows an empty
+        // state — closing the only tab spawns a fresh default.
+        const fresh = makeTab(
+          `${QUERY_TAB_PREFIX} 1`,
+          subsystem ? buildDefaultSql(subsystem) : "",
+        );
+        setTabs([fresh]);
+        setActiveTabId(fresh.id);
+        return;
+      }
+      if (id === activeTabId) {
+        const neighbor = next[Math.min(idx, next.length - 1)];
+        setActiveTabId(neighbor.id);
+      }
+      setTabs(next);
+    },
+    [tabs, activeTabId, subsystem, setTabs, setActiveTabId],
+  );
+
+  const onReorderTabs = React.useCallback(
+    (orderedIds: string[]) => {
+      setTabs((prev) => {
+        const byId = new Map(prev.map((tab) => [tab.id, tab]));
+        const reordered = orderedIds
+          .map((id) => byId.get(id))
+          .filter((tab): tab is PersistedTab => Boolean(tab));
+        // Append any tabs that weren't in the ordered list (defensive — shouldn't happen).
+        for (const tab of prev) {
+          if (!orderedIds.includes(tab.id)) reordered.push(tab);
+        }
+        return reordered;
+      });
+    },
+    [setTabs],
+  );
 
   // Both sidebars persist their collapsed state — the user gets the same
   // workspace shape across reloads.
@@ -158,15 +303,17 @@ export function QueryPage() {
     );
   }, [availableSubsystems, subsystem, search.subsystem]);
 
-  // Auto-seed / refresh the editor with `SELECT * from <subsystem> limit 10;`
-  // whenever the active subsystem changes. We bail out as soon as the user
-  // has touched the editor — switching subsystems must not destroy a query
-  // the user has been writing.
+  // Auto-seed / refresh the active tab with `SELECT * from <subsystem> limit 10;`
+  // whenever the subsystem changes. Per-tab — only the active tab is touched,
+  // and only if the user hasn't edited it yet. Other tabs keep their own SQL.
   React.useEffect(() => {
-    if (subsystem && !userEditedSql.current) {
-      setSql(buildDefaultSql(subsystem));
-    }
-  }, [subsystem]);
+    if (!subsystem || !activeTab) return;
+    if (activeTab.userEdited) return;
+    const seeded = buildDefaultSql(subsystem);
+    if (activeTab.sql === seeded) return;
+    patchTab(activeTab.id, { sql: seeded });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subsystem, activeTab?.id]);
 
   // Keep the SQL autocomplete provider's data in sync. The provider itself
   // is registered once globally (in Editor's onMount); this effect just
@@ -179,27 +326,34 @@ export function QueryPage() {
     });
   }, [dictionary.data, subsystem]);
 
-  // Editor onChange. Marks the editor as user-edited only when the new value
-  // truly diverges from the auto template — otherwise the act of seeding the
-  // template would itself flip the flag and prevent future auto-refreshes.
+  // Editor onChange. Marks the active tab as user-edited only when the new
+  // value truly diverges from the auto template — otherwise the act of
+  // seeding the template would itself flip the flag and prevent future
+  // auto-refreshes.
   const onSqlChange = React.useCallback(
     (next: string | undefined) => {
+      if (!activeTab) return;
       const value = next ?? "";
-      if (subsystem && value !== buildDefaultSql(subsystem)) {
-        userEditedSql.current = true;
-      }
-      setSql(value);
+      const diverged =
+        Boolean(subsystem) && value !== buildDefaultSql(subsystem);
+      patchTab(activeTab.id, {
+        sql: value,
+        userEdited: activeTab.userEdited || diverged,
+      });
     },
-    [subsystem],
+    [activeTab, subsystem, patchTab],
   );
 
   // Loading a template or a history item is an explicit user replacement —
-  // freeze the auto-template behaviour so a later subsystem switch doesn't
-  // overwrite their selection.
-  const replaceSql = React.useCallback((next: string) => {
-    userEditedSql.current = true;
-    setSql(next);
-  }, []);
+  // freeze the auto-template behaviour on the active tab so a later subsystem
+  // switch doesn't overwrite their selection.
+  const replaceSql = React.useCallback(
+    (next: string) => {
+      if (!activeTab) return;
+      patchTab(activeTab.id, { sql: next, userEdited: true });
+    },
+    [activeTab, patchTab],
+  );
 
   const filteredTemplates = React.useMemo(() => {
     if (!templates.data) return [];
@@ -223,13 +377,19 @@ export function QueryPage() {
   // immediately after replacing the editor SQL — before React state would
   // make the new value visible to a caller of onRun) can share the same
   // success/error/history plumbing.
+  //
+  // Captures the active tab id at call time so the result lands on the tab
+  // that initiated the run even if the user switches tabs mid-flight.
   const runWithSql = React.useCallback(
     (sqlToRun: string) => {
+      const tabId = activeTabId;
+      if (!tabId) return;
+      setRunningTabs((prev) => ({ ...prev, [tabId]: true }));
       runSql.mutate(
         { sql: sqlToRun, limit },
         {
           onSuccess: (data) => {
-            setResult(data);
+            setResultsByTab((prev) => ({ ...prev, [tabId]: data }));
             setHistory((h) =>
               [
                 {
@@ -246,13 +406,29 @@ export function QueryPage() {
           onError: (err: Error) => {
             toast.error(t("query.queryFailed"), { description: err.message });
           },
+          onSettled: () => {
+            setRunningTabs((prev) => {
+              if (!prev[tabId]) return prev;
+              const { [tabId]: _flag, ...rest } = prev;
+              return rest;
+            });
+          },
         },
       );
     },
-    [limit, runSql, t],
+    [activeTabId, limit, runSql, t],
   );
 
   const onRun = React.useCallback(() => runWithSql(sql), [runWithSql, sql]);
+
+  // Keep the latest onRun reachable from the Monaco Ctrl+Enter handler — the
+  // editor's `onMount` only fires once, so a captured-at-mount handler would
+  // forever see the original (empty) sql. The ref lets the keybinding always
+  // call the current onRun (which closes over the active tab's SQL).
+  const onRunRef = React.useRef(onRun);
+  React.useEffect(() => {
+    onRunRef.current = onRun;
+  }, [onRun]);
 
   // One-tap "show histogram for this column" handler. Wired to the click of
   // the indigo distinct-count badge. Builds a default GROUP BY query and
@@ -348,6 +524,15 @@ LIMIT 100;`;
             instead of shrinking the editor area. */}
         <div className="flex min-h-0 min-w-0 flex-col gap-3">
           <Card className="flex flex-col overflow-hidden">
+            <QueryTabsBar
+              tabs={tabBarItems}
+              activeId={activeTab?.id ?? ""}
+              onActivate={setActiveTabId}
+              onClose={onCloseTab}
+              onAdd={onAddTab}
+              onReorder={onReorderTabs}
+              onRename={(id, name) => patchTab(id, { name })}
+            />
             <div className="flex items-center justify-between border-b px-3 py-2">
               <span className="text-xs font-medium text-muted-foreground">
                 {t("query.sqlEditorHint")}
@@ -379,9 +564,9 @@ LIMIT 100;`;
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
-                <Button size="sm" onClick={onRun} disabled={runSql.isPending}>
+                <Button size="sm" onClick={onRun} disabled={isActiveRunning}>
                   <Play className="h-3.5 w-3.5" />
-                  {runSql.isPending ? t("query.running") : t("query.run")}
+                  {isActiveRunning ? t("query.running") : t("query.run")}
                 </Button>
               </div>
             </div>
@@ -391,6 +576,10 @@ LIMIT 100;`;
                 language="sql"
                 theme={resolvedTheme === "dark" ? "vs-dark" : "light"}
                 value={sql}
+                // Path is keyed on the active tab id so Monaco swaps its
+                // model when the user switches tabs, preserving each tab's
+                // undo history independently.
+                path={activeTab ? `tab-${activeTab.id}.sql` : undefined}
                 onChange={onSqlChange}
                 options={{
                   minimap: { enabled: false },
@@ -412,7 +601,7 @@ LIMIT 100;`;
                   registerSqlAutocomplete(monaco);
                   editor.addCommand(
                     monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
-                    onRun,
+                    () => onRunRef.current(),
                   );
                 }}
               />
@@ -445,7 +634,7 @@ LIMIT 100;`;
                 inner shadcn `Table` div's `overflow-auto` properly clips,
                 producing a horizontal scrollbar inside the Results card. */}
             <div className="min-h-0 min-w-0 flex-1 overflow-auto">
-              {runSql.isPending ? (
+              {isActiveRunning ? (
                 <div className="p-4 space-y-2">
                   <Skeleton className="h-6 w-full" />
                   <Skeleton className="h-6 w-full" />

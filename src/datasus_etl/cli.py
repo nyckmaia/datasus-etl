@@ -101,6 +101,38 @@ def _maybe_migrate_legacy(data_dir: Path, assume_yes: bool = False) -> None:
     )
 
 
+def _ensure_ibge_parquet_with_ui(data_dir: Path) -> None:
+    """Verify (and lazily generate) the IBGE municipalities parquet.
+
+    The ``ibge_locais`` VIEW used by every subsystem's enrichment query reads
+    from this file. It is not bundled with the installer, so we generate it on
+    first use and reuse it on subsequent runs.
+    """
+    from datasus_etl.utils.ibge_loader import (
+        IBGE_PARQUET_FILENAME,
+        ensure_ibge_parquet,
+    )
+
+    generated = False
+
+    def _on_progress(message: str) -> None:
+        nonlocal generated
+        generated = True
+        console.print(f"[dim]{message}[/dim]")
+
+    try:
+        path = ensure_ibge_parquet(data_dir, on_progress=_on_progress)
+    except Exception as exc:  # noqa: BLE001 — surface root cause to the user
+        console.print(
+            f"[red bold]Erro ao preparar dados do IBGE ({IBGE_PARQUET_FILENAME}):[/red bold]"
+        )
+        console.print(f"  {exc}")
+        raise typer.Exit(1)
+
+    if generated:
+        console.print(f"[green]{SYM_CHECK} Dados do IBGE prontos:[/green] {path}")
+
+
 def _handle_sigint(signum, frame):
     """Handle Ctrl+C for graceful cancellation."""
     global _current_context
@@ -431,6 +463,10 @@ def pipeline_cmd(
         write_mode=write_mode.lower(),  # type: ignore
     )
 
+    # Ensure the IBGE municipalities parquet is present before any FTP work —
+    # the post-pipeline `ibge_locais` VIEW depends on it.
+    _ensure_ibge_parquet_with_ui(data_dir)
+
     # Pre-download report: get file count from FTP
     console.print("[dim]Consultando servidor FTP...[/dim]")
 
@@ -623,6 +659,10 @@ def update(
     setup_logging("DEBUG" if verbose else "INFO")
 
     _maybe_migrate_legacy(data_dir, assume_yes=yes)
+
+    # Ensure the IBGE municipalities parquet is present before any FTP work —
+    # the post-pipeline `ibge_locais` VIEW depends on it.
+    _ensure_ibge_parquet_with_ui(data_dir)
 
     from datasus_etl.storage.incremental_updater import IncrementalUpdater
 

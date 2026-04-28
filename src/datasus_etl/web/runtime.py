@@ -157,6 +157,19 @@ async def _run_pipeline(run: Run, data_dir: Path) -> None:
     run.status = "running"
 
     def _work() -> None:
+        # Ensure the IBGE municipalities parquet is present before any FTP
+        # work begins — the post-pipeline `ibge_locais` VIEW depends on it.
+        # Surfaced to the UI through the existing "[prepare] " message tag so
+        # the wizard's "Preparing download…" panel covers the status.
+        from datasus_etl.download.ftp_downloader import PREPARE_TAG
+        from datasus_etl.utils.ibge_loader import ensure_ibge_parquet
+
+        on_progress(0.0, f"{PREPARE_TAG}Verificando dados do IBGE...")
+        ensure_ibge_parquet(
+            data_dir,
+            on_progress=lambda msg: on_progress(0.0, f"{PREPARE_TAG}{msg}"),
+        )
+
         pipeline_cls = _PIPELINES[run.subsystem]
         cfg = PipelineConfig.create(
             base_dir=data_dir,

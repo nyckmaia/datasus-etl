@@ -79,6 +79,37 @@ FROM sihsus
 WHERE dt_inter IS NOT NULL
 GROUP BY ano, mes
 ORDER BY ano, mes""",
+
+    "CIDs J por mês filtrado por ZScore": """WITH contagem_diaria AS (
+    SELECT
+        dt_inter::date AS data,
+        COUNT(diag_princ) AS total_cids
+    FROM sihsus
+    WHERE
+        diag_princ LIKE 'J%'
+        AND
+        dt_inter >= '2000-01-01'
+    GROUP BY dt_inter::date
+),
+zscore_calc AS (
+    SELECT
+        data,
+        total_cids,
+        (total_cids - AVG(total_cids) OVER ())
+        / STDDEV(total_cids) OVER () AS zscore
+    FROM contagem_diaria
+),
+filtrado AS (
+    SELECT *
+    FROM zscore_calc
+    WHERE ABS(zscore) <= 2.0
+)
+SELECT
+    DATE_TRUNC('month', data)::date AS mes,
+    SUM(total_cids) AS total_cids_mes
+FROM filtrado
+GROUP BY mes
+ORDER BY mes""",
 }
 
 # SIM - Mortality Information System Templates

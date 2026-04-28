@@ -1,9 +1,9 @@
-import { FolderOpen, HardDrive } from "lucide-react";
+import { FolderOpen } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { useSettings } from "@/hooks/useSettings";
-import { formatBytes } from "@/lib/format";
 import { Skeleton } from "@/components/ui/skeleton";
+import { DiskUsageBar } from "./DiskUsageBar";
 import { ThemeToggle } from "./ThemeToggle";
 import { LanguageToggle } from "./LanguageToggle";
 
@@ -31,15 +31,10 @@ export function TopBar() {
           )}
         </div>
         {settings?.free_disk_bytes != null && settings.total_disk_bytes != null ? (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <HardDrive className="h-3.5 w-3.5" />
-            <span className="tabular-nums">
-              {t("topBar.freeOf", {
-                free: formatBytes(settings.free_disk_bytes),
-                total: formatBytes(settings.total_disk_bytes),
-              })}
-            </span>
-          </div>
+          <DiskUsageBar
+            freeBytes={settings.free_disk_bytes}
+            totalBytes={settings.total_disk_bytes}
+          />
         ) : null}
       </div>
       <div className="flex items-center gap-2">
