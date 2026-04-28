@@ -101,7 +101,7 @@ export function Step2ScopePage() {
       <Card>
         <CardContent className="grid gap-4 p-5 md:grid-cols-2">
           <div className="space-y-2">
-            <Label htmlFor="start_date">{t("step2.startMonth")}</Label>
+            <Label htmlFor="start_date">{t("step2.startDate")}</Label>
             <MonthPicker
               id="start_date"
               value={startMonth}
@@ -109,7 +109,7 @@ export function Step2ScopePage() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="end_date">{t("step2.endMonth")}</Label>
+            <Label htmlFor="end_date">{t("step2.endDate")}</Label>
             <MonthPicker
               id="end_date"
               value={endMonth}

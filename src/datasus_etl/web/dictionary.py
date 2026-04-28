@@ -4,6 +4,18 @@ Provides human-readable descriptions of columns in each subsystem,
 helping health researchers understand the data structure.
 """
 
+# 4 IBGE columns appended to the enriched `{subsystem}` VIEW (the one served
+# by /api/query/sql and `datasus db`). Any subsystem that declares
+# `RESIDENCE_MUNICIPALITY_COLUMN` on its DatasetConfig gets these columns at
+# query time; the dictionary endpoint merges them on top of the per-subsystem
+# *_COLUMNS dict so the "Colunas" UI tab also shows them.
+IBGE_ENRICHED_COLUMNS = {
+    "uf_res": "UF de residencia (enriquecido via IBGE)",
+    "municipio_res": "Nome do municipio de residencia (enriquecido via IBGE)",
+    "rg_imediata_res": "Regiao geografica imediata (enriquecido via IBGE)",
+    "rg_intermediaria_res": "Regiao geografica intermediaria (enriquecido via IBGE)",
+}
+
 # SIHSUS - Hospital Information System Column Descriptions
 # Based on SIHSUS_DUCKDB_SCHEMA from constants/sihsus_schema.py
 SIHSUS_COLUMNS = {
@@ -21,10 +33,8 @@ SIHSUS_COLUMNS = {
     "ident": "Identificador do tipo de AIH",
     "cep": "CEP do paciente",
     "munic_res": "Codigo IBGE do municipio de residencia",
-    "municipio_res": "Nome do municipio de residencia (enriquecido)",
-    "uf_res": "UF de residencia (enriquecido)",
-    "rg_imediata_res": "Regiao geografica imediata (enriquecido)",
-    "rg_intermediaria_res": "Regiao geografica intermediaria (enriquecido)",
+    # uf_res / municipio_res / rg_imediata_res / rg_intermediaria_res are
+    # appended dynamically via IBGE_ENRICHED_COLUMNS — see dictionary endpoint.
 
     # Personal data
     "nasc": "Data de nascimento do paciente",
@@ -165,63 +175,123 @@ SIHSUS_COLUMNS = {
 }
 
 # SIM - Mortality Information System Column Descriptions
+# Descriptions are derived from DATASUS SIM official documentation and the
+# inline annotations in datasets/sim/schema.py. They cover every column in
+# SIM_DUCKDB_SCHEMA so the UI's 'Colunas' panel never shows blank entries.
+# Note: DATASUS does not publish bairro/endereco fields for SIM (privacy).
 SIM_COLUMNS = {
-    # Identification
-    "uf": "UF de ocorrencia",
+    # ── Identification ──────────────────────────────────────────────
+    "uf": "UF de ocorrencia (sigla extraida do nome do arquivo)",
     "source_file": "Arquivo DBC de origem",
+    "origem": "Origem do registro",
 
-    # Deceased Information
-    "dtnasc": "Data de nascimento do falecido",
+    # ── Death certificate (DO) ───────────────────────────────────────
+    "tipobito": "Tipo de obito (1=fetal, 2=nao-fetal)",
     "dtobito": "Data do obito",
-    "idade": "Idade ao falecer",
-    "sexo": "Sexo (M/F)",
-    "racacor": "Raca/cor",
+    "horaobito": "Hora do obito (HH:MM)",
+    "natural": "Naturalidade (local de nascimento)",
+    "codmunnatu": "Codigo IBGE do municipio de naturalidade",
+    "dtnasc": "Data de nascimento do falecido",
+
+    # ── Demographics ────────────────────────────────────────────────
+    "idade": "Idade codificada (formato original DATASUS)",
+    "idade_valor": "Idade decodificada - valor numerico",
+    "idade_unidade": "Unidade da idade (minutos/horas/meses/anos/ignorado)",
+    "sexo": "Sexo (1=M, 2=F, 0/9=desconhecido)",
+    "racacor": "Raca/cor (1-5, 9=ignorado)",
     "estciv": "Estado civil",
-    "esc": "Escolaridade",
-    "ocup": "Ocupacao (CBO)",
-    "natural": "Naturalidade",
+    "esc": "Escolaridade (codificacao antiga)",
+    "esc2010": "Escolaridade (codificacao 2010)",
+    "seriescfal": "Serie escolar do falecido",
+    "ocup": "Ocupacao do falecido (CBO)",
 
-    # Geographic - Residence
+    # ── Residence / occurrence ──────────────────────────────────────
     "codmunres": "Codigo IBGE do municipio de residencia",
-    "baires": "Bairro de residencia",
-    "endres": "Endereco de residencia",
-
-    # Geographic - Occurrence
+    "lococor": "Local de ocorrencia (1=hospital, 2=outro, etc)",
+    "codestab": "Codigo CNES do estabelecimento de saude",
+    "estabdescr": "Descricao do estabelecimento (campo nao oficial, presente em alguns DBC)",
     "codmunocor": "Codigo IBGE do municipio de ocorrencia",
-    "lococor": "Local de ocorrencia (hospital, domicilio, via publica, etc)",
-    "codestab": "Codigo do estabelecimento de saude",
 
-    # Death Information
-    "tipobito": "Tipo de obito (fetal/nao-fetal)",
-    "causabas": "Causa basica (CID-10)",
-    "linhaa": "Linha A da DO - causa terminal",
-    "linhab": "Linha B da DO - causa consequencial",
-    "linhac": "Linha C da DO - causa consequencial",
-    "linhad": "Linha D da DO - causa antecedente",
-    "linhaii": "Linha II - outras condicoes",
+    # ── Mother (fetal/infant deaths) ────────────────────────────────
+    "idademae": "Idade da mae (obitos fetais/infantis)",
+    "escmae": "Escolaridade da mae",
+    "escmae2010": "Escolaridade da mae (codificacao 2010)",
+    "seriescmae": "Serie escolar da mae",
+    "ocupmae": "Ocupacao da mae (CBO)",
+    "qtdfilvivo": "Quantidade de filhos vivos",
+    "qtdfilmort": "Quantidade de filhos mortos",
+    "gravidez": "Tipo de gravidez (unica/dupla/tripla)",
+
+    # ── Cause of death (CID-10) ─────────────────────────────────────
+    "causabas": "Causa basica do obito (CID-10) - array",
+    "linhaa": "Linha A - causa imediata (CID-10) - array",
+    "linhab": "Linha B - causa intermediaria (CID-10) - array",
+    "linhac": "Linha C - causa intermediaria (CID-10) - array",
+    "linhad": "Linha D - causa antecedente (CID-10) - array",
+    "linhaii": "Parte II - condicoes contribuintes (CID-10) - array",
+
+    # ── Medical certification ───────────────────────────────────────
     "circobito": "Circunstancia do obito (acidente, suicidio, etc)",
-    "fonte": "Fonte de investigacao",
+    "acidtrab": "Acidente de trabalho (1=sim, 2=nao, 9=ignorado)",
+    "fonte": "Fonte de informacao",
+    "tppos": "Tipo de posicao/certificacao (1=sim, 2=nao)",
+    "dtinvestig": "Data da investigacao",
+    "causabas_o": "Causa basica original (antes da codificacao)",
+    "dtcadastro": "Data de cadastro no sistema",
+    "atestado": "Atestado medico (array de itens)",
+    "atestante": "Condicao do medico atestante",
+    "fonteinv": "Fonte da investigacao",
+    "dtrecebim": "Data de recebimento",
 
-    # Maternal/Fetal
-    "graession": "Semanas de gestacao",
+    # ── Pregnancy / childbirth ──────────────────────────────────────
+    "tpmorteoco": "Tipo de morte ocorrida (em relacao a gestacao)",
+    "semagestac": "Semanas de gestacao",
     "gestacao": "Duracao da gestacao",
     "parto": "Tipo de parto",
     "obitoparto": "Obito em relacao ao parto (antes/durante/depois)",
-    "peso": "Peso ao nascer (obitos fetais/infantis)",
-    "obitograv": "Obito durante gravidez",
+    "peso": "Peso ao nascer em gramas (obitos fetais/infantis)",
+    "obitograv": "Obito durante a gravidez",
     "obitopuerp": "Obito no puerperio",
-
-    # Medical Care
     "assistmed": "Houve assistencia medica",
+    "exame": "Houve exame medico",
+    "cirurgia": "Houve cirurgia",
     "necropsia": "Foi realizada necropsia",
-    "exame": "Tipo de exame",
 
-    # Administrative
-    "dtinvestig": "Data de investigacao",
-    "dtcadastro": "Data de cadastro no sistema",
-    "dtrecebim": "Data de recebimento",
+    # ── External causes / dates ─────────────────────────────────────
     "dtatestado": "Data do atestado",
+
+    # ── Lot / system metadata ───────────────────────────────────────
+    "numerolote": "Numero do lote",
+    "versaosist": "Versao do sistema",
+    "versaoscb": "Versao do SCB",
+    "contador": "Contador",
+    "difdata": "Diferenca de datas",
+    "nudiasobco": "Dias entre obito e comunicacao",
+    "nudiasobin": "Dias entre obito e investigacao",
     "dtcadinf": "Data de cadastro de informacoes",
+    "morteparto": "Morte em relacao ao parto",
+    "dtrecoriga": "Data original de recebimento",
+    "causamat": "Causa materna (array de CIDs)",
+    "escmaeagr1": "Escolaridade da mae agregada",
+    "escfalagr1": "Escolaridade do falecido agregada",
+    "dtcadinv": "Data de cadastro da investigacao",
+    "tpobitocor": "Tipo de obito ocorrido",
+    "dtconinv": "Data de conclusao da investigacao",
+    "fontes": "Fontes de informacao",
+    "tpresginfo": "Tipo de recuperacao da informacao",
+    "tpnivelinv": "Tipo/nivel da investigacao",
+    "nudiasinf": "Dias de informacao",
+    "dtconcaso": "Data de conclusao do caso",
+    "fontesinf": "Fontes adicionais de informacao (campo nao oficial)",
+    "stcodifica": "Status de codificacao (S=sim, N=nao)",
+    "codificado": "Codificado (S=sim, N=nao)",
+    "cb_pre": "Causa basica pre-codificacao",
+    "altcausa": "Causa alterada (1=sim, 2=nao)",
+    "comunsvoim": "Codigo do municipio do SVO/IML",
+
+    # ── Optional fields ─────────────────────────────────────────────
+    "stdoepidem": "DO de notificacao epidemiologica (1=sim, 0=nao)",
+    "stdonova": "Nova versao da DO (1=sim, 0=nao)",
 }
 
 # Column descriptions by subsystem

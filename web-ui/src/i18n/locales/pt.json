@@ -21,6 +21,10 @@
     "portuguese": "Português",
     "english": "English"
   },
+  "monthPicker": {
+    "year": "Ano",
+    "month": "Mês"
+  },
   "topBar": {
     "dataDir": "Diretório de dados:",
     "notConfigured": "não configurado",
@@ -31,7 +35,8 @@
     "download": "Download",
     "query": "Consulta",
     "settings": "Configurações",
-    "availableSubsystems": "Subsistemas disponíveis"
+    "collapse": "Recolher menu",
+    "expand": "Expandir menu"
   },
   "dashboard": {
     "title": "Painel",
@@ -84,12 +89,31 @@
     "configFile": "Arquivo de configuração",
     "subsystems": "Subsistemas",
     "dangerZone": "Zona de risco",
-    "dangerDesc": "Operações destrutivas — limpar caches, resetar armazenamento, etc. — viverão aqui. Nada para ver por enquanto.",
-    "resetSoon": "Resetar armazenamento local (em breve)",
+    "dangerDesc": "Operações destrutivas: removem dados em disco. Use com cuidado.",
+    "resetButton": "Resetar armazenamento local",
     "dataDirEmpty": "O diretório de dados não pode ficar vazio",
     "dataDirUpdated": "Diretório de dados atualizado",
     "updateFailed": "Falha ao atualizar",
-    "folderPickerFailed": "Seletor de pastas falhou"
+    "folderPickerFailed": "Seletor de pastas falhou",
+    "reset": {
+      "title": "Resetar armazenamento local",
+      "warning": "Esta operação é IRREVERSÍVEL. Todos os arquivos parquet dos subsistemas selecionados serão removidos permanentemente do disco. Você precisará baixar os dados novamente para restaurá-los.",
+      "selectWhat": "Selecione o que excluir",
+      "empty": "vazio",
+      "codePrompt": "Para confirmar, digite o código de 4 dígitos abaixo:",
+      "codeAriaLabel": "Código de confirmação",
+      "codeOk": "Código correto",
+      "codeMismatch": "Código incorreto",
+      "confirm_one": "Excluir {{count}} item",
+      "confirm_other": "Excluir {{count}} itens",
+      "confirm": "Excluir",
+      "deleting": "Excluindo…",
+      "successTitle_one": "{{count}} subsistema excluído",
+      "successTitle_other": "{{count}} subsistemas excluídos",
+      "successTitle": "Concluído",
+      "successDesc": "{{freed}} liberados ({{skipped}} ignorados)",
+      "failedTitle": "Falha ao resetar armazenamento"
+    }
   },
   "query": {
     "title": "Consulta",
@@ -117,7 +141,17 @@
     "noQueriesYet": "Nenhuma consulta ainda.",
     "queryFailed": "Consulta falhou",
     "exportedAs": "Exportado como {{format}}",
-    "exportFailed": "Falha ao exportar"
+    "exportFailed": "Falha ao exportar",
+    "findColumn": "Buscar coluna…",
+    "noColumnMatch": "Nenhuma coluna encontrada.",
+    "collapseSidebar": "Recolher",
+    "expandSidebar": "Expandir",
+    "fillPctTooltip": "{{pct}}% dos valores estão preenchidos",
+    "fillPctUnknown": "% preenchido ainda não calculado",
+    "fillPctApprox": "~{{pct}}% — limite superior baseado na coluna de junção. O valor real pode ser menor se houver códigos não cadastrados em ibge_locais.",
+    "distinctCountTooltip": "~{{count}} valores distintos. Clique para ver o histograma desta coluna.",
+    "distinctCountTooltipApprox": "~{{count}} valores distintos (limite superior, herdado de ibge_locais). Clique para ver o histograma desta coluna.",
+    "distinctCountUnknown": "Contagem de valores distintos ainda não calculada"
   },
   "wizard": {
     "title": "Assistente de download",
@@ -138,8 +172,8 @@
     "subtitle": "Defina um intervalo de datas (precisão mensal) e as UFs a incluir. Deixe UFs vazio para baixar todos os estados.",
     "simLagTitle": "Atraso de publicação do SIM",
     "simLagBody": "Os dados do SIM são publicados com cerca de 2 anos de atraso devido à revisão de codificação CID-10. Escolha um intervalo que termine pelo menos dois anos no passado para que o próximo passo encontre arquivos no FTP do DATASUS. Se a Estimativa retornar 0 arquivos, amplie o intervalo para trás.",
-    "startMonth": "Mês inicial",
-    "endMonth": "Mês final",
+    "startDate": "Data inicial",
+    "endDate": "Data final",
     "ufs": "Unidades federativas",
     "ufsAll": "Todas as UFs",
     "ufsCount": "{{count}} de {{total}} selecionadas",

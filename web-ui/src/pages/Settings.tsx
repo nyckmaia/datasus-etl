@@ -1,6 +1,6 @@
 import * as React from "react";
 import { toast } from "sonner";
-import { Save, Info, FolderOpen, AlertTriangle } from "lucide-react";
+import { Save, Info, FolderOpen, AlertTriangle, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ResetStorageDialog } from "@/components/ResetStorageDialog";
 import {
   useSettings,
   useUpdateDataDir,
@@ -27,6 +28,7 @@ export function SettingsPage() {
   const [dataDir, setDataDir] = React.useState<string>("");
   const [validation, setValidation] =
     React.useState<ValidatePathResponse | null>(null);
+  const [resetOpen, setResetOpen] = React.useState(false);
 
   React.useEffect(() => {
     if (settings.data?.data_dir) {
@@ -213,18 +215,27 @@ export function SettingsPage() {
 
       <Card className="border-destructive/40">
         <CardHeader>
-          <CardTitle className="text-base text-destructive">
+          <CardTitle className="flex items-center gap-2 text-base text-destructive">
+            <AlertTriangle className="h-4 w-4" />
             {t("settings.dangerZone")}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           <p className="text-muted-foreground">{t("settings.dangerDesc")}</p>
           <Separator />
-          <Button variant="destructive" size="sm" disabled>
-            {t("settings.resetSoon")}
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => setResetOpen(true)}
+            disabled={!settings.data?.data_dir_resolved}
+          >
+            <Trash2 className="h-4 w-4" />
+            {t("settings.resetButton")}
           </Button>
         </CardContent>
       </Card>
+
+      <ResetStorageDialog open={resetOpen} onOpenChange={setResetOpen} />
     </div>
   );
 }

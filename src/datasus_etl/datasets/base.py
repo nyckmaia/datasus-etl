@@ -30,6 +30,14 @@ class DatasetConfig(ABC):
     DESCRIPTION: ClassVar[str] = ""
     FILE_PREFIX: ClassVar[str] = ""
 
+    # Column in the raw `{name}_all` view holding the 6-digit IBGE residence
+    # municipality code. Used by the enriched `{name}` view to LEFT JOIN
+    # `ibge_locais.codigo_municipio_6_digitos` and add uf_res / municipio_res /
+    # rg_imediata_res / rg_intermediaria_res. Subsystems whose schema has no
+    # such column should leave this as None — the enriched view falls back to
+    # a plain alias of the raw view.
+    RESIDENCE_MUNICIPALITY_COLUMN: ClassVar[Optional[str]] = None
+
     @classmethod
     @abstractmethod
     def get_ftp_dirs(cls) -> list[dict]:

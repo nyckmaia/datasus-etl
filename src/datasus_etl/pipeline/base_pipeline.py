@@ -579,6 +579,21 @@ class DbfToParquetStage(Stage):
         tqdm.write(f"       Storage: {stats.total_files} Parquet files, "
                    f"{stats.total_size_bytes / (1024*1024):.1f} MB")
 
+        # Warm the column-stats cache used by /api/query/dictionary so the
+        # "Colunas" panel's fill-pct badges are instantly populated the next
+        # time the user opens the Query page. Best-effort: a failure here
+        # must not fail the pipeline — the endpoint will lazily recompute
+        # on demand if this didn't run.
+        try:
+            column_stats = parquet_manager.compute_column_stats()
+            parquet_manager.save_column_stats(column_stats)
+            tqdm.write(
+                f"       {SYM_CHECK} Column fill-pct stats cached "
+                f"({len(column_stats.get('columns', {}))} columns)"
+            )
+        except Exception as exc:  # noqa: BLE001
+            tqdm.write(f"       (column stats cache skipped: {exc})")
+
         # Mark stage progress complete
         context.mark_stage_progress_complete("dbf_to_parquet")
 

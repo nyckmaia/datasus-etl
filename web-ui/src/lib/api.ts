@@ -133,6 +133,30 @@ export interface TemplateItem {
 export interface DictionaryEntry {
   column: string;
   description: string;
+  // DuckDB SQL type as declared in the dataset schema. Empty string when
+  // unknown (e.g. column lives only in the dictionary file). Frontend maps
+  // this to a short abbreviation + color via lib/columnType.ts.
+  type: string;
+  // Percentage of NON-NULL values for this column (0–100, two decimals).
+  // null when the cache hasn't been computed yet OR when a chunk lacks
+  // statistics. Backend persists this as `_column_stats.json` next to the
+  // parquet partitions. Frontend maps this to a color/badge via
+  // lib/columnFillPct.ts.
+  fill_pct?: number | null;
+  // True for the 4 IBGE-enriched columns whose fill_pct is INHERITED from
+  // the residence-municipality join column (upper bound on JOIN success
+  // rate, not a direct measurement). UI renders these with a `~` prefix.
+  fill_pct_approx?: boolean;
+  // Approximate (HyperLogLog) count of distinct non-NULL values. Computed
+  // by DuckDB at cache-warming time and persisted alongside fill_pct.
+  // null when the cache is cold or the column lives in a JOIN-derived view
+  // (e.g. IBGE-enriched columns) where we don't compute it.
+  distinct_count?: number | null;
+  // True when distinct_count was inherited from a JOINED reference table
+  // (currently only the 4 IBGE-enriched columns, bounded above by
+  // ibge_locais's distinct values). UI swaps the `#` prefix for `~` to
+  // signal it's an upper bound.
+  distinct_count_approx?: boolean;
 }
 
 export interface ExportRequest {
@@ -155,6 +179,18 @@ export interface ValidatePathResponse {
   will_be_created: boolean;
   writable: boolean;
   error?: string;
+}
+
+export interface ResetStorageItem {
+  name: string;
+  path?: string | null;
+  freed_bytes: number;
+  skipped_reason?: string | null;
+}
+
+export interface ResetStorageResponse {
+  deleted: ResetStorageItem[];
+  skipped: ResetStorageItem[];
 }
 
 export class ApiError extends Error {
@@ -218,6 +254,13 @@ export const api = {
     return request("/api/settings/validate-path", {
       method: "POST",
       body: JSON.stringify({ path }),
+    });
+  },
+
+  resetStorage(subsystems: string[]): Promise<ResetStorageResponse> {
+    return request("/api/settings/reset-storage", {
+      method: "POST",
+      body: JSON.stringify({ subsystems }),
     });
   },
 

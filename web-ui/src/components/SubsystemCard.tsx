@@ -93,7 +93,7 @@ export function SubsystemCard({ summary, description }: SubsystemCardProps) {
 
         <div className="mt-4 flex items-center gap-2">
           <Button asChild size="sm" variant="secondary" className="flex-1">
-            <Link to="/query">
+            <Link to="/query" search={{ subsystem: summary.subsystem }}>
               <Database className="h-3.5 w-3.5" />
               Query
             </Link>

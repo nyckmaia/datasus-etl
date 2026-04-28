@@ -35,6 +35,10 @@ class SIMConfig(DatasetConfig):
     NAME: ClassVar[str] = "sim"
     DESCRIPTION: ClassVar[str] = "Sistema de Informacoes sobre Mortalidade"
     FILE_PREFIX: ClassVar[str] = "DO"  # Primary prefix (also matches DOR)
+    # SIM stores the residence-municipality IBGE code under `codmunres` (the raw
+    # DBF field name); SIHSUS uses `munic_res`. Both feed the same JOIN against
+    # ibge_locais.codigo_municipio_6_digitos.
+    RESIDENCE_MUNICIPALITY_COLUMN: ClassVar[Optional[str]] = "codmunres"
 
     # FTP directory structure for SIM data
     # SIM uses a different structure with CID9 (before 1996) and CID10 (1996+)

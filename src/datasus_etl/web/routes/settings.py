@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field
 
 from datasus_etl import __version__
 from datasus_etl.datasets.base import DatasetRegistry
-from datasus_etl.storage.paths import resolve_storage_root
+from datasus_etl.storage.paths import resolve_parquet_dir, resolve_storage_root
 from datasus_etl.web import user_config
 
 router = APIRouter()
@@ -268,3 +268,150 @@ async def validate_path(payload: ValidatePathRequest) -> ValidatePathResponse:
         will_be_created=not exists,
         writable=writable,
     )
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Danger zone — destructive deletion of the per-subsystem parquet folders
+# ──────────────────────────────────────────────────────────────────────────
+
+
+class ResetStorageRequest(BaseModel):
+    # Lowercase subsystem names (e.g. "sihsus", "sim") + the special value
+    # "ibge" for the IBGE reference parquet. The frontend gates this call
+    # behind a 4-digit confirmation code typed by the user; the server stays
+    # defensive about which paths it will rmtree (see _validate_target).
+    subsystems: list[str] = Field(..., min_length=1)
+
+
+class ResetStorageItem(BaseModel):
+    name: str
+    path: str | None = None
+    freed_bytes: int = 0
+    skipped_reason: str | None = None
+
+
+class ResetStorageResponse(BaseModel):
+    deleted: list[ResetStorageItem]
+    skipped: list[ResetStorageItem]
+
+
+def _allowed_subsystem_names() -> set[str]:
+    # IBGE is not a registered DatasetConfig (it's reference data, not an
+    # ETL pipeline), but it lives under datasus_db/ibge/ and the user can
+    # opt to wipe it from the same UI. Everything else must come from the
+    # registry so we never invent a path the rest of the app can't see.
+    return set(DatasetRegistry.list_available()) | {"ibge"}
+
+
+def _resolve_target_for(name: str, data_dir: Path, storage_root: Path) -> Path | None:
+    """Map a subsystem name to its on-disk folder, or None if outside root.
+
+    The resolved path is checked to live strictly inside ``storage_root``
+    (which is itself ``resolve_storage_root(data_dir).resolve()``). This is
+    a paranoid path-traversal guard — even though the input names come from
+    a fixed allow-list, future code paths that might tweak resolution
+    shouldn't be able to point this endpoint at, say, ``/`` or the user's
+    home directory.
+    """
+    if name == "ibge":
+        target = storage_root / "ibge"
+    else:
+        target = resolve_parquet_dir(data_dir, name)
+    try:
+        resolved = target.resolve()
+    except OSError:
+        return None
+    try:
+        resolved.relative_to(storage_root)
+    except ValueError:
+        return None
+    return resolved
+
+
+def _dir_size_bytes(path: Path) -> int:
+    total = 0
+    for f in path.rglob("*"):
+        try:
+            if f.is_file():
+                total += f.stat().st_size
+        except OSError:
+            continue
+    return total
+
+
+@router.post("/reset-storage", response_model=ResetStorageResponse)
+async def reset_storage(
+    payload: ResetStorageRequest, request: Request
+) -> ResetStorageResponse:
+    """Delete the per-subsystem parquet folders the user selected.
+
+    Irreversible. The frontend confirms intent with a typed-back 4-digit
+    code; this endpoint only enforces structural safety:
+
+    * a data dir must be configured;
+    * each name must be on the allow-list (registered subsystems + "ibge");
+    * each resolved target must live inside the configured storage root;
+    * non-existent targets are reported as skipped, not 500'd.
+    """
+    data_dir = _resolve_data_dir(request)
+    if data_dir is None:
+        raise HTTPException(
+            status_code=400, detail="No data directory configured."
+        )
+    storage_root = resolve_storage_root(data_dir).resolve()
+    if not storage_root.is_dir():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Storage root does not exist: {storage_root}",
+        )
+
+    allowed = _allowed_subsystem_names()
+    deleted: list[ResetStorageItem] = []
+    skipped: list[ResetStorageItem] = []
+
+    seen: set[str] = set()
+    for raw_name in payload.subsystems:
+        name = raw_name.strip().lower()
+        if name in seen:
+            continue
+        seen.add(name)
+
+        if name not in allowed:
+            skipped.append(
+                ResetStorageItem(name=name, skipped_reason="unknown subsystem")
+            )
+            continue
+
+        target = _resolve_target_for(name, data_dir, storage_root)
+        if target is None:
+            skipped.append(
+                ResetStorageItem(name=name, skipped_reason="outside storage root")
+            )
+            continue
+
+        if not target.exists():
+            skipped.append(
+                ResetStorageItem(
+                    name=name, path=str(target), skipped_reason="no data on disk"
+                )
+            )
+            continue
+
+        freed = _dir_size_bytes(target)
+        try:
+            shutil.rmtree(target)
+        except OSError as exc:
+            skipped.append(
+                ResetStorageItem(
+                    name=name,
+                    path=str(target),
+                    skipped_reason=f"could not delete: {exc}",
+                )
+            )
+            continue
+
+        deleted.append(
+            ResetStorageItem(name=name, path=str(target), freed_bytes=freed)
+        )
+
+    return ResetStorageResponse(deleted=deleted, skipped=skipped)

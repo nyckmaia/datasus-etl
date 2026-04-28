@@ -21,6 +21,10 @@
     "portuguese": "Português",
     "english": "English"
   },
+  "monthPicker": {
+    "year": "Year",
+    "month": "Month"
+  },
   "topBar": {
     "dataDir": "Data dir:",
     "notConfigured": "not configured",
@@ -31,7 +35,8 @@
     "download": "Download",
     "query": "Query",
     "settings": "Settings",
-    "availableSubsystems": "Available subsystems"
+    "collapse": "Collapse menu",
+    "expand": "Expand menu"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -84,12 +89,31 @@
     "configFile": "Config file",
     "subsystems": "Subsystems",
     "dangerZone": "Danger zone",
-    "dangerDesc": "Destructive operations — cleaning caches, resetting storage, etc. — will live here. Nothing to see for now.",
-    "resetSoon": "Reset local storage (coming soon)",
+    "dangerDesc": "Destructive operations that remove data from disk. Use with care.",
+    "resetButton": "Reset local storage",
     "dataDirEmpty": "Data directory cannot be empty",
     "dataDirUpdated": "Data directory updated",
     "updateFailed": "Update failed",
-    "folderPickerFailed": "Folder picker failed"
+    "folderPickerFailed": "Folder picker failed",
+    "reset": {
+      "title": "Reset local storage",
+      "warning": "This operation is IRREVERSIBLE. All parquet files for the selected subsystems will be permanently removed from disk. You will need to re-download the data to restore them.",
+      "selectWhat": "Select what to delete",
+      "empty": "empty",
+      "codePrompt": "To confirm, type the 4-digit code below:",
+      "codeAriaLabel": "Confirmation code",
+      "codeOk": "Code correct",
+      "codeMismatch": "Code mismatch",
+      "confirm_one": "Delete {{count}} item",
+      "confirm_other": "Delete {{count}} items",
+      "confirm": "Delete",
+      "deleting": "Deleting…",
+      "successTitle_one": "{{count}} subsystem deleted",
+      "successTitle_other": "{{count}} subsystems deleted",
+      "successTitle": "Done",
+      "successDesc": "{{freed}} freed ({{skipped}} skipped)",
+      "failedTitle": "Reset storage failed"
+    }
   },
   "query": {
     "title": "Query",
@@ -117,7 +141,17 @@
     "noQueriesYet": "No queries yet.",
     "queryFailed": "Query failed",
     "exportedAs": "Exported as {{format}}",
-    "exportFailed": "Export failed"
+    "exportFailed": "Export failed",
+    "findColumn": "Find column…",
+    "noColumnMatch": "No columns match.",
+    "collapseSidebar": "Collapse",
+    "expandSidebar": "Expand",
+    "fillPctTooltip": "{{pct}}% of values are filled",
+    "fillPctUnknown": "Fill % not yet computed",
+    "fillPctApprox": "~{{pct}}% — upper bound based on the join column. Actual value may be lower if some codes aren't present in ibge_locais.",
+    "distinctCountTooltip": "~{{count}} distinct values. Click to view the histogram of this column.",
+    "distinctCountTooltipApprox": "~{{count}} distinct values (upper bound, inherited from ibge_locais). Click to view the histogram of this column.",
+    "distinctCountUnknown": "Distinct value count not yet computed"
   },
   "wizard": {
     "title": "Download wizard",
@@ -138,8 +172,8 @@
     "subtitle": "Set a date range (month precision) and the federative units to include. Leave UFs empty to fetch every state.",
     "simLagTitle": "SIM publication lag",
     "simLagBody": "SIM data is published with a ~2 year delay due to ICD-10 coding review. Pick a date range that ends at least two years in the past so the next step can actually find files on the DATASUS FTP. If Estimate returns 0 files, widen the range backwards.",
-    "startMonth": "Start month",
-    "endMonth": "End month",
+    "startDate": "Start Date",
+    "endDate": "End Date",
     "ufs": "Federative units",
     "ufsAll": "All UFs",
     "ufsCount": "{{count}} of {{total}} selected",

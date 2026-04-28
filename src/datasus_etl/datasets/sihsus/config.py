@@ -25,6 +25,7 @@ class SIHSUSConfig(DatasetConfig):
     NAME: ClassVar[str] = "sihsus"
     DESCRIPTION: ClassVar[str] = "Sistema de Informacoes Hospitalares do SUS"
     FILE_PREFIX: ClassVar[str] = "RD"
+    RESIDENCE_MUNICIPALITY_COLUMN: ClassVar[Optional[str]] = "munic_res"
 
     # FTP directory structure for SIHSUS data
     FTP_DIRS: ClassVar[list[dict]] = [

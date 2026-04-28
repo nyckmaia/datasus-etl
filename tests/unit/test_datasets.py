@@ -172,3 +172,24 @@ class TestSIMConfig:
         assert "source_file" in schema
         assert "dtobito" in schema
         assert "causabas" in schema
+
+
+class TestResidenceMunicipalityColumn:
+    """The IBGE-enriched VIEW (cli `db` and /api/query/sql) JOINs ibge_locais
+    on each subsystem's residence-municipality column. The column name is per
+    dataset (SIHSUS uses `munic_res`, SIM uses `codmunres`) and must match an
+    actual column declared in the subsystem's schema — otherwise the enriched
+    VIEW fails to create at runtime.
+    """
+
+    def test_sihsus_join_column_is_munic_res(self):
+        assert SIHSUSConfig.RESIDENCE_MUNICIPALITY_COLUMN == "munic_res"
+
+    def test_sim_join_column_is_codmunres(self):
+        assert SIMConfig.RESIDENCE_MUNICIPALITY_COLUMN == "codmunres"
+
+    def test_sihsus_join_column_exists_in_schema(self):
+        assert SIHSUSConfig.RESIDENCE_MUNICIPALITY_COLUMN in SIHSUSConfig.get_schema()
+
+    def test_sim_join_column_exists_in_schema(self):
+        assert SIMConfig.RESIDENCE_MUNICIPALITY_COLUMN in SIMConfig.get_schema()

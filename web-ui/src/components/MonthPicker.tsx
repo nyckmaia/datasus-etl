@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useTranslation } from "react-i18next";
 
 import {
   Select,
@@ -8,20 +9,26 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-const MONTHS = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
-] as const;
+/**
+ * Build a 12-element list of month names in the active language. Uses
+ * `Intl.DateTimeFormat` so we don't have to maintain hand-translated lists
+ * — every locale the browser supports just works. Capitalises the first
+ * letter (browsers return "janeiro" for pt-BR; capitalised reads better in
+ * a dropdown without changing the locale's natural casing for the rest of
+ * the word).
+ */
+function buildLocalizedMonths(locale: string): string[] {
+  let formatter: Intl.DateTimeFormat;
+  try {
+    formatter = new Intl.DateTimeFormat(locale, { month: "long" });
+  } catch {
+    formatter = new Intl.DateTimeFormat("en", { month: "long" });
+  }
+  return Array.from({ length: 12 }, (_, i) => {
+    const name = formatter.format(new Date(2000, i, 1));
+    return name.charAt(0).toLocaleUpperCase(locale) + name.slice(1);
+  });
+}
 
 interface MonthPickerProps {
   id?: string;
@@ -46,6 +53,17 @@ export function MonthPicker({
   maxYear = new Date().getFullYear(),
   className,
 }: MonthPickerProps) {
+  const { i18n, t } = useTranslation();
+
+  // Map the i18n language code to a BCP-47 locale tag — `pt` → `pt-BR`
+  // (Brazilian Portuguese is what the rest of the app uses, see
+  // `setLanguage` in src/i18n/index.ts), everything else passes through.
+  const localeTag = i18n.language === "pt" ? "pt-BR" : i18n.language;
+  const months = React.useMemo(
+    () => buildLocalizedMonths(localeTag),
+    [localeTag],
+  );
+
   // Local state for partial selections. The parent `value` is the canonical
   // source of truth, but we hold onto half-picked state internally so the
   // user can pick the dropdowns in any order without the picked one
@@ -85,7 +103,7 @@ export function MonthPicker({
     <div id={id} className={`flex gap-2 ${className ?? ""}`}>
       <Select value={year} onValueChange={handleYear}>
         <SelectTrigger className="w-28">
-          <SelectValue placeholder="Year" />
+          <SelectValue placeholder={t("monthPicker.year")} />
         </SelectTrigger>
         <SelectContent>
           {years.map((y) => (
@@ -97,10 +115,10 @@ export function MonthPicker({
       </Select>
       <Select value={month} onValueChange={handleMonth}>
         <SelectTrigger className="w-40">
-          <SelectValue placeholder="Month" />
+          <SelectValue placeholder={t("monthPicker.month")} />
         </SelectTrigger>
         <SelectContent>
-          {MONTHS.map((name, i) => {
+          {months.map((name, i) => {
             const mm = String(i + 1).padStart(2, "0");
             return (
               <SelectItem key={mm} value={mm}>

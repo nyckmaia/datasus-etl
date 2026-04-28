@@ -2129,12 +2129,18 @@ def db(
     # Handle based on storage type
     if storage_type == "parquet":
         # Parquet mode: create in-memory DuckDB with VIEW
+        from datasus_etl.datasets.base import DatasetRegistry
         from datasus_etl.storage.parquet_manager import ParquetManager
 
         parquet_manager = ParquetManager(data_dir, source_lower)
         if not parquet_manager.exists():
             console.print(f"[red]Erro: Nenhum arquivo Parquet encontrado para {source_lower}[/red]")
             raise typer.Exit(1)
+
+        # Per-dataset residence-municipality column (e.g. SIHSUS → munic_res,
+        # SIM → codmunres). Used to LEFT JOIN ibge_locais.codigo_municipio_6_digitos.
+        dataset_config = DatasetRegistry.get(source_lower)
+        join_col = dataset_config.RESIDENCE_MUNICIPALITY_COLUMN if dataset_config else None
 
         stats = parquet_manager.get_storage_stats()
         console.print()
@@ -2165,7 +2171,7 @@ def db(
                 f"CREATE OR REPLACE VIEW {source_lower}_all AS SELECT * FROM read_parquet('{parquet_glob}', hive_partitioning=true);",
             ]
 
-            if has_ibge:
+            if has_ibge and join_col:
                 views_list.append("ibge_locais")
                 views_list.append(source_lower)
                 init_sql_parts.append(f"CREATE OR REPLACE VIEW ibge_locais AS SELECT * FROM read_parquet('{ibge_parquet}');")
@@ -2174,7 +2180,7 @@ SELECT s.*, i.sigla_uf AS uf_res, i.nome_municipio AS municipio_res,
        i.nome_regiao_geografica_imediata AS rg_imediata_res,
        i.nome_regiao_geografica_intermediaria AS rg_intermediaria_res
 FROM {source_lower}_all s
-LEFT JOIN ibge_locais i ON s.munic_res = i.codigo_municipio_6_digitos;""")
+LEFT JOIN ibge_locais i ON s.{join_col} = i.codigo_municipio_6_digitos;""")
             else:
                 views_list.append(source_lower)
                 init_sql_parts.append(f"CREATE OR REPLACE VIEW {source_lower} AS SELECT * FROM {source_lower}_all;")
@@ -2191,15 +2197,16 @@ LEFT JOIN ibge_locais i ON s.munic_res = i.codigo_municipio_6_digitos;""")
             conn = duckdb.connect(":memory:")
             parquet_manager.create_duckdb_view(conn, f"{source_lower}_all")
 
-            if has_ibge:
+            if has_ibge and join_col:
                 conn.execute(f"""
                     CREATE OR REPLACE VIEW ibge_locais AS
                     SELECT * FROM read_parquet('{ibge_parquet}')
                 """)
                 console.print("[dim]VIEW ibge_locais criada a partir de parquet/ibge/ibge_locais.parquet[/dim]")
 
-                # Create enriched VIEW with JOIN to ibge_locais
-                # Uses codigo_municipio_6_digitos for direct JOIN with munic_res
+                # Enriched VIEW with JOIN to ibge_locais. The JOIN column is
+                # per-dataset (SIHSUS → munic_res, SIM → codmunres) so the same
+                # 4 IBGE columns can be appended regardless of subsystem.
                 conn.execute(f"""
                     CREATE OR REPLACE VIEW {source_lower} AS
                     SELECT
@@ -2210,13 +2217,15 @@ LEFT JOIN ibge_locais i ON s.munic_res = i.codigo_municipio_6_digitos;""")
                         i.nome_regiao_geografica_intermediaria AS rg_intermediaria_res
                     FROM {source_lower}_all s
                     LEFT JOIN ibge_locais i
-                        ON s.munic_res = i.codigo_municipio_6_digitos
+                        ON s.{join_col} = i.codigo_municipio_6_digitos
                 """)
                 console.print(f"[dim]VIEW {source_lower} criada com JOIN de ibge_locais (colunas uf_res, municipio_res, rg_imediata_res, rg_intermediaria_res)[/dim]")
             else:
-                # No IBGE data, create simple VIEW alias
+                # No IBGE data (or subsystem doesn't declare a join column),
+                # create a simple VIEW alias of the raw `{source_lower}_all`.
                 conn.execute(f"CREATE VIEW {source_lower} AS SELECT * FROM {source_lower}_all")
-                console.print("[dim]Dica: Execute 'datasus generate-ibge-data' para habilitar o JOIN com dados do IBGE[/dim]")
+                if not has_ibge:
+                    console.print("[dim]Dica: Execute 'datasus generate-ibge-data' para habilitar o JOIN com dados do IBGE[/dim]")
 
             # Get available tables/views
             result = conn.execute("SHOW TABLES").fetchall()

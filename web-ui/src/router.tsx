@@ -70,10 +70,19 @@ const step4Route = createRoute({
   component: Step4RunPage,
 });
 
+interface QuerySearch {
+  subsystem?: string;
+}
+
 const queryRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "query",
   component: QueryPage,
+  validateSearch: (search: Record<string, unknown>): QuerySearch => {
+    const s = search.subsystem;
+    if (typeof s === "string" && s.length > 0) return { subsystem: s };
+    return {};
+  },
 });
 
 const settingsRoute = createRoute({

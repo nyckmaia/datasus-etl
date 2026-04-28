@@ -26,3 +26,15 @@ export function usePickDirectory() {
     mutationFn: () => api.pickDirectory(),
   });
 }
+
+export function useResetStorage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (subsystems: string[]) => api.resetStorage(subsystems),
+    // After deletion every Dashboard / Query view that depends on file
+    // counts is stale — invalidate `stats` so totals/per-UF maps refresh.
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["stats"] });
+    },
+  });
+}
