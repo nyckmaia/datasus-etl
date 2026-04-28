@@ -14,6 +14,7 @@ import {
   PanelRightOpen,
   Search,
   Columns3,
+  Wand2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
@@ -51,6 +52,7 @@ import { ColumnFillBadge } from "@/components/ColumnFillBadge";
 import { ColumnFillBar } from "@/components/ColumnFillBar";
 import { ColumnDistinctBadge } from "@/components/ColumnDistinctBadge";
 import { QueryTabsBar, type QueryTab } from "@/components/QueryTabsBar";
+import { QueryBuilderPanel } from "@/components/QueryBuilderPanel";
 import { api } from "@/lib/api";
 import type { SqlResult } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -161,6 +163,9 @@ export function QueryPage() {
   const [history, setHistory] = React.useState<HistoryItem[]>([]);
   const [limit, setLimit] = React.useState<number>(1000);
   const [columnFilter, setColumnFilter] = React.useState<string>("");
+  // Visual question builder — opens a Sheet panel; on Apply it writes the
+  // compiled SQL into the active tab via `replaceSql`.
+  const [builderOpen, setBuilderOpen] = React.useState<boolean>(false);
 
   // Defensive: if the persisted active id no longer matches a tab (or was
   // never set on a fresh install), snap to the first tab on first render.
@@ -564,6 +569,16 @@ LIMIT 100;`;
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setBuilderOpen(true)}
+                  disabled={!subsystem || (dictionary.data?.length ?? 0) === 0}
+                  title={t("query.builder.openHint")}
+                >
+                  <Wand2 className="h-3.5 w-3.5" />
+                  {t("query.builder.openLabel")}
+                </Button>
                 <Button size="sm" onClick={onRun} disabled={isActiveRunning}>
                   <Play className="h-3.5 w-3.5" />
                   {isActiveRunning ? t("query.running") : t("query.run")}
@@ -607,6 +622,20 @@ LIMIT 100;`;
               />
             </div>
           </Card>
+
+          <QueryBuilderPanel
+            // Keyed on subsystem so the panel's per-subsystem
+            // useLocalStorage hooks remount with the right keys when the
+            // user switches subsystems (each subsystem keeps an independent
+            // builder workspace).
+            key={`builder-${subsystem || "none"}`}
+            open={builderOpen}
+            onOpenChange={setBuilderOpen}
+            subsystem={subsystem}
+            columns={dictionary.data ?? []}
+            defaultLimit={limit}
+            onApply={(sql) => replaceSql(sql)}
+          />
 
           <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
             <div className="flex items-center justify-between border-b px-3 py-2 text-xs">

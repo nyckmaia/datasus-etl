@@ -163,6 +163,58 @@
       "newTab": "New query tab",
       "close": "Close tab",
       "rename": "Rename tab"
+    },
+    "builder": {
+      "openLabel": "Builder",
+      "openHint": "Visually compose a query without writing SQL",
+      "title": "Question Builder",
+      "subtitle": "Pick columns, aggregations, filters and ordering. The generated SQL is written into the active tab.",
+      "columnsLabel": "Columns",
+      "columnsHint": "Pick what to project. Each column can be aggregated.",
+      "addColumnPlaceholder": "Add a column…",
+      "removeColumn": "Remove column",
+      "groupByLabel": "Group by",
+      "groupByHint": "Used when at least one column is aggregated.",
+      "groupByEmpty": "Select non-aggregated columns above to enable grouping.",
+      "filtersLabel": "Filters (WHERE)",
+      "filtersHint": "Combine rules with AND/OR. Leave empty for no filter.",
+      "sortLabel": "Sort",
+      "sortHint": "Optional. Sorts the results by a projected column or alias.",
+      "sortPlaceholder": "Select a column…",
+      "limitLabel": "Limit",
+      "limitHint": "Maximum rows the query returns.",
+      "previewLabel": "Live SQL preview",
+      "previewHint": "This is exactly what will be written into the active tab on Apply.",
+      "apply": "Apply",
+      "aggregations": {
+        "none": "(no aggregation)",
+        "count": "COUNT",
+        "count_distinct": "COUNT DISTINCT",
+        "sum": "SUM",
+        "avg": "AVG",
+        "min": "MIN",
+        "max": "MAX"
+      },
+      "errors": {
+        "subsystem": {
+          "required": "Pick a subsystem before composing the query."
+        },
+        "subsystem.required": "Pick a subsystem before composing the query.",
+        "projections": {
+          "empty": "Add at least one column."
+        },
+        "projections.empty": "Add at least one column.",
+        "projection": {
+          "missingGroupBy": "Column \"{{column}}\" must be aggregated or added to GROUP BY."
+        },
+        "projection.missingGroupBy": "Column \"{{column}}\" must be aggregated or added to GROUP BY.",
+        "groupBy": {
+          "conflictsWithAgg": "Column \"{{column}}\" can't be both aggregated and in GROUP BY.",
+          "noAggregation": "GROUP BY without any aggregation has no effect — consider removing it or aggregating a column."
+        },
+        "groupBy.conflictsWithAgg": "Column \"{{column}}\" can't be both aggregated and in GROUP BY.",
+        "groupBy.noAggregation": "GROUP BY without any aggregation has no effect — consider removing it or aggregating a column."
+      }
     }
   },
   "wizard": {

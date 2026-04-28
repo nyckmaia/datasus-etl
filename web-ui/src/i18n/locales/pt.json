@@ -163,6 +163,58 @@
       "newTab": "Nova aba de consulta",
       "close": "Fechar aba",
       "rename": "Renomear aba"
+    },
+    "builder": {
+      "openLabel": "Construtor",
+      "openHint": "Monte uma consulta visualmente, sem escrever SQL",
+      "title": "Construtor de Consulta",
+      "subtitle": "Escolha colunas, agregações, filtros e ordenação. O SQL gerado é gravado na aba ativa.",
+      "columnsLabel": "Colunas",
+      "columnsHint": "Selecione o que projetar. Cada coluna pode ser agregada.",
+      "addColumnPlaceholder": "Adicionar uma coluna…",
+      "removeColumn": "Remover coluna",
+      "groupByLabel": "Agrupar por",
+      "groupByHint": "Usado quando pelo menos uma coluna é agregada.",
+      "groupByEmpty": "Selecione colunas não-agregadas acima para habilitar agrupamento.",
+      "filtersLabel": "Filtros (WHERE)",
+      "filtersHint": "Combine regras com E/OU. Deixe vazio para sem filtro.",
+      "sortLabel": "Ordenação",
+      "sortHint": "Opcional. Ordena os resultados por uma coluna projetada ou alias.",
+      "sortPlaceholder": "Selecione uma coluna…",
+      "limitLabel": "Limite",
+      "limitHint": "Máximo de linhas retornadas.",
+      "previewLabel": "Pré-visualização SQL",
+      "previewHint": "É exatamente o que será gravado na aba ativa ao Aplicar.",
+      "apply": "Aplicar",
+      "aggregations": {
+        "none": "(sem agregação)",
+        "count": "COUNT",
+        "count_distinct": "COUNT DISTINCT",
+        "sum": "SUM",
+        "avg": "AVG",
+        "min": "MIN",
+        "max": "MAX"
+      },
+      "errors": {
+        "subsystem": {
+          "required": "Escolha um subsistema antes de montar a consulta."
+        },
+        "subsystem.required": "Escolha um subsistema antes de montar a consulta.",
+        "projections": {
+          "empty": "Adicione pelo menos uma coluna."
+        },
+        "projections.empty": "Adicione pelo menos uma coluna.",
+        "projection": {
+          "missingGroupBy": "A coluna \"{{column}}\" precisa ser agregada ou adicionada ao GROUP BY."
+        },
+        "projection.missingGroupBy": "A coluna \"{{column}}\" precisa ser agregada ou adicionada ao GROUP BY.",
+        "groupBy": {
+          "conflictsWithAgg": "A coluna \"{{column}}\" não pode ser agregada e também estar no GROUP BY.",
+          "noAggregation": "GROUP BY sem nenhuma agregação não tem efeito — considere remover ou agregar uma coluna."
+        },
+        "groupBy.conflictsWithAgg": "A coluna \"{{column}}\" não pode ser agregada e também estar no GROUP BY.",
+        "groupBy.noAggregation": "GROUP BY sem nenhuma agregação não tem efeito — considere remover ou agregar uma coluna."
+      }
     }
   },
   "wizard": {

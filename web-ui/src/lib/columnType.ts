@@ -55,6 +55,26 @@ const STYLES: Record<ColumnTypeAbbrev, string> = {
     "bg-muted text-muted-foreground ring-1 ring-inset ring-border/60",
 };
 
+// Aggregation eligibility. Used by the visual Question Builder so the UI
+// only offers aggregations that DuckDB will actually evaluate without
+// raising a type error (SUM on VARCHAR, etc.).
+export function isNumericType(rawType: string | undefined): boolean {
+  const { abbrev } = abbreviateColumnType(rawType);
+  return abbrev === "int" || abbrev === "float";
+}
+
+export function isComparableType(rawType: string | undefined): boolean {
+  const { abbrev } = abbreviateColumnType(rawType);
+  return (
+    abbrev === "int" ||
+    abbrev === "float" ||
+    abbrev === "date" ||
+    abbrev === "time" ||
+    abbrev === "ts" ||
+    abbrev === "str"
+  );
+}
+
 export function abbreviateColumnType(rawType: string | undefined): ColumnTypeMeta {
   const fullType = (rawType ?? "").trim();
   const upper = fullType.toUpperCase();
