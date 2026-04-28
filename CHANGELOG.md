@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.15] - 2026-04-28
+
+### Added
+- add visual query builder component with SQL generation capabilities
+- add IBGE parquet generation and ensure its existence before pipeline runs
+
 ## [0.1.13] - 2026-04-28
 
 ### Added
