@@ -379,7 +379,9 @@ class ParquetManager:
                 CREATE OR REPLACE VIEW {view_name} AS
                 SELECT * FROM read_parquet(
                     '{glob_pattern}',
-                    hive_partitioning=true
+                    union_by_name=true,
+                    hive_partitioning=true,
+                    filename=true
                 )
                 WHERE uf IN ({uf_values})
             """
@@ -389,7 +391,9 @@ class ParquetManager:
                 CREATE OR REPLACE VIEW {view_name} AS
                 SELECT * FROM read_parquet(
                     '{glob_pattern}',
-                    hive_partitioning=true
+                    union_by_name=true,
+                    hive_partitioning=true,
+                    filename=true
                 )
             """
 
