@@ -185,6 +185,17 @@
     "distinctCountTooltip": "~{{count}} valores distintos. Clique para ver o histograma desta coluna.",
     "distinctCountTooltipApprox": "~{{count}} valores distintos (limite superior, herdado de ibge_locais). Clique para ver o histograma desta coluna.",
     "distinctCountUnknown": "Contagem de valores distintos ainda não calculada",
+    "tree": {
+      "title": "Catálogo",
+      "subsystem": "Subsistema",
+      "views": "Visões",
+      "columns": "Colunas",
+      "mainView": "Principal",
+      "dimView": "Dim",
+      "findColumn": "Buscar coluna, visão ou subsistema…",
+      "noMatch": "Nenhum resultado.",
+      "empty": "Nenhum dado baixado — faça um download para popular o catálogo."
+    },
     "tabs": {
       "newTab": "Nova aba de consulta",
       "close": "Fechar aba",

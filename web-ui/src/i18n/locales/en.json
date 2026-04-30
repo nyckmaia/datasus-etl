@@ -185,6 +185,17 @@
     "distinctCountTooltip": "~{{count}} distinct values. Click to view the histogram of this column.",
     "distinctCountTooltipApprox": "~{{count}} distinct values (upper bound, inherited from ibge_locais). Click to view the histogram of this column.",
     "distinctCountUnknown": "Distinct value count not yet computed",
+    "tree": {
+      "title": "Catalog",
+      "subsystem": "Subsystem",
+      "views": "Views",
+      "columns": "Columns",
+      "mainView": "Main",
+      "dimView": "Dim",
+      "findColumn": "Find a column, view or subsystem…",
+      "noMatch": "No matches.",
+      "empty": "No data downloaded yet — run a download to populate the catalog."
+    },
     "tabs": {
       "newTab": "New query tab",
       "close": "Close tab",
