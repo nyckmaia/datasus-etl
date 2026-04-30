@@ -6,6 +6,7 @@ export type {
   SettingsResponse,
   SubsystemSummary,
   UfBreakdown,
+  UfEstimate,
   TimelinePoint,
   SubsystemDetail,
   EstimateRequest,

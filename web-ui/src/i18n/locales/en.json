@@ -326,7 +326,19 @@
     "reEstimate": "Re-estimate",
     "startDownload": "Start download",
     "starting": "Starting…",
-    "failedToStart": "Failed to start"
+    "failedToStart": "Failed to start",
+    "perUf": {
+      "title": "Details per UF",
+      "rowCountSuffix": "UFs",
+      "tableUf": "UF",
+      "tableStart": "Start Date",
+      "tableEnd": "End Date",
+      "tableDataGap": "Data Gap",
+      "tableDataGapTooltip": "Missing months between Start Date and End Date in your local data — indicates non-contiguous downloads.",
+      "tablePeriodToDownload": "Period to Download",
+      "tableUpdatedEnd": "Updated End Date",
+      "warnGap": "Non-contiguous data — there are gaps between your earliest and latest months for this UF."
+    }
   },
   "step4": {
     "title": "Running",

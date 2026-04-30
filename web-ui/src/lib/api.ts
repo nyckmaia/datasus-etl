@@ -66,6 +66,16 @@ export interface UfBreakdown {
   row_count: number | null;
   first_period: string | null;
   last_period: string | null;
+  missing_months: number;
+}
+
+export interface UfEstimate {
+  uf: string;
+  file_count: number;
+  download_bytes: number;
+  storage_bytes: number;
+  ftp_first_period: string | null;
+  ftp_last_period: string | null;
 }
 
 export interface TimelinePoint {
@@ -98,6 +108,7 @@ export interface EstimateResponse {
   total_download_bytes: number;
   estimated_duckdb_bytes: number;
   estimated_csv_bytes: number;
+  per_uf: UfEstimate[];
 }
 
 export interface StartRequest extends EstimateRequest {

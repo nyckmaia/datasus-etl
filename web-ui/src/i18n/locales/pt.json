@@ -326,7 +326,19 @@
     "reEstimate": "Re-estimar",
     "startDownload": "Iniciar download",
     "starting": "Iniciando…",
-    "failedToStart": "Falha ao iniciar"
+    "failedToStart": "Falha ao iniciar",
+    "perUf": {
+      "title": "Detalhes por UF",
+      "rowCountSuffix": "UFs",
+      "tableUf": "UF",
+      "tableStart": "Data Inicial",
+      "tableEnd": "Data Final",
+      "tableDataGap": "Lacuna de Dados",
+      "tableDataGapTooltip": "Meses faltantes entre Data Inicial e Data Final nos seus dados locais — indica downloads não-contíguos.",
+      "tablePeriodToDownload": "Período a Baixar",
+      "tableUpdatedEnd": "Data Final Atualizada",
+      "warnGap": "Dados não-contíguos — há lacunas entre o mês mais antigo e o mais recente para esta UF."
+    }
   },
   "step4": {
     "title": "Em execução",

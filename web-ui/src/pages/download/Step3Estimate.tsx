@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, Play, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Play, AlertTriangle, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 
@@ -9,10 +9,20 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { api } from "@/lib/api";
 import type { EstimateResponse } from "@/lib/api";
-import { formatBytes, formatNumber } from "@/lib/format";
+import { formatBytes, formatNumber, formatYearsMonths, monthsBetween } from "@/lib/format";
 import { useSettings } from "@/hooks/useSettings";
+import { useSubsystemDetail } from "@/hooks/useStats";
+import { cn } from "@/lib/utils";
 import { useWizard } from "../DownloadWizard";
 
 export function Step3EstimatePage() {
@@ -22,6 +32,7 @@ export function Step3EstimatePage() {
   const navigate = useNavigate();
   const [estimate, setEstimate] = React.useState<EstimateResponse | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [perUfOpen, setPerUfOpen] = React.useState(false);
 
   const estimateMutation = useMutation({
     mutationFn: () => {
@@ -72,6 +83,43 @@ export function Step3EstimatePage() {
   const free = settings.data?.free_disk_bytes ?? null;
   const needed = estimate?.estimated_duckdb_bytes ?? 0;
   const enoughDisk = free == null ? true : free > needed;
+
+  const subsystemDetail = useSubsystemDetail(state.subsystem);
+  const localPerUf = subsystemDetail.data?.per_uf ?? [];
+  const ftpPerUf = estimate?.per_uf ?? [];
+
+  // Combines local missing-months gaps (from /api/stats/subsystem/{name}) with
+  // FTP availability per UF (from /api/pipeline/estimate.per_uf).
+  const perUfRows = React.useMemo(() => {
+    const ufSet = new Set<string>();
+    for (const r of localPerUf) ufSet.add(r.uf);
+    for (const r of ftpPerUf) ufSet.add(r.uf);
+    const rows = Array.from(ufSet).sort().map((uf) => {
+      const local = localPerUf.find((r) => r.uf === uf);
+      const ftp = ftpPerUf.find((r) => r.uf === uf);
+      const startDate = local?.first_period ?? null;
+      const endDate = local?.last_period ?? null;
+      const dataGapMonths = local?.missing_months ?? 0;
+      // Period to Download is the FTP-side span being added.
+      const periodToDownloadMonths = monthsBetween(
+        ftp?.ftp_first_period ?? null,
+        ftp?.ftp_last_period ?? null,
+      );
+      // Updated End Date = max(local end, ftp end). Lexicographic comparison
+      // works because both are "YYYY-MM" strings.
+      const candidates = [endDate, ftp?.ftp_last_period ?? null].filter(Boolean) as string[];
+      const updatedEndDate = candidates.length ? candidates.sort().at(-1)! : null;
+      return {
+        uf,
+        startDate,
+        endDate,
+        dataGapMonths,
+        periodToDownloadMonths,
+        updatedEndDate,
+      };
+    });
+    return rows;
+  }, [localPerUf, ftpPerUf]);
 
   return (
     <div className="space-y-5">
@@ -161,6 +209,84 @@ export function Step3EstimatePage() {
             </div>
           ) : null}
         </CardContent>
+      </Card>
+
+      {/* Collapsible per-UF detail table — combines local missing-months gaps
+          (from /api/stats/subsystem/{name}) with FTP availability per UF
+          (from /api/pipeline/estimate.per_uf). Default collapsed. */}
+      <Card className="overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setPerUfOpen((v) => !v)}
+          className="flex w-full items-center justify-between border-b px-4 py-3 text-left transition-colors hover:bg-secondary/30"
+        >
+          <span className="flex items-center gap-2 text-sm font-semibold">
+            <ChevronRight
+              className={cn(
+                "h-4 w-4 transition-transform",
+                perUfOpen && "rotate-90",
+              )}
+            />
+            {t("step3.perUf.title")}
+          </span>
+          <span className="text-xs text-muted-foreground">
+            {perUfRows.length} {t("step3.perUf.rowCountSuffix", "UF(s)")}
+          </span>
+        </button>
+        {perUfOpen ? (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("step3.perUf.tableUf")}</TableHead>
+                  <TableHead>{t("step3.perUf.tableStart")}</TableHead>
+                  <TableHead>{t("step3.perUf.tableEnd")}</TableHead>
+                  <TableHead>{t("step3.perUf.tableDataGap")}</TableHead>
+                  <TableHead>{t("step3.perUf.tablePeriodToDownload")}</TableHead>
+                  <TableHead>{t("step3.perUf.tableUpdatedEnd")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {perUfRows.map((row) => (
+                  <TableRow
+                    key={row.uf}
+                    className={cn(
+                      row.dataGapMonths > 0
+                        && "bg-amber-500/10 hover:bg-amber-500/15",
+                    )}
+                    title={
+                      row.dataGapMonths > 0
+                        ? t("step3.perUf.warnGap")
+                        : undefined
+                    }
+                  >
+                    <TableCell className="font-mono font-medium">{row.uf}</TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {row.startDate ?? "-"}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {row.endDate ?? "-"}
+                    </TableCell>
+                    <TableCell
+                      className={cn(
+                        "text-xs",
+                        row.dataGapMonths > 0 && "font-medium text-amber-700 dark:text-amber-400",
+                      )}
+                    >
+                      {formatYearsMonths(row.dataGapMonths)}
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {formatYearsMonths(row.periodToDownloadMonths)}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {row.updatedEndDate ?? "-"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        ) : null}
       </Card>
 
       <div className="flex items-center justify-between">
