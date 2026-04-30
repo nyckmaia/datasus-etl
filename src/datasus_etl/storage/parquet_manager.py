@@ -354,8 +354,12 @@ class ParquetManager:
     ) -> None:
         """Create a DuckDB VIEW from Parquet files.
 
-        Creates a VIEW that reads from the Parquet files using
-        read_parquet() with hive_partitioning enabled.
+        Reads the partition tree with ``read_parquet()`` using
+        ``hive_partitioning``, ``union_by_name``, and ``filename`` flags.
+        The view exposes a ``filename`` virtual column with the source
+        parquet path, and tolerates schema drift across partitions
+        (columns that appear in some files and not others are unified by
+        name and surfaced as nullable).
 
         Args:
             conn: DuckDB connection

@@ -64,7 +64,6 @@ def test_view_exposes_filename_virtual_column(drifted_subsystem: Path) -> None:
         assert "filename" in cols, (
             "filename=true should add a virtual column with the parquet path"
         )
-        # The filename column should be populated, not all NULL.
         non_null = con.execute(
             "SELECT COUNT(*) FROM sihsus_all WHERE filename IS NOT NULL"
         ).fetchone()[0]
