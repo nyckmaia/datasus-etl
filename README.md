@@ -63,6 +63,7 @@ Occupational Safety and Health) —
 - Python API for integration into larger pipelines
 - Interactive DuckDB shell for ad-hoc SQL
 - Automatic cleanup of temporary DBC/DBF files
+- Row provenance via the `filename` virtual column — every row carries the source parquet path it came from.
 
 ## Installation
 
@@ -221,8 +222,10 @@ external dependencies for the end user. Pages:
   execution). The *Scope* step uses a `MonthPicker`, pre-fills the end
   date with the current month, and shows existing coverage per UF
   (first/last period already downloaded).
-- **Query** — a Monaco SQL editor with predefined templates and a column
-  dictionary. Export results to CSV or Excel.
+- **Query** — a Monaco SQL editor with templates, query history, and a
+  hierarchical schema browser (Subsystem → Views → Columns) showing every
+  subsystem's views and columns at once — cross-subsystem JOIN/UNION queries
+  are first-class. Export results to CSV or Excel.
 - **Settings** — persisted data directory at
   `~/.config/datasus-etl/config.toml`. Ships a native folder picker
   (tkinter in a subprocess so it does not block the uvicorn event loop)

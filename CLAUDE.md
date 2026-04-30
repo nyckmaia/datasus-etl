@@ -17,7 +17,7 @@ src/datasus_etl/
   config.py                   # PipelineConfig.create(...)
   core/context.py             # PipelineContext: shared state + progress callback
   datasets/
-    base.py                   # DatasetConfig ABC (schema, parse_filename, file_prefix)
+    base.py                   # DatasetConfig ABC + ViewSpec (schema, parse_filename, file_prefix, views)
     sihsus/, sim/             # Per-subsystem schema + filename parser + SQL
   download/ftp_downloader.py  # FTP client + date-range helpers
   pipeline/
@@ -28,7 +28,7 @@ src/datasus_etl/
   storage/
     paths.py                  # resolve_parquet_dir — single source of truth (see "Paths" below)
     migration.py              # Detects + migrates the legacy double-nested layout
-    parquet_manager.py        # Reads/writes partitioned parquet, builds DuckDB VIEWs
+    parquet_manager.py        # Reads/writes partitioned parquet (union_by_name + filename flags), builds DuckDB VIEWs
     duckdb_query_engine.py    # SQL facade over the parquet store
   transform/
     converters/dbc_to_dbf.py  # Pure-Python DBC → DBF
@@ -106,7 +106,7 @@ Step 2 of the wizard. Don't assume "missing files" means a bug.
 ## Backend stack highlights
 
 - **FastAPI** app factory in `web/server.py`. Mounts `/api/settings`,
-  `/api/stats`, `/api/pipeline`, `/api/query`, `/api/export`.
+  `/api/stats`, `/api/pipeline`, `/api/query` (with `/schema` for the catalog tree), `/api/export`.
 - **SSE** progress: `web/runtime.py` bridges the synchronous
   `PipelineContext` progress callback to an asyncio queue, streamed from
   `/api/pipeline/progress`. The React hook `usePipelineRun` consumes it.
@@ -115,6 +115,18 @@ Step 2 of the wizard. Don't assume "missing files" means a bug.
   "Tk must run on the main thread" failure mode when called from uvicorn
   workers (especially on macOS). Keep that subprocess pattern if you
   touch it.
+- **SQL editor is read-only**: `web/routes/query.py::_validate_sql` strips
+  block (`/* */`) and line (`-- ...`) comments before checking, then
+  enforces an allowlist (`SELECT`/`WITH` only) and a denylist of mutating
+  keywords (INSERT, UPDATE, DELETE, DROP, CREATE, ALTER, ATTACH, COPY,
+  PRAGMA, EXPORT, IMPORT, REPLACE, TRUNCATE, MERGE, UPSERT, CALL, INSTALL,
+  LOAD, SET, USE, DETACH, CHECKPOINT, VACUUM, GRANT, REVOKE, BEGIN,
+  COMMIT, ROLLBACK). Applied to both `/api/query/sql` and `/api/export`.
+- **Hierarchical schema endpoint**: `GET /api/query/schema` returns the
+  full SUBSYSTEM → VIEWS → COLUMNS tree consumed by the `/query` page's
+  left sidebar. Discovery convention: main view = subsystem name, dim
+  views = `{subsystem}_dim_*`, raw `{subsystem}_all` is hidden. Override
+  via `DatasetConfig.views: list[ViewSpec]` (see `datasets/base.py`).
 - **Path validation**: `/api/settings/validate-path` returns metadata
   (exists, writable, has data) so the UI can warn before saving.
 - **Settings persistence**: `~/.config/datasus-etl/config.toml` via
