@@ -445,6 +445,36 @@ def _columns_for_view(
     for row in describe_rows:
         col_name = row[0]
         col_type = (row[1] or "").upper() if len(row) > 1 else ""
+        if col_name == "filename":
+            # DuckDB-virtual column added by `read_parquet(filename=true)`.
+            # Always populated (100% fill) and has exactly one distinct value
+            # per source parquet — counted from the filesystem so this stays
+            # cheap regardless of dataset size.
+            file_count: int | None = None
+            if data_dir:
+                try:
+                    fname_mgr = ParquetManager(data_dir, subsystem)
+                    if fname_mgr.parquet_dir.exists():
+                        file_count = sum(
+                            1 for _ in fname_mgr.parquet_dir.rglob("*.parquet")
+                        )
+                except Exception:  # noqa: BLE001 — best-effort; UI degrades to "?"
+                    file_count = None
+            out.append(
+                SchemaColumn(
+                    column=col_name,
+                    description=descriptions.get(
+                        col_name,
+                        "Source parquet file path (DuckDB virtual column)",
+                    ),
+                    type=col_type or "VARCHAR",
+                    fill_pct=100.0,
+                    fill_pct_approx=False,
+                    distinct_count=file_count,
+                    distinct_count_approx=False,
+                )
+            )
+            continue
         if col_name in IBGE_ENRICHED_TO_SOURCE:
             source_col = IBGE_ENRICHED_TO_SOURCE[col_name]
             ibge_distinct = ibge_distincts.get(source_col)

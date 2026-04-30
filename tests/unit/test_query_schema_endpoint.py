@@ -105,3 +105,18 @@ def test_schema_columns_carry_fill_and_type(client: TestClient) -> None:
     assert "type" in sample
     assert "fill_pct" in sample
     assert "distinct_count" in sample
+
+
+def test_filename_column_has_exact_stats(client: TestClient) -> None:
+    """The DuckDB-virtual `filename` column is always populated and has
+    one distinct value per source parquet — surface those exact numbers
+    so the badges show real values instead of the muted '?' marker."""
+    body = client.get("/api/query/schema").json()
+    sihsus = next(s for s in body["subsystems"] if s["name"] == "sihsus")
+    main = next(v for v in sihsus["views"] if v["role"] == "main")
+    filename_entry = next(c for c in main["columns"] if c["column"] == "filename")
+    assert filename_entry["fill_pct"] == 100.0
+    assert filename_entry["fill_pct_approx"] is False
+    # Fixture writes one parquet per subsystem under uf=SP/.
+    assert filename_entry["distinct_count"] == 1
+    assert filename_entry["distinct_count_approx"] is False
