@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.16] - 2026-04-30
+
+### Added
+- implement query history management and settings update
+
+### Fixed
+- **site:** serve from custom domain root instead of /datasus-etl base
+
+### Other
+- Add CNAME file
+
 ## [0.1.15] - 2026-04-28
 
 ### Added
