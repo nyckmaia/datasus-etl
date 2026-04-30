@@ -120,6 +120,17 @@
       "updated": "History size updated",
       "updateFailed": "Failed to update history size"
     },
+    "export": {
+      "title": "CSV export caps",
+      "subtitle": "Hard caps for the \"Download full CSV\" action on the Query page.",
+      "maxRows": "Max rows",
+      "maxRowsHint": "The CSV stream stops after this many rows.",
+      "maxMb": "Max size (MB)",
+      "maxMbHint": "The CSV stream stops when this size is reached, even if more rows are pending.",
+      "saveButton": "Save export caps",
+      "saved": "Export caps updated",
+      "saveFailed": "Failed to update export caps"
+    },
     "reset": {
       "title": "Reset local storage",
       "warning": "This operation is IRREVERSIBLE. All parquet files for the selected subsystems will be permanently removed from disk. You will need to re-download the data to restore them.",
@@ -175,6 +186,13 @@
     "queryFailed": "Query failed",
     "exportedAs": "Exported as {{format}}",
     "exportFailed": "Export failed",
+    "downloadFull": {
+      "label": "Download full CSV",
+      "tooltip": "Download every row, bypassing the editor LIMIT. Capped at the values configured in Settings.",
+      "warnTruncate": "The download will be truncated. The full result has {{rows}} rows (≈ {{bytes}}). The CSV will stop at {{maxRows}} rows or {{maxBytes}}, whichever hits first. Continue?",
+      "done": "Full CSV downloaded.",
+      "failed": "Full download failed"
+    },
     "findColumn": "Find column…",
     "noColumnMatch": "No columns match.",
     "collapseSidebar": "Collapse",

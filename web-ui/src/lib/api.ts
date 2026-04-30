@@ -21,6 +21,8 @@ export interface SettingsResponse {
   subsystems: SubsystemInfo[];
   config_file: string;
   history_size_k: number;
+  export_max_rows: number;
+  export_max_bytes: number;
 }
 
 export interface QueryHistoryEntry {
@@ -183,6 +185,7 @@ export interface ExportRequest {
   format: "csv" | "xlsx";
   limit?: number | null;
   filename?: string | null;
+  unlimited?: boolean;
 }
 
 export interface PickDirectoryResponse {
@@ -269,6 +272,13 @@ export const api = {
     return request("/api/settings/history-size", {
       method: "PUT",
       body: JSON.stringify({ history_size_k }),
+    });
+  },
+
+  updateExportCaps(payload: { export_max_rows: number; export_max_bytes: number }): Promise<SettingsResponse> {
+    return request("/api/settings/export-caps", {
+      method: "PUT",
+      body: JSON.stringify(payload),
     });
   },
 

@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   Trash2,
   History,
+  FileDown,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -22,6 +23,7 @@ import {
   useSettings,
   useUpdateDataDir,
   useUpdateHistorySize,
+  useUpdateExportCaps,
   usePickDirectory,
 } from "@/hooks/useSettings";
 import { api } from "@/lib/api";
@@ -33,9 +35,12 @@ export function SettingsPage() {
   const settings = useSettings();
   const update = useUpdateDataDir();
   const updateHistory = useUpdateHistorySize();
+  const updateExportCaps = useUpdateExportCaps();
   const pickDir = usePickDirectory();
   const [dataDir, setDataDir] = React.useState<string>("");
   const [historyK, setHistoryK] = React.useState<number>(2);
+  const [exportMaxRows, setExportMaxRows] = React.useState<number>(1_000_000);
+  const [exportMaxMb, setExportMaxMb] = React.useState<number>(1000);
   const [validation, setValidation] =
     React.useState<ValidatePathResponse | null>(null);
   const [resetOpen, setResetOpen] = React.useState(false);
@@ -51,6 +56,15 @@ export function SettingsPage() {
       setHistoryK(settings.data.history_size_k);
     }
   }, [settings.data?.history_size_k]);
+
+  React.useEffect(() => {
+    if (settings.data?.export_max_rows != null) {
+      setExportMaxRows(settings.data.export_max_rows);
+    }
+    if (settings.data?.export_max_bytes != null) {
+      setExportMaxMb(Math.round(settings.data.export_max_bytes / 1_048_576));
+    }
+  }, [settings.data?.export_max_rows, settings.data?.export_max_bytes]);
 
   // Debounced live path validation. A ref-held token discards stale responses.
   const validateToken = React.useRef(0);
@@ -95,6 +109,21 @@ export function SettingsPage() {
           description: err.message,
         }),
     });
+  };
+
+  const onSaveExportCaps = () => {
+    const rows = Math.max(1, Math.round(exportMaxRows));
+    const bytes = Math.max(1, Math.round(exportMaxMb)) * 1_048_576;
+    updateExportCaps.mutate(
+      { export_max_rows: rows, export_max_bytes: bytes },
+      {
+        onSuccess: () => toast.success(t("settings.export.saved")),
+        onError: (err: Error) =>
+          toast.error(t("settings.export.saveFailed"), {
+            description: err.message,
+          }),
+      },
+    );
   };
 
   const handleBrowse = () => {
@@ -236,6 +265,56 @@ export function SettingsPage() {
             <Button onClick={onSaveHistory} disabled={updateHistory.isPending}>
               <Save className="h-4 w-4" />
               {updateHistory.isPending ? t("common.saving") : t("common.save")}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <FileDown className="h-4 w-4" />
+            {t("settings.export.title")}
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            {t("settings.export.subtitle")}
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="export_max_rows">{t("settings.export.maxRows")}</Label>
+            <Input
+              id="export_max_rows"
+              type="number"
+              min={1}
+              value={exportMaxRows}
+              onChange={(e) => setExportMaxRows(Number(e.target.value) || 1_000_000)}
+              placeholder="1000000"
+              className="w-40"
+            />
+            <p className="text-xs text-muted-foreground">
+              {t("settings.export.maxRowsHint")}
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="export_max_mb">{t("settings.export.maxMb")}</Label>
+            <Input
+              id="export_max_mb"
+              type="number"
+              min={1}
+              value={exportMaxMb}
+              onChange={(e) => setExportMaxMb(Number(e.target.value) || 1000)}
+              placeholder="1000"
+              className="w-40"
+            />
+            <p className="text-xs text-muted-foreground">
+              {t("settings.export.maxMbHint")}
+            </p>
+          </div>
+          <div className="flex justify-end">
+            <Button onClick={onSaveExportCaps} disabled={updateExportCaps.isPending}>
+              <Save className="h-4 w-4" />
+              {updateExportCaps.isPending ? t("common.saving") : t("settings.export.saveButton")}
             </Button>
           </div>
         </CardContent>

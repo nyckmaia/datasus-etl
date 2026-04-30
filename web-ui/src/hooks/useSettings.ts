@@ -31,6 +31,17 @@ export function useUpdateHistorySize() {
   });
 }
 
+export function useUpdateExportCaps() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { export_max_rows: number; export_max_bytes: number }) =>
+      api.updateExportCaps(payload),
+    onSuccess: (data) => {
+      qc.setQueryData(["settings"], data);
+    },
+  });
+}
+
 export function usePickDirectory() {
   return useMutation({
     mutationFn: () => api.pickDirectory(),

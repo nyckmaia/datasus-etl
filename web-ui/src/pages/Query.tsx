@@ -56,7 +56,7 @@ import {
   registerSqlAutocomplete,
   updateAutocompleteState,
 } from "@/lib/sqlAutocomplete";
-import { formatMs, formatCompact } from "@/lib/format";
+import { formatMs, formatCompact, formatBytes } from "@/lib/format";
 import { prettySql } from "@/lib/sqlPretty";
 import { useStatsOverview } from "@/hooks/useStats";
 import { useSqlQuery } from "@/hooks/useSqlQuery";
@@ -68,6 +68,7 @@ import {
   useDeleteQueryHistoryEntry,
 } from "@/hooks/useQueryHistory";
 import { useTheme } from "@/components/ThemeProvider";
+import { useSettings } from "@/hooks/useSettings";
 
 type HistoryItem = import("@/lib/api").QueryHistoryEntry;
 
@@ -122,6 +123,7 @@ export function QueryPage() {
   // useStatsOverview kept for potential future use (e.g. Dashboard deep-link compatibility).
   useStatsOverview(false);
   const runSql = useSqlQuery();
+  const { data: settings } = useSettings();
 
   // The Dashboard's subsystem cards link here with `?subsystem=<name>` so the
   // first tab can be seeded against that subsystem on initial load.
@@ -518,6 +520,55 @@ ORDER BY count DESC;`);
     [sql, limit, t],
   );
 
+  const onDownloadFullCsv = React.useCallback(async () => {
+    if (!result) return;
+    const totalRows = result.total_rows ?? result.row_count;
+    const sample = result.rows.slice(0, Math.min(50, result.rows.length));
+    const sampleBytes = JSON.stringify(sample).length;
+    const bytesPerRow = sample.length > 0 ? sampleBytes / sample.length : 0;
+    const estimatedBytes = bytesPerRow * totalRows;
+
+    const maxRows = settings?.export_max_rows ?? 1_000_000;
+    const maxBytes = settings?.export_max_bytes ?? 1_000_000_000;
+
+    const willTruncateRows = totalRows > maxRows;
+    const willTruncateBytes = estimatedBytes > maxBytes;
+
+    if (willTruncateRows || willTruncateBytes) {
+      const proceed = window.confirm(
+        t("query.downloadFull.warnTruncate", {
+          rows: formatCompact(totalRows),
+          maxRows: formatCompact(maxRows),
+          bytes: formatBytes(estimatedBytes),
+          maxBytes: formatBytes(maxBytes),
+        }),
+      );
+      if (!proceed) return;
+    }
+
+    try {
+      const blob = await api.exportQuery({
+        sql,
+        format: "csv",
+        unlimited: true,
+        filename: "datasus-query-full.csv",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "datasus-query-full.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success(t("query.downloadFull.done"));
+    } catch (err) {
+      toast.error(t("query.downloadFull.failed"), {
+        description: err instanceof Error ? err.message : t("common.unknown"),
+      });
+    }
+  }, [result, sql, settings, t]);
+
   // Track whether either sidebar is collapsed so the central editor stretches
   // to fill the freed real estate. The transition on `grid-template-columns`
   // gives the layout a smooth, deliberate feel.
@@ -682,13 +733,24 @@ ORDER BY count DESC;`);
                       {formatMs(result.elapsed_ms)}
                     </span>
                     {result.truncated ? (
-                      <Badge variant="warning">
-                        {result.total_rows != null && result.total_rows > result.row_count
-                          ? t("query.truncatedWithCount", {
-                              count: formatCompact(result.total_rows - result.row_count),
-                            })
-                          : t("query.truncated")}
-                      </Badge>
+                      <>
+                        <Badge variant="warning">
+                          {result.total_rows != null && result.total_rows > result.row_count
+                            ? t("query.truncatedWithCount", {
+                                count: formatCompact(result.total_rows - result.row_count),
+                              })
+                            : t("query.truncated")}
+                        </Badge>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={onDownloadFullCsv}
+                          title={t("query.downloadFull.tooltip")}
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                          {t("query.downloadFull.label")}
+                        </Button>
+                      </>
                     ) : null}
                   </>
                 ) : null}

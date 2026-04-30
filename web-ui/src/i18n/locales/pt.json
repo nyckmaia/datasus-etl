@@ -120,6 +120,17 @@
       "updated": "Tamanho do histórico atualizado",
       "updateFailed": "Falha ao atualizar tamanho do histórico"
     },
+    "export": {
+      "title": "Limites de exportação CSV",
+      "subtitle": "Limites para a ação \"Baixar CSV completo\" na página Query.",
+      "maxRows": "Máx. linhas",
+      "maxRowsHint": "O streaming CSV para após este número de linhas.",
+      "maxMb": "Tamanho máx. (MB)",
+      "maxMbHint": "O streaming CSV para ao atingir este tamanho, mesmo que ainda haja linhas pendentes.",
+      "saveButton": "Salvar limites",
+      "saved": "Limites atualizados",
+      "saveFailed": "Falha ao atualizar limites"
+    },
     "reset": {
       "title": "Resetar armazenamento local",
       "warning": "Esta operação é IRREVERSÍVEL. Todos os arquivos parquet dos subsistemas selecionados serão removidos permanentemente do disco. Você precisará baixar os dados novamente para restaurá-los.",
@@ -175,6 +186,13 @@
     "queryFailed": "Consulta falhou",
     "exportedAs": "Exportado como {{format}}",
     "exportFailed": "Falha ao exportar",
+    "downloadFull": {
+      "label": "Baixar CSV completo",
+      "tooltip": "Baixa todas as linhas, ignorando o LIMIT do editor. Limitado pelos valores configurados em Configurações.",
+      "warnTruncate": "O download será truncado. O resultado completo tem {{rows}} linhas (≈ {{bytes}}). O CSV irá parar em {{maxRows}} linhas ou {{maxBytes}}, o que ocorrer primeiro. Continuar?",
+      "done": "CSV completo baixado.",
+      "failed": "Falha ao baixar CSV completo"
+    },
     "findColumn": "Buscar coluna…",
     "noColumnMatch": "Nenhuma coluna encontrada.",
     "collapseSidebar": "Recolher",
