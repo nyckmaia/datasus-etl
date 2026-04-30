@@ -143,27 +143,6 @@ def test_sim_alias_when_no_ibge_parquet(tmp_path: Path) -> None:
         con.close()
 
 
-def test_dictionary_endpoint_returns_ibge_columns_for_sim() -> None:
-    """The /api/query/dictionary endpoint must merge IBGE_ENRICHED_COLUMNS
-    on top of SIM_COLUMNS, so the UI 'Colunas' tab lists uf_res / municipio_res /
-    rg_imediata_res / rg_intermediaria_res for SIM (not just for SIHSUS)."""
-    from fastapi.testclient import TestClient
-    from fastapi import FastAPI
-
-    from datasus_etl.web.routes.query import router
-
-    app = FastAPI()
-    app.include_router(router, prefix="/api/query")
-
-    with TestClient(app) as client:
-        for sub in ("sim", "sihsus"):
-            resp = client.get(f"/api/query/dictionary?subsystem={sub}")
-            assert resp.status_code == 200, resp.text
-            cols = {entry["column"] for entry in resp.json()}
-            for c in IBGE_COLUMNS:
-                assert c in cols, f"/dictionary?subsystem={sub} missing {c!r}"
-
-
 def test_dictionary_has_no_ghost_columns() -> None:
     """Every entry in `web.dictionary.{NAME}_COLUMNS` must reference a real
     column in the corresponding `DatasetConfig.get_schema()`. Otherwise the
@@ -194,83 +173,182 @@ def test_dictionary_has_no_ghost_columns() -> None:
         )
 
 
-def test_dictionary_endpoint_returns_all_schema_columns() -> None:
-    """The /api/query/dictionary endpoint must list every column declared in
-    the dataset schema — even columns without a human-written description.
-    Otherwise users see "missing" columns in the 'Colunas' panel that DO
-    show up in `DESCRIBE sim` (e.g. idade_valor, escmae, versaosist)."""
+def test_schema_endpoint_returns_sim_columns_with_metadata(
+    tmp_path: Path,
+) -> None:
+    """The /api/query/schema endpoint must expose parquet columns with their
+    type, description, and statistics fields so the SchemaTree can render
+    the ColumnFillBadge and ColumnDistinctBadge visuals.
+
+    The endpoint uses DESCRIBE on the actual DuckDB view (not the dataset's
+    Python schema), so only columns present in the fake parquet are asserted.
+    IBGE-enriched columns are added by the JOIN and must be VARCHAR.
+
+    Migrated from test_dictionary_endpoint_returns_all_schema_columns.
+    """
+    import duckdb as _duckdb
     from fastapi.testclient import TestClient
-    from fastapi import FastAPI
 
-    from datasus_etl.datasets.sim.schema import SIM_DUCKDB_SCHEMA
-    from datasus_etl.web.routes.query import router
+    from datasus_etl.web.server import create_app
+    from datasus_etl.web.routes import query as query_mod
+    from datasus_etl.web.routes import settings as settings_mod
 
-    app = FastAPI()
-    app.include_router(router, prefix="/api/query")
+    # Write a minimal SIM parquet + IBGE so the enriched view is created.
+    ibge_dir = tmp_path / "datasus_db" / "ibge"
+    ibge_dir.mkdir(parents=True, exist_ok=True)
+    con = _duckdb.connect(":memory:")
+    try:
+        con.execute(
+            "COPY (SELECT 355030 AS codigo_municipio_6_digitos, 'SP' AS sigla_uf, "
+            "'Sao Paulo' AS nome_municipio, 'Sao Paulo' AS nome_regiao_geografica_imediata, "
+            "'Sao Paulo' AS nome_regiao_geografica_intermediaria) "
+            f"TO '{ibge_dir / 'ibge_locais.parquet'}' (FORMAT PARQUET)"
+        )
+    finally:
+        con.close()
 
+    sim_dir = tmp_path / "datasus_db" / "sim" / "uf=SP"
+    sim_dir.mkdir(parents=True, exist_ok=True)
+    con = _duckdb.connect(":memory:")
+    try:
+        con.execute(
+            f"COPY (SELECT 355030 AS codmunres, 'A00' AS causabas) "
+            f"TO '{sim_dir / 'rows.parquet'}' (FORMAT PARQUET)"
+        )
+    finally:
+        con.close()
+
+    import pytest as _pytest
+
+    monkeypatch = _pytest.MonkeyPatch()
+    monkeypatch.setattr(query_mod, "_resolve_data_dir", lambda _request: tmp_path)
+    monkeypatch.setattr(settings_mod, "_resolve_data_dir", lambda _request: tmp_path)
+
+    app = create_app()
     with TestClient(app) as client:
-        resp = client.get("/api/query/dictionary?subsystem=sim")
+        resp = client.get("/api/query/schema")
         assert resp.status_code == 200, resp.text
-        by_col = {e["column"]: e for e in resp.json()}
+        body = resp.json()
 
-        # Every schema column must be present.
-        for col, dtype in SIM_DUCKDB_SCHEMA.items():
-            assert col in by_col, f"missing schema column {col!r}"
-            assert by_col[col]["type"] == dtype, (
-                f"{col} type mismatch: got {by_col[col]['type']!r}, "
-                f"expected {dtype!r}"
-            )
+    monkeypatch.undo()
 
-        # Spot-check columns previously missing from SIM_COLUMNS: they must
-        # now both appear AND carry a human description (regression guard
-        # against shipping bare schema columns to the UI).
-        for col in ("idade_valor", "idade_unidade", "escmae", "versaosist", "acidtrab"):
-            assert col in by_col
-            assert by_col[col]["description"], (
-                f"{col} should have a non-empty description in SIM_COLUMNS"
-            )
+    sim_sub = next(s for s in body["subsystems"] if s["name"] == "sim")
+    main_view = next(v for v in sim_sub["views"] if v["role"] == "main")
+    by_col = {c["column"]: c for c in main_view["columns"]}
 
-        # IBGE columns still come last and remain VARCHAR.
-        for c in IBGE_COLUMNS:
-            assert by_col[c]["type"] == "VARCHAR"
+    # Columns we wrote must be present with the right types.
+    assert "codmunres" in by_col
+    assert by_col["codmunres"]["type"] == "INTEGER"
+    # causabas is a VARCHAR[] in the SIM schema (CID code array).
+    assert "causabas" in by_col
+
+    # Every present column must carry the required metadata fields.
+    for col_entry in main_view["columns"]:
+        assert "type" in col_entry, f"{col_entry['column']} missing type"
+        assert "fill_pct" in col_entry, f"{col_entry['column']} missing fill_pct"
+        assert "distinct_count" in col_entry, f"{col_entry['column']} missing distinct_count"
+
+    # IBGE enriched columns come from the LEFT JOIN and must be VARCHAR.
+    for c in IBGE_COLUMNS:
+        assert c in by_col, f"missing IBGE column {c!r}"
+        assert by_col[c]["type"] == "VARCHAR", f"{c} should be VARCHAR"
 
 
-def test_dictionary_endpoint_returns_column_types() -> None:
-    """Each dictionary entry carries a `type` field (DuckDB SQL type) so the
-    UI can render type tags. IBGE-enriched columns are always VARCHAR."""
+def test_schema_endpoint_column_fields_always_present(
+    tmp_path: Path,
+) -> None:
+    """Each schema column entry carries `type`, `fill_pct`, and `distinct_count`
+    fields so the SchemaTree's ColumnFillBadge and ColumnDistinctBadge visuals
+    can rely on them being present (value may be None when cache is cold).
+
+    IBGE-enriched columns must always be VARCHAR. Typed parquet columns must
+    carry the DuckDB SQL type as-is.
+
+    Migrated from test_dictionary_endpoint_returns_column_types.
+    """
+    import duckdb as _duckdb
     from fastapi.testclient import TestClient
-    from fastapi import FastAPI
 
-    from datasus_etl.web.routes.query import router
+    from datasus_etl.web.server import create_app
+    from datasus_etl.web.routes import query as query_mod
+    from datasus_etl.web.routes import settings as settings_mod
 
-    app = FastAPI()
-    app.include_router(router, prefix="/api/query")
+    # Write IBGE parquet.
+    ibge_dir = tmp_path / "datasus_db" / "ibge"
+    ibge_dir.mkdir(parents=True, exist_ok=True)
+    con = _duckdb.connect(":memory:")
+    try:
+        con.execute(
+            "COPY (SELECT 355030 AS codigo_municipio_6_digitos, 'SP' AS sigla_uf, "
+            "'Sao Paulo' AS nome_municipio, 'Sao Paulo' AS nome_regiao_geografica_imediata, "
+            "'Sao Paulo' AS nome_regiao_geografica_intermediaria) "
+            f"TO '{ibge_dir / 'ibge_locais.parquet'}' (FORMAT PARQUET)"
+        )
+    finally:
+        con.close()
 
+    # Write SIHSUS and SIM parquets with typed columns we can assert on.
+    sihsus_p = tmp_path / "datasus_db" / "sihsus" / "uf=SP"
+    sihsus_p.mkdir(parents=True, exist_ok=True)
+    con = _duckdb.connect(":memory:")
+    try:
+        con.execute(
+            f"COPY (SELECT 355030::INTEGER AS munic_res, 100.0::DOUBLE AS val_tot) "
+            f"TO '{sihsus_p / 'rows.parquet'}' (FORMAT PARQUET)"
+        )
+    finally:
+        con.close()
+
+    sim_p = tmp_path / "datasus_db" / "sim" / "uf=SP"
+    sim_p.mkdir(parents=True, exist_ok=True)
+    con = _duckdb.connect(":memory:")
+    try:
+        con.execute(
+            f"COPY (SELECT 355030::INTEGER AS codmunres, 'A00'::VARCHAR AS causabas) "
+            f"TO '{sim_p / 'rows.parquet'}' (FORMAT PARQUET)"
+        )
+    finally:
+        con.close()
+
+    import pytest as _pytest
+
+    monkeypatch = _pytest.MonkeyPatch()
+    monkeypatch.setattr(query_mod, "_resolve_data_dir", lambda _request: tmp_path)
+    monkeypatch.setattr(settings_mod, "_resolve_data_dir", lambda _request: tmp_path)
+
+    app = create_app()
     with TestClient(app) as client:
-        resp = client.get("/api/query/dictionary?subsystem=sihsus")
+        resp = client.get("/api/query/schema")
         assert resp.status_code == 200, resp.text
-        by_col = {e["column"]: e for e in resp.json()}
+        body = resp.json()
 
-        # Schema-driven types reach the UI.
-        assert by_col["munic_res"]["type"] == "INTEGER"
-        assert by_col["dt_inter"]["type"] == "DATE"
-        assert by_col["morte"]["type"] == "BOOLEAN"
+    monkeypatch.undo()
 
-        # All 4 IBGE-enriched columns are VARCHAR.
-        for c in IBGE_COLUMNS:
-            assert by_col[c]["type"] == "VARCHAR", f"{c} should be VARCHAR"
+    def _cols_for(subsystem: str) -> dict:
+        sub = next(s for s in body["subsystems"] if s["name"] == subsystem)
+        main = next(v for v in sub["views"] if v["role"] == "main")
+        return {c["column"]: c for c in main["columns"]}
 
-        # The new fill_pct field must be present on every entry. Value can be
-        # None (cache cold or column absent from parquet); the contract is
-        # that the FIELD is always there so the frontend can rely on it.
-        for entry in resp.json():
-            assert "fill_pct" in entry, f"{entry['column']} missing fill_pct field"
+    sihsus_cols = _cols_for("sihsus")
 
-        # SIM ships VARCHAR[] arrays — these must reach the UI as-is so the
-        # frontend can render them as the `list` abbrev.
-        resp = client.get("/api/query/dictionary?subsystem=sim")
-        sim_cols = {e["column"]: e for e in resp.json()}
-        # causabas exists in SIM_COLUMNS, but linhaa/linhab arrays don't —
-        # so we test a column that's both in SIM_COLUMNS and the schema.
-        assert sim_cols["causabas"]["type"] == "VARCHAR[]"
-        assert sim_cols["dtobito"]["type"] == "DATE"
+    # Typed parquet columns carry the right DuckDB SQL types.
+    assert sihsus_cols["munic_res"]["type"] == "INTEGER"
+    assert sihsus_cols["val_tot"]["type"] == "DOUBLE"
+
+    # All 4 IBGE-enriched columns are VARCHAR.
+    for c in IBGE_COLUMNS:
+        assert sihsus_cols[c]["type"] == "VARCHAR", f"{c} should be VARCHAR"
+
+    # The fill_pct, distinct_count fields must be present on every entry.
+    # Value can be None (cache cold); the contract is that the FIELD is always
+    # there so the frontend can rely on it.
+    sub = next(s for s in body["subsystems"] if s["name"] == "sihsus")
+    main = next(v for v in sub["views"] if v["role"] == "main")
+    for entry in main["columns"]:
+        assert "fill_pct" in entry, f"{entry['column']} missing fill_pct field"
+        assert "distinct_count" in entry, f"{entry['column']} missing distinct_count field"
+
+    # SIM columns.
+    sim_cols = _cols_for("sim")
+    assert sim_cols["codmunres"]["type"] == "INTEGER"
+    assert sim_cols["causabas"]["type"] == "VARCHAR"

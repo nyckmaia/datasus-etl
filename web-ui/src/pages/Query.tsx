@@ -12,7 +12,6 @@ import {
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
-  Search,
   Columns3,
   Wand2,
   Star,
@@ -26,13 +25,6 @@ import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -52,15 +44,13 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
-import { ColumnTypeBadge } from "@/components/ColumnTypeBadge";
+import { SchemaTree } from "@/components/SchemaTree";
 import { abbreviateColumnType } from "@/lib/columnType";
-import { ColumnFillBadge } from "@/components/ColumnFillBadge";
-import { ColumnFillBar } from "@/components/ColumnFillBar";
-import { ColumnDistinctBadge } from "@/components/ColumnDistinctBadge";
 import { QueryTabsBar, type QueryTab } from "@/components/QueryTabsBar";
 import { QueryBuilderPanel } from "@/components/QueryBuilderPanel";
 import { api } from "@/lib/api";
 import type { SqlResult } from "@/lib/api";
+import type { SchemaTree as SchemaTreeData } from "@/types/api";
 import { cn } from "@/lib/utils";
 import {
   registerSqlAutocomplete,
@@ -129,22 +119,23 @@ const RAIL = "44px";
 export function QueryPage() {
   const { t } = useTranslation();
   const { resolvedTheme } = useTheme();
-  // The subsystem dropdown is populated from the overview endpoint (which
-  // reports actual file counts) rather than the registry, so subsystems
-  // with no downloaded data are hidden — querying them would yield empty
-  // VIEWs and confuse the user.
-  const overview = useStatsOverview(false);
+  // useStatsOverview kept for potential future use (e.g. Dashboard deep-link compatibility).
+  useStatsOverview(false);
   const runSql = useSqlQuery();
+
   // The Dashboard's subsystem cards link here with `?subsystem=<name>` so the
-  // selectbox can be pre-filled with the card the user clicked.
+  // first tab can be seeded against that subsystem on initial load.
   const search = useSearch({ from: "/query" }) as { subsystem?: string };
 
-  const availableSubsystems = React.useMemo(
-    () => (overview.data ?? []).filter((d) => d.files > 0),
-    [overview.data],
+  // The "focused" subsystem is persisted across reloads. It's NOT an active
+  // filter — every subsystem in the tree is queryable simultaneously. This
+  // value only seeds the default SQL on first load and keys the per-
+  // subsystem query history bucket.
+  const [focusedSubsystem, setFocusedSubsystem] = useLocalStorage<string>(
+    "query.focusedSubsystem",
+    search.subsystem ?? "",
   );
 
-  const [subsystem, setSubsystem] = React.useState<string>(search.subsystem ?? "");
   // SQL editor tabs are persisted across reloads. The first tab is seeded
   // synchronously when the URL already names a subsystem so the editor doesn't
   // flash empty content before the resolution effect fills it in.
@@ -167,17 +158,16 @@ export function QueryPage() {
   // "Running…" only on the tab that initiated the query (the user can keep
   // working in another tab while one is still executing).
   const [runningTabs, setRunningTabs] = React.useState<Record<string, boolean>>({});
-  const historyQuery = useQueryHistory(subsystem);
+  const historyQuery = useQueryHistory(focusedSubsystem);
   const history = historyQuery.data ?? [];
-  const appendHistoryMutation = useAppendQueryHistory(subsystem);
-  const patchHistoryMutation = usePatchQueryHistory(subsystem);
-  const deleteHistoryMutation = useDeleteQueryHistoryEntry(subsystem);
+  const appendHistoryMutation = useAppendQueryHistory(focusedSubsystem);
+  const patchHistoryMutation = usePatchQueryHistory(focusedSubsystem);
+  const deleteHistoryMutation = useDeleteQueryHistoryEntry(focusedSubsystem);
   const [historyFavoritesOnly, setHistoryFavoritesOnly] = useLocalStorage<boolean>(
     "query.historyFavoritesOnly",
     false,
   );
   const [limit, setLimit] = React.useState<number>(10000);
-  const [columnFilter, setColumnFilter] = React.useState<string>("");
   // Visual question builder — opens a Sheet panel; on Apply it writes the
   // compiled SQL into the active tab via `replaceSql`.
   const [builderOpen, setBuilderOpen] = React.useState<boolean>(false);
@@ -186,7 +176,7 @@ export function QueryPage() {
   // never set on a fresh install), snap to the first tab on first render.
   React.useEffect(() => {
     if (tabs.length === 0) {
-      const seed = makeTab(`${QUERY_TAB_PREFIX} 1`, subsystem ? buildDefaultSql(subsystem) : "");
+      const seed = makeTab(`${QUERY_TAB_PREFIX} 1`, focusedSubsystem ? buildDefaultSql(focusedSubsystem) : "");
       setTabs([seed]);
       setActiveTabId(seed.id);
       return;
@@ -224,11 +214,11 @@ export function QueryPage() {
   );
 
   const onAddTab = React.useCallback(() => {
-    const seedSql = subsystem ? buildDefaultSql(subsystem) : "";
+    const seedSql = focusedSubsystem ? buildDefaultSql(focusedSubsystem) : "";
     const tab = makeTab(nextQueryName(tabs), seedSql);
     setTabs((prev) => [...prev, tab]);
     setActiveTabId(tab.id);
-  }, [tabs, subsystem, setTabs, setActiveTabId]);
+  }, [tabs, focusedSubsystem, setTabs, setActiveTabId]);
 
   const onCloseTab = React.useCallback(
     (id: string) => {
@@ -252,7 +242,7 @@ export function QueryPage() {
         // state — closing the only tab spawns a fresh default.
         const fresh = makeTab(
           `${QUERY_TAB_PREFIX} 1`,
-          subsystem ? buildDefaultSql(subsystem) : "",
+          focusedSubsystem ? buildDefaultSql(focusedSubsystem) : "",
         );
         setTabs([fresh]);
         setActiveTabId(fresh.id);
@@ -264,7 +254,7 @@ export function QueryPage() {
       }
       setTabs(next);
     },
-    [tabs, activeTabId, subsystem, setTabs, setActiveTabId],
+    [tabs, activeTabId, focusedSubsystem, setTabs, setActiveTabId],
   );
 
   const onReorderTabs = React.useCallback(
@@ -306,45 +296,52 @@ export function QueryPage() {
     queryFn: () => api.templates(),
   });
 
-  const dictionary = useQuery({
-    queryKey: ["query", "dictionary", subsystem],
-    queryFn: () => api.dictionary(subsystem),
-    enabled: Boolean(subsystem),
+  const schemaQuery = useQuery({
+    queryKey: ["query", "schema"],
+    queryFn: () => api.schema(),
   });
-
-  React.useEffect(() => {
-    const stillAvailable = availableSubsystems.some((d) => d.subsystem === subsystem);
-    if (stillAvailable) return;
-    const fromUrl = search.subsystem;
-    const requestedAvailable =
-      fromUrl && availableSubsystems.some((d) => d.subsystem === fromUrl);
-    setSubsystem(
-      requestedAvailable ? fromUrl! : availableSubsystems[0]?.subsystem ?? "",
-    );
-  }, [availableSubsystems, subsystem, search.subsystem]);
+  const tree = schemaQuery.data;
 
   // Auto-seed / refresh the active tab with `SELECT * from <subsystem> limit 10;`
-  // whenever the subsystem changes. Per-tab — only the active tab is touched,
-  // and only if the user hasn't edited it yet. Other tabs keep their own SQL.
+  // whenever the focused subsystem changes. Per-tab — only the active tab is
+  // touched, and only if the user hasn't edited it yet. Other tabs keep their own SQL.
   React.useEffect(() => {
-    if (!subsystem || !activeTab) return;
-    if (activeTab.userEdited) return;
-    const seeded = buildDefaultSql(subsystem);
+    if (!tree || !activeTab || activeTab.userEdited) return;
+    const seedSubsystem =
+      focusedSubsystem ||
+      tree.subsystems[0]?.name ||
+      "";
+    if (!seedSubsystem) return;
+    const seeded = buildDefaultSql(seedSubsystem);
     if (activeTab.sql === seeded) return;
     patchTab(activeTab.id, { sql: seeded });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [subsystem, activeTab?.id]);
+  }, [tree, focusedSubsystem, activeTab?.id]);
 
   // Keep the SQL autocomplete provider's data in sync. The provider itself
   // is registered once globally (in Editor's onMount); this effect just
-  // pushes the latest column dictionary + active subsystem so the popup
+  // pushes the latest column dictionary + focused subsystem so the popup
   // reflects the table the user is currently exploring.
   React.useEffect(() => {
+    if (!tree) return;
+    // Feed every subsystem's main-view columns to the autocompleter so the
+    // user gets suggestions for any subsystem in the editor — no "active"
+    // subsystem to gate them.
+    const flat = tree.subsystems.flatMap((sub) =>
+      sub.views
+        .filter((v) => v.role === "main")
+        .flatMap((v) =>
+          v.columns.map((c) => ({
+            ...c,
+            subsystem: sub.name,
+          })),
+        ),
+    );
     updateAutocompleteState({
-      columns: dictionary.data ?? [],
-      subsystem,
+      columns: flat,
+      subsystem: focusedSubsystem,
     });
-  }, [dictionary.data, subsystem]);
+  }, [tree, focusedSubsystem]);
 
   // Editor onChange. Marks the active tab as user-edited only when the new
   // value truly diverges from the auto template — otherwise the act of
@@ -355,13 +352,13 @@ export function QueryPage() {
       if (!activeTab) return;
       const value = next ?? "";
       const diverged =
-        Boolean(subsystem) && value !== buildDefaultSql(subsystem);
+        Boolean(focusedSubsystem) && value !== buildDefaultSql(focusedSubsystem);
       patchTab(activeTab.id, {
         sql: value,
         userEdited: activeTab.userEdited || diverged,
       });
     },
-    [activeTab, subsystem, patchTab],
+    [activeTab, focusedSubsystem, patchTab],
   );
 
   // Loading a template or a history item is an explicit user replacement —
@@ -377,22 +374,11 @@ export function QueryPage() {
 
   const filteredTemplates = React.useMemo(() => {
     if (!templates.data) return [];
-    const scoped = subsystem
-      ? templates.data.filter((t) => t.subsystem === subsystem)
+    const scoped = focusedSubsystem
+      ? templates.data.filter((t) => t.subsystem === focusedSubsystem)
       : templates.data;
     return scoped.map((t) => ({ ...t, sql: prettySql(t.sql) }));
-  }, [templates.data, subsystem]);
-
-  const filteredColumns = React.useMemo(() => {
-    if (!dictionary.data) return [];
-    const q = columnFilter.trim().toLowerCase();
-    if (!q) return dictionary.data;
-    return dictionary.data.filter(
-      (e) =>
-        e.column.toLowerCase().includes(q) ||
-        e.description.toLowerCase().includes(q),
-    );
-  }, [dictionary.data, columnFilter]);
+  }, [templates.data, focusedSubsystem]);
 
   // Runs an arbitrary SQL string. Extracted so both the Run button (uses
   // the current editor value) and the histogram badge action (fires
@@ -420,7 +406,7 @@ export function QueryPage() {
         {
           onSuccess: (data) => {
             setResultsByTab((prev) => ({ ...prev, [tabId]: data }));
-            if (subsystem) {
+            if (focusedSubsystem) {
               const ts = Date.now();
               const stamp = new Date(ts).toLocaleString();
               const defaultName = tabName
@@ -449,7 +435,7 @@ export function QueryPage() {
         },
       );
     },
-    [activeTabId, appendHistoryMutation, limit, patchTab, runSql, subsystem, t, tabs],
+    [activeTabId, appendHistoryMutation, limit, patchTab, runSql, focusedSubsystem, t, tabs],
   );
 
   const onRun = React.useCallback(() => runWithSql(sql), [runWithSql, sql]);
@@ -463,36 +449,46 @@ export function QueryPage() {
     onRunRef.current = onRun;
   }, [onRun]);
 
-  // One-tap "show histogram for this column" handler. Wired to the click of
-  // the indigo distinct-count badge. Builds a default GROUP BY query and
-  // runs it immediately so the user sees the value distribution in the
-  // results table without having to type anything.
-  //
-  // Three columns: the value (CAST to DECIMAL(10,2) if FLOAT/DOUBLE so the
-  // rendered table shows two decimals instead of float-precision noise),
-  // the raw count, and a "% population" column showing each bucket's share
-  // of the total. SUM(COUNT(*)) OVER () is a DuckDB window function that
-  // gives the grand total without a subquery. NULLs are kept (they show up
-  // as their own bucket).
+  // One-tap "show histogram for this column" handler. New signature takes
+  // (subsystem, column) since the tree knows which subsystem each column belongs to.
   const onColumnHistogram = React.useCallback(
-    (column: string) => {
+    (subsystem: string, column: string) => {
       if (!subsystem) return;
-      const colType = dictionary.data?.find((d) => d.column === column)?.type;
-      const isFloat = abbreviateColumnType(colType).abbrev === "float";
+      setFocusedSubsystem(subsystem);
+      const view = tree?.subsystems
+        .find((s) => s.name === subsystem)
+        ?.views.find((v) => v.role === "main");
+      const colMeta = view?.columns.find((c) => c.column === column);
+      const isFloat = abbreviateColumnType(colMeta?.type).abbrev === "float";
       const selectExpr = isFloat
         ? `CAST("${column}" AS DECIMAL(10, 2))`
         : `"${column}"`;
-      const sql = prettySql(`SELECT
+      const histSql = prettySql(`SELECT
     ${selectExpr} AS "${column}",
     COUNT(*) AS count,
     ROUND(100.0 * COUNT(*) / SUM(COUNT(*)) OVER (), 1) AS "% population"
 FROM ${subsystem}
 GROUP BY "${column}"
 ORDER BY count DESC;`);
-      replaceSql(sql);
-      runWithSql(sql);
+      replaceSql(histSql);
+      runWithSql(histSql);
     },
-    [subsystem, dictionary.data, replaceSql, runWithSql],
+    [tree, replaceSql, runWithSql, setFocusedSubsystem],
+  );
+
+  // Inserts `subsystem.column` into the active editor at the cursor position.
+  const onColumnPick = React.useCallback(
+    (subsystem: string, column: string) => {
+      setFocusedSubsystem(subsystem);
+      if (!activeTab) return;
+      const next = (activeTab.sql ?? "").trimEnd();
+      const insert = `${subsystem}.${column}`;
+      patchTab(activeTab.id, {
+        sql: next.length ? `${next} ${insert}` : insert,
+        userEdited: true,
+      });
+    },
+    [activeTab, patchTab, setFocusedSubsystem],
   );
 
   const onExport = React.useCallback(
@@ -542,19 +538,13 @@ ORDER BY count DESC;`);
         className="grid flex-1 min-h-0 gap-4 transition-[grid-template-columns] duration-200 ease-out"
         style={{ gridTemplateColumns: gridCols }}
       >
-        {/* ───────────────── LEFT SIDEBAR — Subsystem + Columns ───────────────── */}
+        {/* ───────────────── LEFT SIDEBAR — Schema Tree ───────────────── */}
         <LeftSidebar
           collapsed={leftCollapsed}
           onToggle={() => setLeftCollapsed((v) => !v)}
-          subsystem={subsystem}
-          setSubsystem={setSubsystem}
-          availableSubsystems={availableSubsystems.map((d) => d.subsystem)}
-          loadingOverview={overview.isLoading}
-          loadingDictionary={dictionary.isLoading}
-          columns={filteredColumns}
-          totalColumns={dictionary.data?.length ?? 0}
-          columnFilter={columnFilter}
-          setColumnFilter={setColumnFilter}
+          tree={tree}
+          loading={schemaQuery.isLoading}
+          onColumnPick={onColumnPick}
           onColumnHistogram={onColumnHistogram}
         />
 
@@ -610,7 +600,7 @@ ORDER BY count DESC;`);
                   size="sm"
                   variant="outline"
                   onClick={() => setBuilderOpen(true)}
-                  disabled={!subsystem || (dictionary.data?.length ?? 0) === 0}
+                  disabled={!tree || tree.subsystems.length === 0}
                   title={t("query.builder.openHint")}
                 >
                   <Wand2 className="h-3.5 w-3.5" />
@@ -661,15 +651,20 @@ ORDER BY count DESC;`);
           </Card>
 
           <QueryBuilderPanel
-            // Keyed on subsystem so the panel's per-subsystem
+            // Keyed on focusedSubsystem so the panel's per-subsystem
             // useLocalStorage hooks remount with the right keys when the
             // user switches subsystems (each subsystem keeps an independent
             // builder workspace).
-            key={`builder-${subsystem || "none"}`}
+            key={`builder-${focusedSubsystem || "none"}`}
             open={builderOpen}
             onOpenChange={setBuilderOpen}
-            subsystem={subsystem}
-            columns={dictionary.data ?? []}
+            subsystem={focusedSubsystem}
+            columns={
+              tree?.subsystems
+                .find((s) => s.name === focusedSubsystem)
+                ?.views.find((v) => v.role === "main")
+                ?.columns ?? []
+            }
             defaultLimit={limit}
             onApply={(sql) => replaceSql(sql)}
           />
@@ -756,47 +751,23 @@ ORDER BY count DESC;`);
 interface LeftSidebarProps {
   collapsed: boolean;
   onToggle: () => void;
-  subsystem: string;
-  setSubsystem: (s: string) => void;
-  availableSubsystems: string[];
-  loadingOverview: boolean;
-  loadingDictionary: boolean;
-  columns: {
-    column: string;
-    description: string;
-    type: string;
-    fill_pct?: number | null;
-    fill_pct_approx?: boolean;
-    distinct_count?: number | null;
-    distinct_count_approx?: boolean;
-  }[];
-  /** Click handler for the distinct-count badge — opens a histogram query. */
-  onColumnHistogram: (column: string) => void;
-  totalColumns: number;
-  columnFilter: string;
-  setColumnFilter: (s: string) => void;
+  tree: SchemaTreeData | undefined;
+  loading: boolean;
+  onColumnPick: (subsystem: string, column: string) => void;
+  onColumnHistogram: (subsystem: string, column: string) => void;
 }
 
 function LeftSidebar({
   collapsed,
   onToggle,
-  subsystem,
-  setSubsystem,
-  availableSubsystems,
-  loadingOverview,
-  loadingDictionary,
-  columns,
-  totalColumns,
-  columnFilter,
-  setColumnFilter,
+  tree,
+  loading,
+  onColumnPick,
   onColumnHistogram,
 }: LeftSidebarProps) {
   const { t } = useTranslation();
-
   return (
     <Card className="flex min-h-0 flex-col overflow-hidden">
-      {/* Header bar — always visible. In rail mode it shrinks to just the
-          toggle, the rest stays hidden behind the collapsed width. */}
       <div
         className={cn(
           "flex items-center border-b",
@@ -806,7 +777,7 @@ function LeftSidebar({
         {!collapsed ? (
           <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             <Columns3 className="h-3.5 w-3.5" />
-            {t("query.subsystem")}
+            {t("query.tree.title")}
           </span>
         ) : null}
         <button
@@ -823,126 +794,19 @@ function LeftSidebar({
           )}
         </button>
       </div>
-
       {collapsed ? (
         <RailLabel
           icon={<Columns3 className="h-4 w-4" />}
-          label={t("query.columns")}
+          label={t("query.tree.title")}
           onClick={onToggle}
         />
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col">
-          <div className="space-y-3 border-b p-3">
-            <Select
-              value={subsystem}
-              onValueChange={setSubsystem}
-              disabled={availableSubsystems.length === 0}
-            >
-              <SelectTrigger>
-                <SelectValue
-                  placeholder={
-                    loadingOverview
-                      ? t("common.loading")
-                      : availableSubsystems.length === 0
-                        ? t("query.noDataDownloaded")
-                        : t("query.selectSubsystem")
-                  }
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {availableSubsystems.map((s) => (
-                  <SelectItem key={s} value={s}>
-                    {s.toUpperCase()}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {!loadingOverview && availableSubsystems.length === 0 ? (
-              <p className="text-xs text-muted-foreground">
-                {t("query.downloadToQuery")}
-              </p>
-            ) : null}
-          </div>
-
-          {/* Always-visible columns panel — no tabs, just a dense list. */}
-          <div className="flex min-h-0 flex-1 flex-col">
-            <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                {t("query.columns")}
-              </span>
-              <span className="font-mono text-[10px] text-muted-foreground tabular-nums">
-                {totalColumns > 0 && columnFilter
-                  ? `${columns.length}/${totalColumns}`
-                  : totalColumns || "—"}
-              </span>
-            </div>
-            <div className="border-b p-2">
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={columnFilter}
-                  onChange={(e) => setColumnFilter(e.target.value)}
-                  placeholder={t("query.findColumn")}
-                  className="h-7 pl-6 text-xs"
-                />
-              </div>
-            </div>
-            <ScrollArea className="min-h-0 flex-1">
-              <div className="space-y-0.5 p-1.5">
-                {loadingDictionary ? (
-                  <div className="space-y-1.5 p-1.5">
-                    <Skeleton className="h-8 w-full" />
-                    <Skeleton className="h-8 w-full" />
-                    <Skeleton className="h-8 w-3/4" />
-                  </div>
-                ) : columns.length === 0 ? (
-                  <div className="px-2 py-4 text-center text-xs text-muted-foreground">
-                    {totalColumns === 0
-                      ? t("query.noDictionary")
-                      : t("query.noColumnMatch")}
-                  </div>
-                ) : (
-                  columns.map((entry) => (
-                    <div
-                      key={entry.column}
-                      className="group rounded-md border border-transparent px-2 py-1.5 text-xs transition-colors hover:border-border/60 hover:bg-secondary/50"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="truncate font-mono font-medium">
-                          {entry.column}
-                        </span>
-                        {/* Three badges, left → right:
-                              1. fill-pct  (data-quality lane, emerald→rose)
-                              2. distinct-count  (cardinality lane, indigo) — clickable, opens histogram
-                              3. type  (data-type lane, multi-color)
-                            The three palettes don't overlap so the row stays
-                            scannable even when packed tightly. */}
-                        <div className="flex shrink-0 items-center gap-1">
-                          <ColumnFillBadge
-                            fillPct={entry.fill_pct}
-                            approx={entry.fill_pct_approx}
-                          />
-                          <ColumnDistinctBadge
-                            count={entry.distinct_count}
-                            approx={entry.distinct_count_approx}
-                            onClick={() => onColumnHistogram(entry.column)}
-                          />
-                          <ColumnTypeBadge type={entry.type} />
-                        </div>
-                      </div>
-                      {entry.description ? (
-                        <div className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-muted-foreground">
-                          {entry.description}
-                        </div>
-                      ) : null}
-                      <ColumnFillBar fillPct={entry.fill_pct} />
-                    </div>
-                  ))
-                )}
-              </div>
-            </ScrollArea>
-          </div>
-        </div>
+        <SchemaTree
+          tree={tree}
+          loading={loading}
+          onColumnPick={onColumnPick}
+          onColumnHistogram={onColumnHistogram}
+        />
       )}
     </Card>
   );

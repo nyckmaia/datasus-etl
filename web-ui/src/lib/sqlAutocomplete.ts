@@ -1,7 +1,7 @@
 import type { Monaco } from "@monaco-editor/react";
 import type { editor, languages, Position } from "monaco-editor";
 
-import type { DictionaryEntry } from "@/lib/api";
+import type { SchemaColumn } from "@/types/api";
 import { abbreviateColumnType } from "@/lib/columnType";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -14,8 +14,8 @@ import { abbreviateColumnType } from "@/lib/columnType";
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface AutocompleteState {
-  /** DuckDB columns of the currently-selected subsystem's enriched view. */
-  columns: DictionaryEntry[];
+  /** DuckDB columns of the currently-active subsystem's enriched view. */
+  columns: (SchemaColumn & { subsystem?: string })[];
   /** Active subsystem name — drives the table-name suggestions and dot context. */
   subsystem: string;
 }
@@ -132,7 +132,7 @@ export function registerSqlAutocomplete(monaco: Monaco): void {
       const suggestions: languages.CompletionItem[] = [];
       const sub = state.subsystem;
 
-      const pushColumn = (col: StaticColumn | DictionaryEntry, qualifier?: string) => {
+      const pushColumn = (col: StaticColumn | SchemaColumn, qualifier?: string) => {
         const rawType = "type" in col ? col.type : "";
         const description = "description" in col ? col.description : "";
         const name = "column" in col ? col.column : col.name;
