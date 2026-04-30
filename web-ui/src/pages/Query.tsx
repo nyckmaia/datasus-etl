@@ -112,7 +112,7 @@ function makeTab(name: string, sql: string): PersistedTab {
 // Sidebar widths — kept tight so the Monaco editor can breathe. The "rail"
 // width matches the height of the toggle button so collapsed sidebars feel
 // like the sidebar of a code IDE rather than a hidden panel.
-const LEFT_EXPANDED = "280px";
+const LEFT_EXPANDED = "360px";
 const RIGHT_EXPANDED = "300px";
 const RAIL = "44px";
 
