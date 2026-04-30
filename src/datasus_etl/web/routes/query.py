@@ -518,4 +518,210 @@ async def dictionary(
                 )
             )
 
+
+# ─────────────────────────────────────────────────────────────────────────
+# Hierarchical schema endpoint — feeds the /query LeftSidebar tree.
+# ─────────────────────────────────────────────────────────────────────────
+
+
+class SchemaColumn(BaseModel):
+    """Mirrors `DictionaryEntry` — the columns visuals on /query depend on
+    this exact shape (fill_pct, distinct_count, type, description)."""
+
+    column: str
+    description: str = ""
+    type: str = ""
+    fill_pct: float | None = None
+    fill_pct_approx: bool = False
+    distinct_count: int | None = None
+    distinct_count_approx: bool = False
+
+
+class SchemaView(BaseModel):
+    """One VIEW under a subsystem.
+
+    `role` is ``"main"`` for the enriched aggregate view (named exactly like
+    the subsystem) and ``"dim"`` for any dimension lookup view (currently
+    discovered by ``{subsystem}_dim_*`` convention, overridable per dataset
+    via ``DatasetConfig.views``).
+    """
+
+    name: str
+    role: str  # "main" | "dim"
+    label_pt: str | None = None
+    label_en: str | None = None
+    description: str | None = None
+    columns: list[SchemaColumn]
+
+
+class SchemaSubsystem(BaseModel):
+    name: str
+    label: str
+    views: list[SchemaView]
+
+
+class SchemaTree(BaseModel):
+    subsystems: list[SchemaSubsystem]
+
+
+def _columns_for_view(
+    request: Request,
+    con: duckdb.DuckDBPyConnection,
+    view_name: str,
+    subsystem: str,
+) -> list[SchemaColumn]:
+    """Run DESCRIBE on the view and merge with the dictionary + column-stats
+    cache — same data the legacy `/dictionary` endpoint exposed, just keyed
+    on the view name instead of the subsystem name."""
+    try:
+        describe_rows = con.execute(f"DESCRIBE {view_name}").fetchall()
+    except duckdb.Error:
+        return []
+
+    try:
+        from datasus_etl.web import dictionary as D
+    except ImportError:
+        D = None  # type: ignore[assignment]
+
+    descriptions: dict[str, str] = {}
+    if D is not None:
+        for attr in (f"{subsystem.upper()}_DICTIONARY", f"{subsystem.upper()}_COLUMNS"):
+            if hasattr(D, attr):
+                candidate = getattr(D, attr)
+                if isinstance(candidate, dict):
+                    descriptions = candidate
+                    break
+
+    cache_columns = _column_metadata_cache(request, subsystem)
+
+    data_dir = _resolve_data_dir(request)
+    ibge_distincts = _ibge_distinct_counts(data_dir) if data_dir else {}
+
+    # The IBGE-enriched columns inherit fill_pct from whichever residence-
+    # municipality column the subsystem joined on. Look it up once.
+    cfg = DatasetRegistry.get(subsystem)
+    join_col = cfg.RESIDENCE_MUNICIPALITY_COLUMN if cfg else None
+    join_fill: float | None = None
+    if join_col:
+        entry = cache_columns.get(join_col)
+        if isinstance(entry, dict):
+            v = entry.get("fill_pct")
+            if isinstance(v, (int, float)):
+                join_fill = float(v)
+
+    out: list[SchemaColumn] = []
+    for row in describe_rows:
+        col_name = row[0]
+        col_type = (row[1] or "").upper() if len(row) > 1 else ""
+        if col_name in IBGE_ENRICHED_TO_SOURCE:
+            source_col = IBGE_ENRICHED_TO_SOURCE[col_name]
+            ibge_distinct = ibge_distincts.get(source_col)
+            out.append(
+                SchemaColumn(
+                    column=col_name,
+                    description=descriptions.get(col_name, ""),
+                    type=col_type or "VARCHAR",
+                    fill_pct=join_fill,
+                    fill_pct_approx=join_fill is not None,
+                    distinct_count=ibge_distinct,
+                    distinct_count_approx=ibge_distinct is not None,
+                )
+            )
+            continue
+        cache_entry = cache_columns.get(col_name)
+        fill = cache_entry.get("fill_pct") if isinstance(cache_entry, dict) else None
+        distinct = cache_entry.get("distinct_count") if isinstance(cache_entry, dict) else None
+        out.append(
+            SchemaColumn(
+                column=col_name,
+                description=descriptions.get(col_name, ""),
+                type=col_type,
+                fill_pct=float(fill) if isinstance(fill, (int, float)) else None,
+                distinct_count=int(distinct)
+                if isinstance(distinct, int) and not isinstance(distinct, bool)
+                else None,
+            )
+        )
+    return out
+
+
+def _discover_views_for_subsystem(
+    con: duckdb.DuckDBPyConnection, subsystem: str
+) -> list[tuple[str, str]]:
+    """Return [(view_name, role), ...] following the convention.
+
+    Convention:
+      * exact match `{subsystem}` → role="main"
+      * prefix match `{subsystem}_dim_*` → role="dim"
+      * anything ending in `_all` is hidden
+    """
+    rows = con.execute(
+        "SELECT view_name FROM duckdb_views() "
+        "WHERE schema_name='main' AND NOT internal"
+    ).fetchall()
+    all_names = {r[0] for r in rows if r and r[0]}
+    out: list[tuple[str, str]] = []
+    if subsystem in all_names:
+        out.append((subsystem, "main"))
+    dim_prefix = f"{subsystem}_dim_"
+    for name in sorted(all_names):
+        if name.startswith(dim_prefix):
+            out.append((name, "dim"))
+    return out
+
+
+@router.get("/schema", response_model=SchemaTree)
+async def schema(request: Request) -> SchemaTree:
+    """Return the full SUBSYSTEM → VIEWS → COLUMNS tree.
+
+    The DuckDB session is built the same way as the SQL endpoint
+    (`_connect_with_views`), so every subsystem visible here is queryable
+    in the editor with the same view names — including cross-subsystem
+    JOIN/UNION queries.
+    """
+    data_dir = _data_dir_or_400(request)
+
+    subsystems_out: list[SchemaSubsystem] = []
+    con = _connect_with_views(data_dir)
+    try:
+        for name in DatasetRegistry.list_available():
+            mgr = ParquetManager(data_dir, name)
+            if not mgr.exists():
+                continue
+            cfg = DatasetRegistry.get(name)
+
+            if cfg is not None and cfg.views is not None:
+                pairs = [(spec.name, spec.role) for spec in cfg.views]
+                spec_by_name = {spec.name: spec for spec in cfg.views}
+            else:
+                pairs = _discover_views_for_subsystem(con, name)
+                spec_by_name = {}
+
+            views_out: list[SchemaView] = []
+            for view_name, role in pairs:
+                cols = _columns_for_view(request, con, view_name, name)
+                spec = spec_by_name.get(view_name)
+                views_out.append(
+                    SchemaView(
+                        name=view_name,
+                        role=role,
+                        label_pt=spec.label_pt if spec else None,
+                        label_en=spec.label_en if spec else None,
+                        description=spec.description if spec else None,
+                        columns=cols,
+                    )
+                )
+
+            subsystems_out.append(
+                SchemaSubsystem(
+                    name=name,
+                    label=name.upper(),
+                    views=views_out,
+                )
+            )
+    finally:
+        con.close()
+
+    return SchemaTree(subsystems=subsystems_out)
+
     return entries
