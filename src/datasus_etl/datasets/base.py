@@ -9,6 +9,37 @@ from dataclasses import dataclass, field
 from typing import ClassVar, Optional
 
 
+@dataclass(frozen=True)
+class ViewSpec:
+    """Metadata describing a single VIEW exposed by a subsystem.
+
+    Used by ``/api/query/schema`` to render the SUBSYSTEM → VIEWS → COLUMNS
+    tree. When ``DatasetConfig.views`` is set, the endpoint reads its specs
+    verbatim instead of running the default discovery convention (main view
+    = subsystem name, ``{subsystem}_dim_*`` = dim views, ``_all`` = hidden).
+    Each spec carries optional PT/EN labels and a free-text description for
+    the future tooltip.
+
+    Attributes:
+        name: DuckDB view name (e.g. ``sihsus_dim_diag``).
+        role: ``"main"`` (the enriched aggregate view) or ``"dim"`` (a
+            dimension lookup view, typically two columns: code + decoded
+            value).
+        label_pt: Optional Portuguese display label. UI falls back to
+            ``name`` when None.
+        label_en: Optional English display label. UI falls back to ``name``
+            when None.
+        description: Optional one-line description shown as a tooltip when
+            the user hovers the view header.
+    """
+
+    name: str
+    role: str  # "main" | "dim"
+    label_pt: Optional[str] = None
+    label_en: Optional[str] = None
+    description: Optional[str] = None
+
+
 @dataclass
 class DatasetConfig(ABC):
     """Base configuration for a DataSUS dataset/subsystem.
@@ -37,6 +68,14 @@ class DatasetConfig(ABC):
     # such column should leave this as None — the enriched view falls back to
     # a plain alias of the raw view.
     RESIDENCE_MUNICIPALITY_COLUMN: ClassVar[Optional[str]] = None
+
+    # Optional explicit list of views exposed by this subsystem. When None,
+    # the schema endpoint falls back to the convention: main view = exact
+    # subsystem name; dim views = names matching `{subsystem}_dim_*`; the
+    # raw `{subsystem}_all` view is hidden. Set this attribute to override
+    # the convention, add PT/EN labels, or surface views whose names don't
+    # follow the prefix scheme.
+    views: ClassVar[Optional[list[ViewSpec]]] = None
 
     @classmethod
     @abstractmethod
