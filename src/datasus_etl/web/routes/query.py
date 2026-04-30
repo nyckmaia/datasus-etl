@@ -33,9 +33,25 @@ DEFAULT_LIMIT = 10_000
 
 _SAFE_SQL = re.compile(r"^\s*(with|select)\b", re.IGNORECASE)
 _FORBIDDEN = re.compile(
-    r"\b(insert|update|delete|drop|create|alter|attach|copy|pragma|export|import|replace)\b",
+    r"\b("
+    r"insert|update|delete|drop|create|alter|attach|copy|pragma|export|import|replace|"
+    r"truncate|merge|upsert|call|install|load|set|use|detach|checkpoint|vacuum|"
+    r"grant|revoke|begin|commit|rollback"
+    r")\b",
     re.IGNORECASE,
 )
+# Strip line and block comments before running the regex denylist. Block
+# comments don't nest in standard SQL, but DuckDB tolerates them, so the
+# pattern is the simplest non-greedy match. Done in a single pass — the
+# stripped string is only used for validation, never for execution.
+_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
+_LINE_COMMENT = re.compile(r"--[^\n]*")
+
+
+def _strip_sql_comments(sql: str) -> str:
+    """Remove block and line comments. Used only by the validator — the
+    original SQL with comments preserved is what gets sent to DuckDB."""
+    return _LINE_COMMENT.sub("", _BLOCK_COMMENT.sub("", sql))
 
 
 class SqlRequest(BaseModel):
@@ -100,7 +116,8 @@ class DictionaryEntry(BaseModel):
 
 
 def _validate_sql(sql: str) -> None:
-    stripped = sql.strip().rstrip(";").strip()
+    cleaned = _strip_sql_comments(sql)
+    stripped = cleaned.strip().rstrip(";").strip()
     if ";" in stripped:
         raise HTTPException(
             status_code=400, detail="Multi-statement SQL is not allowed."
