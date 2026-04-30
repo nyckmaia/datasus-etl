@@ -34,12 +34,22 @@ class EstimateRequest(BaseModel):
     ufs: list[str] | None = None
 
 
+class UfEstimate(BaseModel):
+    uf: str
+    file_count: int
+    download_bytes: int
+    storage_bytes: int
+    ftp_first_period: str | None
+    ftp_last_period: str | None
+
+
 class EstimateResponse(BaseModel):
     subsystem: str
     file_count: int
     total_download_bytes: int
     estimated_duckdb_bytes: int
     estimated_csv_bytes: int
+    per_uf: list[UfEstimate] = []
 
 
 class StartRequest(EstimateRequest):
@@ -96,6 +106,17 @@ async def estimate(payload: EstimateRequest) -> EstimateResponse:
         total_download_bytes=result.total_download_bytes,
         estimated_duckdb_bytes=result.estimated_duckdb_bytes,
         estimated_csv_bytes=result.estimated_csv_bytes,
+        per_uf=[
+            UfEstimate(
+                uf=u.uf,
+                file_count=u.file_count,
+                download_bytes=u.download_bytes,
+                storage_bytes=u.storage_bytes,
+                ftp_first_period=u.ftp_first_period,
+                ftp_last_period=u.ftp_last_period,
+            )
+            for u in result.per_uf
+        ],
     )
 
 

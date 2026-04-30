@@ -15,7 +15,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from datasus_etl.datasets.base import DatasetRegistry
-from datasus_etl.storage.parquet_manager import ParquetManager
+from datasus_etl.storage.parquet_manager import ParquetManager, count_missing_months
 
 from .settings import _resolve_data_dir
 
@@ -40,6 +40,7 @@ class UfBreakdown(BaseModel):
     row_count: int | None = None
     first_period: str | None = None  # "YYYY-MM"
     last_period: str | None = None  # "YYYY-MM"
+    missing_months: int = 0
 
 
 class TimelinePoint(BaseModel):
@@ -194,6 +195,7 @@ async def subsystem_detail(name: str, request: Request) -> SubsystemDetail:
     prefix = cfg_cls.FILE_PREFIX or ""
 
     # Per-UF breakdown
+    processed_by_uf = mgr.get_processed_files_by_uf()
     per_uf: list[UfBreakdown] = []
     for uf in stats.partitions:
         files = mgr.list_parquet_files(uf=uf)
@@ -203,6 +205,7 @@ async def subsystem_detail(name: str, request: Request) -> SubsystemDetail:
             for p in (_parse_period_from_filename(f.name, prefix) for f in files)
             if p is not None
         )
+        source_files_for_uf = processed_by_uf.get(uf, [])
         per_uf.append(
             UfBreakdown(
                 uf=uf,
@@ -211,6 +214,7 @@ async def subsystem_detail(name: str, request: Request) -> SubsystemDetail:
                 row_count=None,
                 first_period=uf_periods[0] if uf_periods else None,
                 last_period=uf_periods[-1] if uf_periods else None,
+                missing_months=count_missing_months(source_files_for_uf),
             )
         )
 

@@ -16,6 +16,43 @@ from typing import Optional
 import duckdb
 
 
+def count_missing_months(files: list[str]) -> int:
+    """Count gaps in the (year, month) sequence implied by `files`.
+
+    Each filename is expected in the DATASUS pattern PREFIX + UF(2) + YY(2)
+    + MM(2) (e.g. ``RDSP1801.dbc``). Filenames that fail to parse are
+    silently skipped. Returns the number of months absent BETWEEN the first
+    and last parseable entries — gaps before the first or after the last
+    are not counted (they're not "missing", just outside the user's range).
+
+    Year disambiguation matches the existing `_sort_files_by_date` rule:
+    92-99 → 1992-1999, 00-91 → 2000-2091.
+    """
+    points: set[tuple[int, int]] = set()
+    for filename in files:
+        name = filename.upper().replace(".DBC", "")
+        if len(name) < 8:
+            continue
+        try:
+            year2 = int(name[4:6])
+            month = int(name[6:8])
+        except ValueError:
+            continue
+        if month < 1 or month > 12:
+            continue
+        full_year = 1900 + year2 if year2 >= 92 else 2000 + year2
+        points.add((full_year, month))
+
+    if not points:
+        return 0
+
+    sorted_points = sorted(points)
+    first_idx = sorted_points[0][0] * 12 + (sorted_points[0][1] - 1)
+    last_idx = sorted_points[-1][0] * 12 + (sorted_points[-1][1] - 1)
+    expected = last_idx - first_idx + 1
+    return max(0, expected - len(points))
+
+
 @dataclass
 class ParquetStorageStats:
     """Statistics about Parquet storage."""
