@@ -1,12 +1,12 @@
 // Astro config — produces a fully static site suitable for GitHub Pages.
-// The `base` matches the GitHub Pages project URL nyckmaia.github.io/datasus-etl/.
+// Served from the custom domain datasus-etl.com.br at the root path, so no
+// `base` prefix is needed (and adding one would 404 every CSS/JS asset).
 
 import { defineConfig } from 'astro/config';
 import tailwind from '@astrojs/tailwind';
 
 export default defineConfig({
-  site: 'https://nyckmaia.github.io',
-  base: '/datasus-etl',
+  site: 'https://datasus-etl.com.br',
   trailingSlash: 'ignore',
   // Emit into the repo-root /docs folder. The directory is gitignored —
   // the site is rebuilt on every push that touches site/** or VERSION,
