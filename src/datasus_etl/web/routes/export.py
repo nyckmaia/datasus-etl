@@ -19,6 +19,9 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from datasus_etl.web.user_config import EXPORT_MAX_BYTES_DEFAULT, EXPORT_MAX_ROWS_DEFAULT
+
+from . import settings as _settings_mod
 from .query import (
     DEFAULT_LIMIT,
     MAX_LIMIT,
@@ -26,7 +29,6 @@ from .query import (
     _ensure_limit,
     _validate_sql,
 )
-from .settings import _resolve_data_dir
 
 router = APIRouter()
 
@@ -36,6 +38,23 @@ class ExportRequest(BaseModel):
     format: Literal["csv", "xlsx"] = "csv"
     limit: int | None = Field(default=None, ge=1, le=MAX_LIMIT)
     filename: str | None = None
+    unlimited: bool = False
+
+
+def _get_export_max_rows(request: Request) -> int:
+    """Read the user-configured cap on rows for unlimited CSV export."""
+    from datasus_etl.web import user_config as _uc
+
+    cfg = _uc.load()
+    return int(cfg.export_max_rows)
+
+
+def _get_export_max_bytes(request: Request) -> int:
+    """Read the user-configured cap on bytes for unlimited CSV export."""
+    from datasus_etl.web import user_config as _uc
+
+    cfg = _uc.load()
+    return int(cfg.export_max_bytes)
 
 
 def _safe_filename(raw: str | None, default: str) -> str:
@@ -44,24 +63,35 @@ def _safe_filename(raw: str | None, default: str) -> str:
     return base or default
 
 
-def _csv_stream(con: duckdb.DuckDBPyConnection, sql: str) -> Iterator[bytes]:
+def _csv_stream(
+    con: duckdb.DuckDBPyConnection,
+    sql: str,
+    max_bytes: int | None = None,
+) -> Iterator[bytes]:
     try:
         rel = con.sql(sql)
         columns = list(rel.columns)
         buf = io.StringIO()
         writer = csv.writer(buf)
         writer.writerow(columns)
-        yield buf.getvalue().encode("utf-8")
-        # Stream in batches.
+        sent = 0
+        chunk = buf.getvalue().encode("utf-8")
+        sent += len(chunk)
+        yield chunk
+        batch_size = 100 if max_bytes is not None else 5000
         while True:
-            batch = rel.fetchmany(5000)
+            if max_bytes is not None and sent >= max_bytes:
+                break
+            batch = rel.fetchmany(batch_size)
             if not batch:
                 break
             buf.seek(0)
             buf.truncate()
             for row in batch:
                 writer.writerow(row)
-            yield buf.getvalue().encode("utf-8")
+            chunk = buf.getvalue().encode("utf-8")
+            sent += len(chunk)
+            yield chunk
     finally:
         con.close()
 
@@ -104,15 +134,25 @@ def _xlsx_response(con: duckdb.DuckDBPyConnection, sql: str, filename: str) -> S
 async def export(payload: ExportRequest, request: Request) -> StreamingResponse:
     _validate_sql(payload.sql)
 
-    limit = payload.limit or DEFAULT_LIMIT
-    sql, _ = _ensure_limit(payload.sql, limit)
-
-    data_dir = _resolve_data_dir(request)
+    data_dir = _settings_mod._resolve_data_dir(request)
     if data_dir is None:
         raise HTTPException(
             status_code=400,
             detail="No data directory configured.",
         )
+
+    if payload.unlimited:
+        if payload.format == "xlsx":
+            raise HTTPException(
+                status_code=400, detail="unlimited mode is CSV-only"
+            )
+        row_cap = _get_export_max_rows(request)
+        byte_cap: int | None = _get_export_max_bytes(request)
+        sql, _ = _ensure_limit(payload.sql, row_cap)
+    else:
+        limit = payload.limit or DEFAULT_LIMIT
+        sql, _ = _ensure_limit(payload.sql, limit)
+        byte_cap = None
 
     con = _connect_with_views(data_dir)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -120,7 +160,7 @@ async def export(payload: ExportRequest, request: Request) -> StreamingResponse:
     if payload.format == "csv":
         filename = _safe_filename(payload.filename, f"datasus-{stamp}.csv")
         return StreamingResponse(
-            _csv_stream(con, sql),
+            _csv_stream(con, sql, max_bytes=byte_cap),
             media_type="text/csv; charset=utf-8",
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )

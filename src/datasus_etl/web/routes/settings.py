@@ -72,6 +72,8 @@ class SettingsResponse(BaseModel):
     subsystems: list[SubsystemInfo]
     config_file: str
     history_size_k: int = user_config.DEFAULT_HISTORY_SIZE_K
+    export_max_rows: int = user_config.EXPORT_MAX_ROWS_DEFAULT
+    export_max_bytes: int = user_config.EXPORT_MAX_BYTES_DEFAULT
 
 
 class UpdateDataDirRequest(BaseModel):
@@ -85,6 +87,11 @@ class UpdateHistorySizeRequest(BaseModel):
         le=user_config.MAX_HISTORY_SIZE_K,
         description="Per-subsystem query history size in thousands.",
     )
+
+
+class UpdateExportCapsRequest(BaseModel):
+    export_max_rows: int = Field(..., ge=1, description="Max rows for unlimited CSV export.")
+    export_max_bytes: int = Field(..., ge=1, description="Max bytes for unlimited CSV export.")
 
 
 class PickDirectoryResponse(BaseModel):
@@ -158,6 +165,8 @@ async def get_settings(request: Request) -> SettingsResponse:
         subsystems=_subsystems(),
         config_file=str(user_config.config_path()),
         history_size_k=cfg.history_size_k,
+        export_max_rows=cfg.export_max_rows,
+        export_max_bytes=cfg.export_max_bytes,
     )
 
 
@@ -193,6 +202,17 @@ async def set_history_size(
 ) -> SettingsResponse:
     cfg = user_config.load()
     cfg.history_size_k = payload.history_size_k
+    user_config.save(cfg)
+    return await get_settings(request)
+
+
+@router.put("/export-caps", response_model=SettingsResponse)
+async def set_export_caps(
+    payload: UpdateExportCapsRequest, request: Request
+) -> SettingsResponse:
+    cfg = user_config.load()
+    cfg.export_max_rows = payload.export_max_rows
+    cfg.export_max_bytes = payload.export_max_bytes
     user_config.save(cfg)
     return await get_settings(request)
 

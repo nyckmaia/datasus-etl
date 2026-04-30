@@ -19,6 +19,9 @@ DEFAULT_HISTORY_SIZE_K = 2  # 2K = 2000 queries per subsystem
 MIN_HISTORY_SIZE_K = 1
 MAX_HISTORY_SIZE_K = 100
 
+EXPORT_MAX_ROWS_DEFAULT = 1_000_000
+EXPORT_MAX_BYTES_DEFAULT = 1_000_000_000
+
 
 @dataclass
 class UserConfig:
@@ -26,6 +29,8 @@ class UserConfig:
 
     data_dir: str | None = None
     history_size_k: int = DEFAULT_HISTORY_SIZE_K
+    export_max_rows: int = EXPORT_MAX_ROWS_DEFAULT
+    export_max_bytes: int = EXPORT_MAX_BYTES_DEFAULT
 
 
 def config_path() -> Path:
@@ -47,6 +52,14 @@ def _coerce_history_size_k(value: object) -> int:
     return n
 
 
+def _coerce_positive_int(value: object, default: int) -> int:
+    try:
+        n = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+    return n if n >= 1 else default
+
+
 def load() -> UserConfig:
     """Read user config, returning defaults if the file is missing or invalid."""
     path = config_path()
@@ -61,6 +74,14 @@ def load() -> UserConfig:
         history_size_k=_coerce_history_size_k(
             data.get("history_size_k", DEFAULT_HISTORY_SIZE_K)
         ),
+        export_max_rows=_coerce_positive_int(
+            data.get("export_max_rows", EXPORT_MAX_ROWS_DEFAULT),
+            EXPORT_MAX_ROWS_DEFAULT,
+        ),
+        export_max_bytes=_coerce_positive_int(
+            data.get("export_max_bytes", EXPORT_MAX_BYTES_DEFAULT),
+            EXPORT_MAX_BYTES_DEFAULT,
+        ),
     )
 
 
@@ -71,6 +92,14 @@ def save(cfg: UserConfig) -> Path:
     payload = {k: v for k, v in asdict(cfg).items() if v is not None}
     payload["history_size_k"] = _coerce_history_size_k(
         payload.get("history_size_k", DEFAULT_HISTORY_SIZE_K)
+    )
+    payload["export_max_rows"] = _coerce_positive_int(
+        payload.get("export_max_rows", EXPORT_MAX_ROWS_DEFAULT),
+        EXPORT_MAX_ROWS_DEFAULT,
+    )
+    payload["export_max_bytes"] = _coerce_positive_int(
+        payload.get("export_max_bytes", EXPORT_MAX_BYTES_DEFAULT),
+        EXPORT_MAX_BYTES_DEFAULT,
     )
     tmp = path.with_suffix(".tmp")
     tmp.write_bytes(tomli_w.dumps(payload).encode("utf-8"))
