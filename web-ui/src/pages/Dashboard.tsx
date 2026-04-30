@@ -1,4 +1,3 @@
-import * as React from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
@@ -13,13 +12,12 @@ import {
 
 import { StatCard } from "@/components/StatCard";
 import { SubsystemCard } from "@/components/SubsystemCard";
-import { VolumeChart } from "@/components/VolumeChart";
 import { BrazilMap } from "@/components/BrazilMap";
 import { EmptyState } from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useStatsOverview, useTimeline } from "@/hooks/useStats";
+import { useStatsOverview } from "@/hooks/useStats";
 import {
   useSettings,
   useUpdateDataDir,
@@ -48,16 +46,6 @@ export function DashboardPage() {
       valuesByUf[u] = (valuesByUf[u] ?? 0) + d.files;
     });
   });
-
-  // Pick the first populated subsystem for the headline chart.
-  const [chartSubsystem, setChartSubsystem] = React.useState<string | null>(null);
-  React.useEffect(() => {
-    if (chartSubsystem) return;
-    const first = data.find((d) => d.files > 0);
-    if (first) setChartSubsystem(first.subsystem);
-  }, [data, chartSubsystem]);
-
-  const timeline = useTimeline(chartSubsystem);
 
   const hasDataDir = !!settings.data?.data_dir_resolved;
   const noData = !overview.isLoading && data.every((d) => d.files === 0);
@@ -206,14 +194,14 @@ export function DashboardPage() {
           }
         />
       ) : (
-        <>
-          <section>
-            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              {t("dashboard.subsystemsHeading")}
-            </h2>
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <section>
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            {t("dashboard.subsystemsHeading")}
+          </h2>
+          <div className="grid gap-4 lg:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2 lg:col-span-2">
               {overview.isLoading
-                ? Array.from({ length: 3 }).map((_, i) => (
+                ? Array.from({ length: 2 }).map((_, i) => (
                     <Skeleton key={i} className="h-56" />
                   ))
                 : data.map((summary) => {
@@ -229,48 +217,7 @@ export function DashboardPage() {
                     );
                   })}
             </div>
-          </section>
-
-          <section className="grid gap-4 lg:grid-cols-3">
-            <Card className="lg:col-span-2">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0">
-                <CardTitle className="text-base">
-                  {t("dashboard.volumeOverTime")}
-                  {chartSubsystem ? (
-                    <span className="ml-2 font-mono text-xs font-normal uppercase text-muted-foreground">
-                      {chartSubsystem}
-                    </span>
-                  ) : null}
-                </CardTitle>
-                <div className="flex gap-1">
-                  {data
-                    .filter((d) => d.files > 0)
-                    .map((d) => (
-                      <button
-                        key={d.subsystem}
-                        onClick={() => setChartSubsystem(d.subsystem)}
-                        className={`rounded px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide transition-colors ${
-                          chartSubsystem === d.subsystem
-                            ? "bg-secondary text-foreground"
-                            : "text-muted-foreground hover:bg-secondary/50"
-                        }`}
-                      >
-                        {d.subsystem}
-                      </button>
-                    ))}
-                </div>
-              </CardHeader>
-              <CardContent>
-                {!chartSubsystem || !timeline.data || timeline.data.length === 0 ? (
-                  <p className="py-8 text-center text-sm text-muted-foreground">
-                    {t("dashboard.populateTimeline")}
-                  </p>
-                ) : (
-                  <VolumeChart data={timeline.data} />
-                )}
-              </CardContent>
-            </Card>
-            <Card>
+            <Card className="lg:col-span-1">
               <CardHeader>
                 <CardTitle className="text-base">{t("dashboard.coverageByUf")}</CardTitle>
               </CardHeader>
@@ -278,8 +225,8 @@ export function DashboardPage() {
                 <BrazilMap valuesByUf={valuesByUf} readOnly />
               </CardContent>
             </Card>
-          </section>
-        </>
+          </div>
+        </section>
       )}
     </div>
   );

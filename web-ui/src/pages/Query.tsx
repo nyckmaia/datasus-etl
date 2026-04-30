@@ -15,6 +15,11 @@ import {
   Search,
   Columns3,
   Wand2,
+  Star,
+  Trash2,
+  Pencil,
+  Check,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
@@ -48,6 +53,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { ColumnTypeBadge } from "@/components/ColumnTypeBadge";
+import { abbreviateColumnType } from "@/lib/columnType";
 import { ColumnFillBadge } from "@/components/ColumnFillBadge";
 import { ColumnFillBar } from "@/components/ColumnFillBar";
 import { ColumnDistinctBadge } from "@/components/ColumnDistinctBadge";
@@ -60,19 +66,20 @@ import {
   registerSqlAutocomplete,
   updateAutocompleteState,
 } from "@/lib/sqlAutocomplete";
-import { formatMs } from "@/lib/format";
+import { formatMs, formatCompact } from "@/lib/format";
+import { prettySql } from "@/lib/sqlPretty";
 import { useStatsOverview } from "@/hooks/useStats";
 import { useSqlQuery } from "@/hooks/useSqlQuery";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
+import {
+  useQueryHistory,
+  useAppendQueryHistory,
+  usePatchQueryHistory,
+  useDeleteQueryHistoryEntry,
+} from "@/hooks/useQueryHistory";
 import { useTheme } from "@/components/ThemeProvider";
 
-interface HistoryItem {
-  id: string;
-  sql: string;
-  ts: number;
-  rows: number;
-  elapsed_ms: number;
-}
+type HistoryItem = import("@/lib/api").QueryHistoryEntry;
 
 // Persisted shape of a SQL editor tab. Results are intentionally NOT persisted
 // — they can be huge (multi-MB) and bloat localStorage.
@@ -160,8 +167,16 @@ export function QueryPage() {
   // "Running…" only on the tab that initiated the query (the user can keep
   // working in another tab while one is still executing).
   const [runningTabs, setRunningTabs] = React.useState<Record<string, boolean>>({});
-  const [history, setHistory] = React.useState<HistoryItem[]>([]);
-  const [limit, setLimit] = React.useState<number>(1000);
+  const historyQuery = useQueryHistory(subsystem);
+  const history = historyQuery.data ?? [];
+  const appendHistoryMutation = useAppendQueryHistory(subsystem);
+  const patchHistoryMutation = usePatchQueryHistory(subsystem);
+  const deleteHistoryMutation = useDeleteQueryHistoryEntry(subsystem);
+  const [historyFavoritesOnly, setHistoryFavoritesOnly] = useLocalStorage<boolean>(
+    "query.historyFavoritesOnly",
+    false,
+  );
+  const [limit, setLimit] = React.useState<number>(10000);
   const [columnFilter, setColumnFilter] = React.useState<string>("");
   // Visual question builder — opens a Sheet panel; on Apply it writes the
   // compiled SQL into the active tab via `replaceSql`.
@@ -362,8 +377,10 @@ export function QueryPage() {
 
   const filteredTemplates = React.useMemo(() => {
     if (!templates.data) return [];
-    if (!subsystem) return templates.data;
-    return templates.data.filter((t) => t.subsystem === subsystem);
+    const scoped = subsystem
+      ? templates.data.filter((t) => t.subsystem === subsystem)
+      : templates.data;
+    return scoped.map((t) => ({ ...t, sql: prettySql(t.sql) }));
   }, [templates.data, subsystem]);
 
   const filteredColumns = React.useMemo(() => {
@@ -389,24 +406,35 @@ export function QueryPage() {
     (sqlToRun: string) => {
       const tabId = activeTabId;
       if (!tabId) return;
+      // Snapshot the tab name at call time so the history entry's default
+      // label reflects the tab the user actually clicked Run on, not
+      // whatever tab they may have switched to before the query returns.
+      const tabName = tabs.find((t) => t.id === tabId)?.name ?? "";
+      const formatted = prettySql(sqlToRun);
+      if (formatted !== sqlToRun) {
+        patchTab(tabId, { sql: formatted });
+      }
       setRunningTabs((prev) => ({ ...prev, [tabId]: true }));
       runSql.mutate(
-        { sql: sqlToRun, limit },
+        { sql: formatted, limit },
         {
           onSuccess: (data) => {
             setResultsByTab((prev) => ({ ...prev, [tabId]: data }));
-            setHistory((h) =>
-              [
-                {
-                  id: crypto.randomUUID(),
-                  sql: sqlToRun,
-                  ts: Date.now(),
-                  rows: data.row_count,
-                  elapsed_ms: data.elapsed_ms,
-                },
-                ...h,
-              ].slice(0, 50),
-            );
+            if (subsystem) {
+              const ts = Date.now();
+              const stamp = new Date(ts).toLocaleString();
+              const defaultName = tabName
+                ? `${tabName} — ${stamp}`
+                : stamp;
+              appendHistoryMutation.mutate({
+                id: crypto.randomUUID(),
+                sql: formatted,
+                ts,
+                rows: data.row_count,
+                elapsed_ms: data.elapsed_ms,
+                name: defaultName,
+              });
+            }
           },
           onError: (err: Error) => {
             toast.error(t("query.queryFailed"), { description: err.message });
@@ -421,7 +449,7 @@ export function QueryPage() {
         },
       );
     },
-    [activeTabId, limit, runSql, t],
+    [activeTabId, appendHistoryMutation, limit, patchTab, runSql, subsystem, t, tabs],
   );
 
   const onRun = React.useCallback(() => runWithSql(sql), [runWithSql, sql]);
@@ -439,23 +467,32 @@ export function QueryPage() {
   // the indigo distinct-count badge. Builds a default GROUP BY query and
   // runs it immediately so the user sees the value distribution in the
   // results table without having to type anything.
+  //
+  // Three columns: the value (CAST to DECIMAL(10,2) if FLOAT/DOUBLE so the
+  // rendered table shows two decimals instead of float-precision noise),
+  // the raw count, and a "% population" column showing each bucket's share
+  // of the total. SUM(COUNT(*)) OVER () is a DuckDB window function that
+  // gives the grand total without a subquery. NULLs are kept (they show up
+  // as their own bucket).
   const onColumnHistogram = React.useCallback(
     (column: string) => {
       if (!subsystem) return;
-      // Quote the column with double-quotes so reserved words / mixed case
-      // don't break — DuckDB respects the identifier as-is.
-      const sql = `SELECT
-    "${column}",
-    COUNT(*) AS count
+      const colType = dictionary.data?.find((d) => d.column === column)?.type;
+      const isFloat = abbreviateColumnType(colType).abbrev === "float";
+      const selectExpr = isFloat
+        ? `CAST("${column}" AS DECIMAL(10, 2))`
+        : `"${column}"`;
+      const sql = prettySql(`SELECT
+    ${selectExpr} AS "${column}",
+    COUNT(*) AS count,
+    ROUND(100.0 * COUNT(*) / SUM(COUNT(*)) OVER (), 1) AS "% population"
 FROM ${subsystem}
-WHERE "${column}" IS NOT NULL
 GROUP BY "${column}"
-ORDER BY count DESC
-LIMIT 100;`;
+ORDER BY count DESC;`);
       replaceSql(sql);
       runWithSql(sql);
     },
-    [subsystem, replaceSql, runWithSql],
+    [subsystem, dictionary.data, replaceSql, runWithSql],
   );
 
   const onExport = React.useCallback(
@@ -547,8 +584,8 @@ LIMIT 100;`;
                   type="number"
                   value={limit}
                   min={1}
-                  max={10000}
-                  onChange={(e) => setLimit(Number(e.target.value) || 1000)}
+                  max={100000}
+                  onChange={(e) => setLimit(Number(e.target.value) || 10000)}
                   className="h-7 w-24 text-xs"
                 />
                 <DropdownMenu>
@@ -650,7 +687,13 @@ LIMIT 100;`;
                       {formatMs(result.elapsed_ms)}
                     </span>
                     {result.truncated ? (
-                      <Badge variant="warning">{t("query.truncated")}</Badge>
+                      <Badge variant="warning">
+                        {result.total_rows != null && result.total_rows > result.row_count
+                          ? t("query.truncatedWithCount", {
+                              count: formatCompact(result.total_rows - result.row_count),
+                            })
+                          : t("query.truncated")}
+                      </Badge>
                     ) : null}
                   </>
                 ) : null}
@@ -691,6 +734,15 @@ LIMIT 100;`;
           onPickTemplate={replaceSql}
           history={history}
           onPickHistory={replaceSql}
+          favoritesOnly={historyFavoritesOnly}
+          onToggleFavoritesOnly={() => setHistoryFavoritesOnly((v) => !v)}
+          onRenameHistory={(id, name) =>
+            patchHistoryMutation.mutate({ id, patch: { name } })
+          }
+          onToggleHistoryFavorite={(id, favorite) =>
+            patchHistoryMutation.mutate({ id, patch: { favorite } })
+          }
+          onDeleteHistory={(id) => deleteHistoryMutation.mutate(id)}
         />
       </div>
     </div>
@@ -906,6 +958,151 @@ interface TemplateLike {
   sql: string;
 }
 
+interface HistoryRowProps {
+  entry: HistoryItem;
+  onPick: () => void;
+  onRename: (name: string | null) => void;
+  onToggleFavorite: () => void;
+  onDelete: () => void;
+}
+
+function HistoryRow({
+  entry,
+  onPick,
+  onRename,
+  onToggleFavorite,
+  onDelete,
+}: HistoryRowProps) {
+  const { t } = useTranslation();
+  const [editing, setEditing] = React.useState(false);
+  const [draft, setDraft] = React.useState(entry.name ?? "");
+  const inputRef = React.useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    if (editing) inputRef.current?.focus();
+  }, [editing]);
+
+  const commit = () => {
+    const next = draft.trim();
+    onRename(next.length === 0 ? null : next);
+    setEditing(false);
+  };
+
+  return (
+    <div className="group rounded-md border border-border/60 px-2 py-1.5 transition-colors hover:bg-secondary/40">
+      <div className="flex items-start gap-1.5">
+        <button
+          type="button"
+          onClick={onToggleFavorite}
+          aria-pressed={entry.favorite ?? false}
+          aria-label={
+            entry.favorite ? t("query.unfavorite") : t("query.favorite")
+          }
+          title={entry.favorite ? t("query.unfavorite") : t("query.favorite")}
+          className={cn(
+            "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded transition-colors",
+            entry.favorite
+              ? "text-amber-500"
+              : "text-muted-foreground/60 hover:text-amber-500",
+          )}
+        >
+          <Star
+            className={cn("h-3.5 w-3.5", entry.favorite ? "fill-current" : "")}
+          />
+        </button>
+
+        <div className="min-w-0 flex-1">
+          {editing ? (
+            <div className="flex items-center gap-1">
+              <Input
+                ref={inputRef}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commit();
+                  if (e.key === "Escape") {
+                    setDraft(entry.name ?? "");
+                    setEditing(false);
+                  }
+                }}
+                placeholder={t("query.renamePlaceholder")}
+                className="h-6 text-[11px]"
+              />
+              <button
+                type="button"
+                onClick={commit}
+                aria-label={t("common.save")}
+                className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground"
+              >
+                <Check className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDraft(entry.name ?? "");
+                  setEditing(false);
+                }}
+                aria-label={t("common.cancel")}
+                className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={onPick}
+              className="block w-full text-left"
+            >
+              <div className="flex items-center justify-between gap-2 text-[10px] text-muted-foreground tabular-nums">
+                <span className="truncate">
+                  {entry.name ? (
+                    <span className="text-xs font-medium text-foreground">
+                      {entry.name}
+                    </span>
+                  ) : (
+                    new Date(entry.ts).toLocaleTimeString()
+                  )}
+                </span>
+                <span>{formatMs(entry.elapsed_ms)}</span>
+              </div>
+              <div className="mt-1 line-clamp-2 font-mono text-[11px]">
+                {entry.sql}
+              </div>
+            </button>
+          )}
+        </div>
+
+        {!editing ? (
+          <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+            <button
+              type="button"
+              onClick={() => {
+                setDraft(entry.name ?? "");
+                setEditing(true);
+              }}
+              aria-label={t("query.rename")}
+              title={t("query.rename")}
+              className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={onDelete}
+              aria-label={t("query.deleteEntry")}
+              title={t("query.deleteEntry")}
+              className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 interface RightSidebarProps {
   collapsed: boolean;
   onToggle: () => void;
@@ -916,6 +1113,11 @@ interface RightSidebarProps {
   onPickTemplate: (sql: string) => void;
   history: HistoryItem[];
   onPickHistory: (sql: string) => void;
+  favoritesOnly: boolean;
+  onToggleFavoritesOnly: () => void;
+  onRenameHistory: (id: string, name: string | null) => void;
+  onToggleHistoryFavorite: (id: string, favorite: boolean) => void;
+  onDeleteHistory: (id: string) => void;
 }
 
 function RightSidebar({
@@ -928,6 +1130,11 @@ function RightSidebar({
   onPickTemplate,
   history,
   onPickHistory,
+  favoritesOnly,
+  onToggleFavoritesOnly,
+  onRenameHistory,
+  onToggleHistoryFavorite,
+  onDeleteHistory,
 }: RightSidebarProps) {
   const { t } = useTranslation();
 
@@ -1028,29 +1235,56 @@ function RightSidebar({
             value="history"
             className="m-0 min-h-0 flex-1 data-[state=inactive]:hidden"
           >
-            <ScrollArea className="h-[calc(100vh-15rem)]">
-              <div className="space-y-2 p-2">
-                {history.length === 0 ? (
-                  <p className="px-2 py-4 text-center text-xs text-muted-foreground">
-                    {t("query.noQueriesYet")}
-                  </p>
-                ) : (
-                  history.map((h) => (
-                    <button
-                      key={h.id}
-                      onClick={() => onPickHistory(h.sql)}
-                      className="w-full rounded-md border border-border/60 px-2 py-1.5 text-left text-xs transition-colors hover:bg-secondary/50"
-                    >
-                      <div className="flex items-center justify-between text-[10px] text-muted-foreground tabular-nums">
-                        <span>{new Date(h.ts).toLocaleTimeString()}</span>
-                        <span>{formatMs(h.elapsed_ms)}</span>
-                      </div>
-                      <div className="mt-1 line-clamp-2 font-mono text-[11px]">
-                        {h.sql}
-                      </div>
-                    </button>
-                  ))
+            <div className="border-b px-2 py-1.5">
+              <button
+                type="button"
+                onClick={onToggleFavoritesOnly}
+                aria-pressed={favoritesOnly}
+                className={cn(
+                  "flex w-full items-center gap-2 rounded-md px-2 py-1 text-xs transition-colors",
+                  favoritesOnly
+                    ? "bg-amber-500/15 text-amber-600 dark:text-amber-400"
+                    : "text-muted-foreground hover:bg-secondary/50",
                 )}
+                title={t("query.favoritesOnly")}
+              >
+                <Star
+                  className={cn(
+                    "h-3.5 w-3.5",
+                    favoritesOnly ? "fill-current" : "",
+                  )}
+                />
+                <span>{t("query.favoritesOnly")}</span>
+              </button>
+            </div>
+            <ScrollArea className="h-[calc(100vh-17rem)]">
+              <div className="space-y-1.5 p-2">
+                {(() => {
+                  const visible = favoritesOnly
+                    ? history.filter((h) => h.favorite)
+                    : history;
+                  if (visible.length === 0) {
+                    return (
+                      <p className="px-2 py-4 text-center text-xs text-muted-foreground">
+                        {favoritesOnly
+                          ? t("query.noFavorites")
+                          : t("query.noQueriesYet")}
+                      </p>
+                    );
+                  }
+                  return visible.map((h) => (
+                    <HistoryRow
+                      key={h.id}
+                      entry={h}
+                      onPick={() => onPickHistory(h.sql)}
+                      onRename={(name) => onRenameHistory(h.id, name)}
+                      onToggleFavorite={() =>
+                        onToggleHistoryFavorite(h.id, !h.favorite)
+                      }
+                      onDelete={() => onDeleteHistory(h.id)}
+                    />
+                  ));
+                })()}
               </div>
             </ScrollArea>
           </TabsContent>

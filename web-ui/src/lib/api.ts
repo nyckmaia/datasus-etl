@@ -20,6 +20,22 @@ export interface SettingsResponse {
   python_version: string;
   subsystems: SubsystemInfo[];
   config_file: string;
+  history_size_k: number;
+}
+
+export interface QueryHistoryEntry {
+  id: string;
+  sql: string;
+  ts: number;
+  rows: number;
+  elapsed_ms: number;
+  name?: string | null;
+  favorite?: boolean;
+}
+
+export interface QueryHistoryPatch {
+  name?: string | null;
+  favorite?: boolean;
 }
 
 export interface VersionCheckResponse {
@@ -122,6 +138,7 @@ export interface SqlResult {
   truncated: boolean;
   elapsed_ms: number;
   limit_applied: number;
+  total_rows?: number | null;
 }
 
 export interface TemplateItem {
@@ -243,6 +260,54 @@ export const api = {
     return request("/api/settings/data-dir", {
       method: "PUT",
       body: JSON.stringify({ data_dir }),
+    });
+  },
+
+  updateHistorySize(history_size_k: number): Promise<SettingsResponse> {
+    return request("/api/settings/history-size", {
+      method: "PUT",
+      body: JSON.stringify({ history_size_k }),
+    });
+  },
+
+  listHistory(subsystem: string): Promise<{ entries: QueryHistoryEntry[] }> {
+    return request(`/api/query/history/${encodeURIComponent(subsystem)}`);
+  },
+
+  appendHistory(
+    subsystem: string,
+    entry: QueryHistoryEntry,
+  ): Promise<{ entries: QueryHistoryEntry[] }> {
+    return request(`/api/query/history/${encodeURIComponent(subsystem)}`, {
+      method: "POST",
+      body: JSON.stringify(entry),
+    });
+  },
+
+  patchHistoryEntry(
+    subsystem: string,
+    id: string,
+    patch: QueryHistoryPatch,
+  ): Promise<{ entries: QueryHistoryEntry[] }> {
+    return request(
+      `/api/query/history/${encodeURIComponent(subsystem)}/${encodeURIComponent(id)}`,
+      { method: "PATCH", body: JSON.stringify(patch) },
+    );
+  },
+
+  deleteHistoryEntry(
+    subsystem: string,
+    id: string,
+  ): Promise<{ entries: QueryHistoryEntry[] }> {
+    return request(
+      `/api/query/history/${encodeURIComponent(subsystem)}/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+    );
+  },
+
+  clearHistory(subsystem: string): Promise<{ entries: QueryHistoryEntry[] }> {
+    return request(`/api/query/history/${encodeURIComponent(subsystem)}`, {
+      method: "DELETE",
     });
   },
 

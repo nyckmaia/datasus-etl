@@ -1,4 +1,6 @@
 import { formatDistanceToNow } from "date-fns";
+import { ptBR, enUS } from "date-fns/locale";
+import i18n from "@/i18n";
 
 const UNITS = ["B", "KB", "MB", "GB", "TB", "PB"] as const;
 
@@ -21,11 +23,15 @@ export function formatCompact(n: number | null | undefined): string {
 }
 
 export function formatRelative(unixTsSeconds: number | null | undefined): string {
-  if (!unixTsSeconds) return "never";
+  if (!unixTsSeconds) return i18n.language === "pt" ? "nunca" : "never";
   try {
-    return formatDistanceToNow(new Date(unixTsSeconds * 1000), { addSuffix: true });
+    const locale = i18n.language === "pt" ? ptBR : enUS;
+    return formatDistanceToNow(new Date(unixTsSeconds * 1000), {
+      addSuffix: true,
+      locale,
+    });
   } catch {
-    return "unknown";
+    return i18n.language === "pt" ? "desconhecido" : "unknown";
   }
 }
 

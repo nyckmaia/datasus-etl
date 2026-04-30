@@ -21,6 +21,11 @@ export const NAV: { key: string; path: PagePath; labels: Record<Locale, string> 
     labels: { en: 'Tutorial', pt: 'Tutorial' },
   },
   {
+    key: 'how-it-works',
+    path: { en: '/how-it-works', pt: '/pt/how-it-works' },
+    labels: { en: 'How it Works', pt: 'Como Funciona' },
+  },
+  {
     key: 'docs',
     path: { en: '/docs' },
     labels: { en: 'Docs', pt: 'Docs (EN)' },
@@ -29,6 +34,11 @@ export const NAV: { key: string; path: PagePath; labels: Record<Locale, string> 
     key: 'changelog',
     path: { en: '/changelog' },
     labels: { en: 'Changelog', pt: 'Changelog (EN)' },
+  },
+  {
+    key: 'contact',
+    path: { en: '/contact', pt: '/pt/contact' },
+    labels: { en: 'Contact Us', pt: 'Fale Conosco' },
   },
 ];
 

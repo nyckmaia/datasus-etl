@@ -1,0 +1,229 @@
+---
+import Page from '~/layouts/Page.astro';
+
+const STAGES = [
+  {
+    n: '01',
+    title: 'Origin: the DATASUS public FTP',
+    body: `Brazilian public-health microdata is published by the Ministry of Health on a public, anonymous FTP server: ftp.datasus.gov.br. Each subsystem (SIHSUS = hospital admissions, SIM = mortality) keeps its monthly or yearly files in a fixed directory. The pipeline does not scrape — it lists the directory, picks files matching a pattern, and downloads only what falls inside the user-specified date range.`,
+    note: 'No credentials. The data is anonymised at source — you cannot identify a patient.',
+  },
+  {
+    n: '02',
+    title: 'Filename parsing',
+    body: `Filenames encode UF (state) and period. SIHSUS uses RDUFYYMM.dbc — for example RDSP2401.dbc means São Paulo, January 2024. SIM is yearly and bifurcated by ICD revision: DOSP2023.dbc is CID-10 (1996+, 8-char stem); DORSP80.dbc is CID-9 (1979–1995, 7-char stem). The parser disambiguates by stem length, not by prefix — checking "starts with DOR" first would silently drop CID-10 deaths from RJ, RN, RO, RR, and RS.`,
+  },
+  {
+    n: '03',
+    title: 'Decompression: DBC → DBF',
+    body: `DBC is a DATASUS-proprietary compression layered over the venerable DBF table format. Historically you needed Windows-only tools (TabWin) to decompress it. The pipeline uses the pure-Python datasus_dbc library so the whole chain is cross-platform.`,
+    note: 'The decompressed DBF file is a temporary intermediate. It is not kept on disk after the next stage.',
+  },
+  {
+    n: '04',
+    title: 'Loading: DBF → DuckDB staging',
+    body: `Each DBF is streamed into a fresh in-memory DuckDB connection as a staging table. Two columns are added at this point: source_file (for audit trails) and uf (extracted from the filename). String columns are stripped of invisible junk (tabs, newlines, NULs) and trimmed.`,
+  },
+  {
+    n: '05',
+    title: 'Cleaning: invisible characters and empty strings',
+    body: `Raw DBF rows often contain whitespace and control characters that look fine in a text editor but break joins and uniqueness checks downstream.`,
+    table: {
+      headers: ['Before', 'After'],
+      rows: [
+        ['"SP\\t\\n\\r"', '"SP"'],
+        ['"" (empty string)', 'NULL'],
+        ['"  04  "', '"04"'],
+      ],
+    },
+  },
+  {
+    n: '06',
+    title: 'Type conversions: TRY_CAST',
+    body: `Every numeric and date column goes through TRY_CAST so a single malformed row doesn't abort the whole import — invalid values become NULL and a warning is logged. Integer columns include age, length-of-stay (days), counts. Float columns include monetary fields like VAL_TOT.`,
+  },
+  {
+    n: '07',
+    title: 'Date parsing — five formats, ordered',
+    body: `Dates in DATASUS files are not consistent. The parser tries five formats in order: YYYYMMDD, DDMMYYYY, DMMYYYY (a 7-digit format unique to SIM, where the day has no leading zero), YYYY-MM-DD, and as a last resort a generic cast.`,
+    table: {
+      headers: ['Subsystem', 'Raw', 'Parsed'],
+      rows: [
+        ['SIHSUS', '"20200131"', '2020-01-31'],
+        ['SIM', '"1012023"', '2023-01-01 (DMMYYYY)'],
+        ['Either', '"2020-01-31"', '2020-01-31'],
+      ],
+    },
+  },
+  {
+    n: '08',
+    title: 'Sex normalisation',
+    body: `Each subsystem encodes sex differently. The pipeline collapses both into a common M/F/I (indeterminate) code so cross-subsystem queries don't have to special-case each table.`,
+    table: {
+      headers: ['Subsystem', 'Raw', 'Normalised'],
+      rows: [
+        ['SIHSUS', '0 / 1 / 3', 'I / M / F'],
+        ['SIM', '1 / 2', 'M / F'],
+        ['SIM', 'M / F (already textual)', 'M / F'],
+      ],
+    },
+  },
+  {
+    n: '09',
+    title: 'Race and colour (RACACOR)',
+    body: `RACACOR carries the same five IBGE categories in both subsystems but with different numeric codes. The pipeline maps them to the human-readable Portuguese label.`,
+    table: {
+      headers: ['Subsystem', 'Code', 'Label'],
+      rows: [
+        ['SIHSUS', '"01"', '"Branca"'],
+        ['SIHSUS', '"02"', '"Preta"'],
+        ['SIM', '"1"', '"Branca"'],
+        ['SIM', '"2"', '"Preta"'],
+        ['Both', '"03/3"', '"Parda"'],
+      ],
+    },
+  },
+  {
+    n: '10',
+    title: 'Cause-of-death arrays (SIM)',
+    body: `SIM stores chains of CID-10 codes for each line of the death certificate (linhaa, linhab, linhac, linhad, causabas, linhaii) as star-delimited strings. The pipeline parses them into typed VARCHAR[] arrays so SQL can use UNNEST and array operators directly.`,
+    table: {
+      headers: ['Raw', 'Array'],
+      rows: [
+        ['"*A01*J128"', "['A01', 'J128']"],
+        ['"*B342"', "['B342']"],
+        ['"" or "*"', '[] (empty)'],
+      ],
+    },
+  },
+  {
+    n: '11',
+    title: 'Encoded age (SIM)',
+    body: `SIM packs the unit and the value of age into a single 3-digit field, where the leading digit is the unit (1=minutes, 2=hours, 3=months, 4=years, 5=>100 years). The pipeline decodes it into idade_valor (number) and idade_unidade (text).`,
+    table: {
+      headers: ['Raw', 'Decoded value', 'Decoded unit'],
+      rows: [
+        ['"403"', '3', 'anos'],
+        ['"512"', '12', '>100 anos (i.e., 112)'],
+        ['"307"', '7', 'meses'],
+      ],
+    },
+  },
+  {
+    n: '12',
+    title: 'Geographic enrichment (IBGE join)',
+    body: `Both subsystems store a 7-digit IBGE municipality code (munic_res in SIHSUS, codmunres in SIM) but no human-readable city name. The pipeline LEFT JOINs against a built-in IBGE reference table to add the city name, the (already-known) state, and the macro-region.`,
+    table: {
+      headers: ['Before', 'After'],
+      rows: [
+        ['munic_res = 3550308', 'municipio_res = "São Paulo", uf = "SP", regiao = "Sudeste"'],
+        ['munic_res = 3304557', 'municipio_res = "Rio de Janeiro", uf = "RJ", regiao = "Sudeste"'],
+      ],
+    },
+  },
+  {
+    n: '13',
+    title: 'Storage: partitioned Parquet',
+    body: `The transformed table is written to {data_dir}/datasus_db/{subsystem}/uf={UF}/{filename}.parquet using Hive-style partitioning. Partitioning by UF means a query that filters on a single state reads only that state's files. ZSTD compression keeps the disk footprint small without hurting read speed.`,
+    note: 'A _manifest.json tracks every DBC already processed, so re-running the pipeline on the same range is a no-op.',
+  },
+  {
+    n: '14',
+    title: 'Query interface: DuckDB VIEW',
+    body: `The Parquet files are exposed as a single virtual table per subsystem (sihsus, sim). The view does a partition-aware glob (read_parquet('datasus_db/sihsus/uf=*/**.parquet')) so scans automatically prune partitions when the WHERE clause filters by UF or by year.`,
+  },
+  {
+    n: '15',
+    title: 'Custom queries — your turn',
+    body: `From the Query page you can write any SQL you like against the cleaned, enriched, partitioned data. Built-in column histograms (the # button next to each column) one-tap a GROUP BY query that includes the % population for each value, so distributions are visible without typing.`,
+  },
+];
+---
+
+<Page
+  title="How it Works — DataSUS ETL"
+  description="A step-by-step explanation of the pipeline: from the DataSUS FTP to a queryable, partitioned Parquet store with concrete before/after examples."
+  locale="en"
+  currentKey="how-it-works"
+  ptPath="/how-it-works"
+>
+  <section class="max-w-7xl mx-auto px-6 md:px-10 pt-16 md:pt-24 pb-6">
+    <div class="grid lg:grid-cols-12 gap-10">
+      <div class="lg:col-span-7">
+        <div class="flex items-center gap-3 text-muted">
+          <span class="pill pill-brand"><span class="pill-dot"></span>How it works</span>
+          <span class="pill">Technical overview</span>
+        </div>
+        <h1 class="mt-5 text-display-lg text-text font-semibold">
+          From DATASUS FTP to your SQL prompt.
+        </h1>
+        <p class="mt-4 text-lead text-muted max-w-[60ch] leading-relaxed">
+          Fifteen stages, every transformation justified, with before-and-after
+          examples. Read this once and you'll know exactly what the pipeline
+          changed about the raw data — and what it didn't touch.
+        </p>
+      </div>
+      <aside class="lg:col-span-5 card p-6">
+        <div class="label-stamp-strong">Scope of this page</div>
+        <ul class="mt-4 text-sm text-text space-y-2">
+          <li class="flex items-start gap-2">
+            <span class="mono-val text-brand pt-0.5">—</span>
+            <span>SIHSUS (hospital admissions) and SIM (mortality).</span>
+          </li>
+          <li class="flex items-start gap-2">
+            <span class="mono-val text-brand pt-0.5">—</span>
+            <span>The end-to-end ETL: download, decompress, load, transform, store.</span>
+          </li>
+          <li class="flex items-start gap-2">
+            <span class="mono-val text-brand pt-0.5">—</span>
+            <span>Concrete examples for every transformation — not abstractions.</span>
+          </li>
+        </ul>
+      </aside>
+    </div>
+  </section>
+
+  <section class="max-w-7xl mx-auto px-6 md:px-10 pb-28">
+    <ol class="tutorial-steps mt-10 space-y-0">
+      {STAGES.map((stage) => (
+        <li class="grid md:grid-cols-[auto_1fr_1.1fr] gap-6 md:gap-10 py-8 border-t border-border">
+          <div class="mono-val text-lg text-brand">{stage.n}</div>
+          <div>
+            <h2 class="text-display text-text font-semibold leading-snug">{stage.title}</h2>
+          </div>
+          <div class="prose-tech">
+            <p class="!mt-0">{stage.body}</p>
+            {stage.table && (
+              <div class="mt-3 overflow-x-auto">
+                <table class="w-full text-sm">
+                  <thead>
+                    <tr class="border-b border-border">
+                      {stage.table.headers.map((h) => (
+                        <th class="px-2 py-1.5 text-left font-semibold text-text">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stage.table.rows.map((row) => (
+                      <tr class="border-b border-border/60">
+                        {row.map((cell) => (
+                          <td class="px-2 py-1.5 align-top font-mono text-xs text-muted">{cell}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {stage.note && (
+              <aside class="note !mt-3">
+                <span class="label-stamp text-brand mr-2">note</span>
+                <span class="text-sm text-muted">{stage.note}</span>
+              </aside>
+            )}
+          </div>
+        </li>
+      ))}
+    </ol>
+  </section>
+</Page>

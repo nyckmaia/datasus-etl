@@ -1,6 +1,13 @@
 import * as React from "react";
 import { toast } from "sonner";
-import { Save, Info, FolderOpen, AlertTriangle, Trash2 } from "lucide-react";
+import {
+  Save,
+  Info,
+  FolderOpen,
+  AlertTriangle,
+  Trash2,
+  History,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
@@ -14,6 +21,7 @@ import { ResetStorageDialog } from "@/components/ResetStorageDialog";
 import {
   useSettings,
   useUpdateDataDir,
+  useUpdateHistorySize,
   usePickDirectory,
 } from "@/hooks/useSettings";
 import { api } from "@/lib/api";
@@ -24,8 +32,10 @@ export function SettingsPage() {
   const { t } = useTranslation();
   const settings = useSettings();
   const update = useUpdateDataDir();
+  const updateHistory = useUpdateHistorySize();
   const pickDir = usePickDirectory();
   const [dataDir, setDataDir] = React.useState<string>("");
+  const [historyK, setHistoryK] = React.useState<number>(2);
   const [validation, setValidation] =
     React.useState<ValidatePathResponse | null>(null);
   const [resetOpen, setResetOpen] = React.useState(false);
@@ -35,6 +45,12 @@ export function SettingsPage() {
       setDataDir(settings.data.data_dir);
     }
   }, [settings.data?.data_dir]);
+
+  React.useEffect(() => {
+    if (settings.data?.history_size_k != null) {
+      setHistoryK(settings.data.history_size_k);
+    }
+  }, [settings.data?.history_size_k]);
 
   // Debounced live path validation. A ref-held token discards stale responses.
   const validateToken = React.useRef(0);
@@ -67,6 +83,17 @@ export function SettingsPage() {
       onSuccess: () => toast.success(t("settings.dataDirUpdated")),
       onError: (err: Error) =>
         toast.error(t("settings.updateFailed"), { description: err.message }),
+    });
+  };
+
+  const onSaveHistory = () => {
+    const value = Math.max(1, Math.min(100, Math.round(historyK)));
+    updateHistory.mutate(value, {
+      onSuccess: () => toast.success(t("settings.history.updated")),
+      onError: (err: Error) =>
+        toast.error(t("settings.history.updateFailed"), {
+          description: err.message,
+        }),
     });
   };
 
@@ -172,6 +199,43 @@ export function SettingsPage() {
             <Button onClick={onSave} disabled={update.isPending}>
               <Save className="h-4 w-4" />
               {update.isPending ? t("common.saving") : t("common.save")}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <History className="h-4 w-4" />
+            {t("settings.history.title")}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="history_size_k">{t("settings.history.label")}</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                id="history_size_k"
+                type="number"
+                min={1}
+                max={100}
+                value={historyK}
+                onChange={(e) => setHistoryK(Number(e.target.value) || 1)}
+                className="w-28"
+              />
+              <span className="text-sm text-muted-foreground">
+                × 1.000 = {historyK * 1000}
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {t("settings.history.hint")}
+            </p>
+          </div>
+          <div className="flex justify-end">
+            <Button onClick={onSaveHistory} disabled={updateHistory.isPending}>
+              <Save className="h-4 w-4" />
+              {updateHistory.isPending ? t("common.saving") : t("common.save")}
             </Button>
           </div>
         </CardContent>

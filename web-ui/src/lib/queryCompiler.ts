@@ -8,6 +8,8 @@
 // (sihsus / sim / siasus), so they're inlined unquoted to match the look
 // of the existing templates.
 
+import { prettySql } from "./sqlPretty";
+
 export type AggKind =
   | "none"
   | "count"
@@ -180,7 +182,7 @@ export function compileQuery(
   }
 
   return {
-    sql: lines.join("\n") + ";",
+    sql: prettySql(lines.join("\n") + ";"),
     errors,
     warnings,
   };

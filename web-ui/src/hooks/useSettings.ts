@@ -21,6 +21,16 @@ export function useUpdateDataDir() {
   });
 }
 
+export function useUpdateHistorySize() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (history_size_k: number) => api.updateHistorySize(history_size_k),
+    onSuccess: (data) => {
+      qc.setQueryData(["settings"], data);
+    },
+  });
+}
+
 export function usePickDirectory() {
   return useMutation({
     mutationFn: () => api.pickDirectory(),

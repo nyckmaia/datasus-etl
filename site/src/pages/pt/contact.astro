@@ -1,0 +1,40 @@
+---
+import Page from '~/layouts/Page.astro';
+
+const EMAIL = 'nyckmaia@gmail.com';
+---
+
+<Page
+  title="Fale Conosco"
+  description="Sugestões, perguntas e críticas são bem-vindas — envie um email."
+  locale="pt"
+  currentKey="contact"
+  ptPath="/contact"
+>
+  <section class="max-w-3xl mx-auto px-6 md:px-10 pt-16 md:pt-24 pb-28">
+    <div class="flex items-center gap-3 text-muted">
+      <span class="pill pill-brand"><span class="pill-dot"></span>Contato</span>
+    </div>
+    <h1 class="mt-5 text-display-lg text-text font-semibold">Fale conosco.</h1>
+    <p class="mt-4 text-lead text-muted max-w-[60ch] leading-relaxed">
+      Aceitamos qualquer sugestão de melhoria, perguntas e críticas.
+      Envie sua mensagem diretamente para o email abaixo.
+    </p>
+
+    <div class="mt-10 card p-6 max-w-xl">
+      <div class="label-stamp text-brand">E-mail</div>
+      <div class="mt-3 flex flex-wrap items-center gap-3">
+        <a
+          href={`mailto:${EMAIL}`}
+          class="font-mono text-lg text-text underline-offset-4 hover:underline"
+        >
+          {EMAIL}
+        </a>
+      </div>
+      <p class="mt-4 text-sm text-muted">
+        Clique no endereço para abrir no seu cliente de email padrão, ou
+        copie e cole no programa que você costuma usar.
+      </p>
+    </div>
+  </section>
+</Page>

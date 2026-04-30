@@ -15,11 +15,17 @@ from pathlib import Path
 import tomli_w
 
 
+DEFAULT_HISTORY_SIZE_K = 2  # 2K = 2000 queries per subsystem
+MIN_HISTORY_SIZE_K = 1
+MAX_HISTORY_SIZE_K = 100
+
+
 @dataclass
 class UserConfig:
     """User-scoped settings persisted across sessions."""
 
     data_dir: str | None = None
+    history_size_k: int = DEFAULT_HISTORY_SIZE_K
 
 
 def config_path() -> Path:
@@ -27,6 +33,18 @@ def config_path() -> Path:
     xdg = os.environ.get("XDG_CONFIG_HOME")
     base = Path(xdg) if xdg else Path.home() / ".config"
     return base / "datasus-etl" / "config.toml"
+
+
+def _coerce_history_size_k(value: object) -> int:
+    try:
+        n = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return DEFAULT_HISTORY_SIZE_K
+    if n < MIN_HISTORY_SIZE_K:
+        return MIN_HISTORY_SIZE_K
+    if n > MAX_HISTORY_SIZE_K:
+        return MAX_HISTORY_SIZE_K
+    return n
 
 
 def load() -> UserConfig:
@@ -38,7 +56,12 @@ def load() -> UserConfig:
         data = tomllib.loads(path.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError):
         return UserConfig()
-    return UserConfig(data_dir=data.get("data_dir"))
+    return UserConfig(
+        data_dir=data.get("data_dir"),
+        history_size_k=_coerce_history_size_k(
+            data.get("history_size_k", DEFAULT_HISTORY_SIZE_K)
+        ),
+    )
 
 
 def save(cfg: UserConfig) -> Path:
@@ -46,6 +69,9 @@ def save(cfg: UserConfig) -> Path:
     path = config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {k: v for k, v in asdict(cfg).items() if v is not None}
+    payload["history_size_k"] = _coerce_history_size_k(
+        payload.get("history_size_k", DEFAULT_HISTORY_SIZE_K)
+    )
     tmp = path.with_suffix(".tmp")
     tmp.write_bytes(tomli_w.dumps(payload).encode("utf-8"))
     tmp.replace(path)

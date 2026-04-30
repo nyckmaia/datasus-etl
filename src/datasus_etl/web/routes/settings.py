@@ -71,10 +71,20 @@ class SettingsResponse(BaseModel):
     python_version: str = user_config.python_version()
     subsystems: list[SubsystemInfo]
     config_file: str
+    history_size_k: int = user_config.DEFAULT_HISTORY_SIZE_K
 
 
 class UpdateDataDirRequest(BaseModel):
     data_dir: str = Field(..., min_length=1, description="Absolute or ~ path to data directory.")
+
+
+class UpdateHistorySizeRequest(BaseModel):
+    history_size_k: int = Field(
+        ...,
+        ge=user_config.MIN_HISTORY_SIZE_K,
+        le=user_config.MAX_HISTORY_SIZE_K,
+        description="Per-subsystem query history size in thousands.",
+    )
 
 
 class PickDirectoryResponse(BaseModel):
@@ -139,6 +149,7 @@ async def get_settings(request: Request) -> SettingsResponse:
     if data_dir is not None:
         free, total = _disk_usage(data_dir)
         resolved = str(resolve_storage_root(data_dir).resolve()) if data_dir.exists() else None
+    cfg = user_config.load()
     return SettingsResponse(
         data_dir=str(data_dir) if data_dir else None,
         data_dir_resolved=resolved,
@@ -146,6 +157,7 @@ async def get_settings(request: Request) -> SettingsResponse:
         total_disk_bytes=total,
         subsystems=_subsystems(),
         config_file=str(user_config.config_path()),
+        history_size_k=cfg.history_size_k,
     )
 
 
@@ -168,8 +180,20 @@ async def set_data_dir(payload: UpdateDataDirRequest, request: Request) -> Setti
         except OSError as exc:
             raise HTTPException(status_code=400, detail=f"Cannot create directory: {exc}") from exc
 
-    user_config.save(user_config.UserConfig(data_dir=str(new_dir)))
+    cfg = user_config.load()
+    cfg.data_dir = str(new_dir)
+    user_config.save(cfg)
     request.app.state.data_dir = new_dir
+    return await get_settings(request)
+
+
+@router.put("/history-size", response_model=SettingsResponse)
+async def set_history_size(
+    payload: UpdateHistorySizeRequest, request: Request
+) -> SettingsResponse:
+    cfg = user_config.load()
+    cfg.history_size_k = payload.history_size_k
+    user_config.save(cfg)
     return await get_settings(request)
 
 

@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { Database, Download, ArrowRight } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,7 @@ interface SubsystemCardProps {
 }
 
 export function SubsystemCard({ summary, description }: SubsystemCardProps) {
+  const { t } = useTranslation();
   const coveredUfs = new Set(summary.ufs);
   const coverage = coveredUfs.size / ALL_UFS.length;
 
@@ -25,12 +27,12 @@ export function SubsystemCard({ summary, description }: SubsystemCardProps) {
           <div>
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Subsystem
+                {t("dashboard.subsystem")}
               </span>
               {summary.files === 0 ? (
-                <Badge variant="outline">Empty</Badge>
+                <Badge variant="outline">{t("dashboard.subsystemEmpty")}</Badge>
               ) : (
-                <Badge variant="success">Active</Badge>
+                <Badge variant="success">{t("dashboard.subsystemActive")}</Badge>
               )}
             </div>
             <h3 className="mt-1 font-mono text-xl font-semibold uppercase tracking-wide">
@@ -48,7 +50,7 @@ export function SubsystemCard({ summary, description }: SubsystemCardProps) {
         <div className="mt-5 grid grid-cols-3 gap-3 text-sm">
           <div>
             <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
-              Files
+              {t("dashboard.files")}
             </div>
             <div className="mt-0.5 font-mono text-base font-semibold tabular-nums">
               {formatCompact(summary.files)}
@@ -56,7 +58,7 @@ export function SubsystemCard({ summary, description }: SubsystemCardProps) {
           </div>
           <div>
             <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
-              Size
+              {t("dashboard.size")}
             </div>
             <div className="mt-0.5 font-mono text-base font-semibold tabular-nums">
               {formatBytes(summary.size_bytes)}
@@ -64,7 +66,7 @@ export function SubsystemCard({ summary, description }: SubsystemCardProps) {
           </div>
           <div>
             <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
-              Rows
+              {t("dashboard.rows")}
             </div>
             <div className="mt-0.5 font-mono text-base font-semibold tabular-nums">
               {summary.row_count != null ? formatCompact(summary.row_count) : "—"}
@@ -74,7 +76,7 @@ export function SubsystemCard({ summary, description }: SubsystemCardProps) {
 
         <div className="mt-4">
           <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-            <span>UF coverage</span>
+            <span>{t("dashboard.ufCoverage")}</span>
             <span className="tabular-nums">
               {coveredUfs.size} / {ALL_UFS.length}
             </span>
@@ -86,16 +88,18 @@ export function SubsystemCard({ summary, description }: SubsystemCardProps) {
           <span>
             {summary.first_period && summary.last_period
               ? `${summary.first_period} → ${summary.last_period}`
-              : "No periods"}
+              : t("dashboard.noPeriods")}
           </span>
-          <span>Updated {formatRelative(summary.last_updated)}</span>
+          <span>
+            {t("dashboard.updated", { relative: formatRelative(summary.last_updated) })}
+          </span>
         </div>
 
         <div className="mt-4 flex items-center gap-2">
           <Button asChild size="sm" variant="secondary" className="flex-1">
             <Link to="/query" search={{ subsystem: summary.subsystem }}>
               <Database className="h-3.5 w-3.5" />
-              Query
+              {t("dashboard.queryButton")}
             </Link>
           </Button>
           <Button asChild size="sm" className="flex-1">
@@ -104,7 +108,7 @@ export function SubsystemCard({ summary, description }: SubsystemCardProps) {
               search={{ subsystem: summary.subsystem }}
             >
               <Download className="h-3.5 w-3.5" />
-              Update
+              {t("dashboard.updateButton")}
               <ArrowRight className="h-3.5 w-3.5" />
             </Link>
           </Button>

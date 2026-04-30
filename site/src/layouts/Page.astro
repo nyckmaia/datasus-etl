@@ -10,11 +10,17 @@ interface Props {
   locale: Locale;
   currentKey?: string;
   ptPath?: string; // path (without /pt/ prefix) to the PT version of the current page
+  ogImage?: string; // filename inside /assets/, default brand-small
 }
 
-const { title, description, locale, currentKey, ptPath } = Astro.props;
+const SITE_URL = 'https://datasus-etl.com.br';
+const DEFAULT_OG_IMAGE = 'DataSUS-ETL - Brand-small.png';
+
+const { title, description, locale, currentKey, ptPath, ogImage = DEFAULT_OG_IMAGE } = Astro.props;
 const base = import.meta.env.BASE_URL;
 const canonicalRel = Astro.url.pathname;
+const fullTitle = `${title} · DataSUS ETL`;
+const ogImageUrl = `${SITE_URL}${encodeURI(`/assets/${ogImage}`)}`;
 ---
 
 <!doctype html>
@@ -22,13 +28,29 @@ const canonicalRel = Astro.url.pathname;
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{title} · DataSUS ETL</title>
+    <title>{fullTitle}</title>
     {description && <meta name="description" content={description} />}
     <meta name="color-scheme" content="dark light" />
     <meta name="theme-color" content="#0b1220" media="(prefers-color-scheme: dark)" />
     <meta name="theme-color" content="#fafbfc" media="(prefers-color-scheme: light)" />
     <link rel="icon" href={`${base}/favicon.svg`} type="image/svg+xml" />
-    <link rel="canonical" href={`https://nyckmaia.github.io${canonicalRel}`} />
+    <link rel="canonical" href={`${SITE_URL}${canonicalRel}`} />
+
+    <!-- Open Graph (WhatsApp/Facebook/LinkedIn link previews) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="DataSUS ETL" />
+    <meta property="og:title" content={fullTitle} />
+    {description && <meta property="og:description" content={description} />}
+    <meta property="og:url" content={`${SITE_URL}${canonicalRel}`} />
+    <meta property="og:image" content={ogImageUrl} />
+    <meta property="og:image:alt" content="DataSUS ETL logo" />
+    <meta property="og:locale" content={locale === 'pt' ? 'pt_BR' : 'en_US'} />
+
+    <!-- Twitter Card (also consumed by X, LinkedIn, Slack) -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={fullTitle} />
+    {description && <meta name="twitter:description" content={description} />}
+    <meta name="twitter:image" content={ogImageUrl} />
 
     <!--
       Anti-FOUC: read persisted theme (or fall back to dark) before the first

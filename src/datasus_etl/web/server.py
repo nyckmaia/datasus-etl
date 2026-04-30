@@ -76,11 +76,12 @@ def _resolve_data_dir(explicit: Path | None) -> Path | None:
 
 def _register_api_routes(app: FastAPI) -> None:
     """Attach the /api/* routers."""
-    from .routes import export, pipeline, query, settings, stats, version
+    from .routes import export, history, pipeline, query, settings, stats, version
 
     app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
     app.include_router(pipeline.router, prefix="/api/pipeline", tags=["pipeline"])
     app.include_router(query.router, prefix="/api/query", tags=["query"])
+    app.include_router(history.router, prefix="/api/query/history", tags=["history"])
     app.include_router(export.router, prefix="/api/export", tags=["export"])
     app.include_router(settings.router, prefix="/api/settings", tags=["settings"])
     app.include_router(version.router, prefix="/api/version", tags=["version"])

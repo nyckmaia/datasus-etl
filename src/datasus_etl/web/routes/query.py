@@ -28,8 +28,8 @@ from .settings import _resolve_data_dir
 
 router = APIRouter()
 
-MAX_LIMIT = 10_000
-DEFAULT_LIMIT = 1_000
+MAX_LIMIT = 100_000
+DEFAULT_LIMIT = 10_000
 
 _SAFE_SQL = re.compile(r"^\s*(with|select)\b", re.IGNORECASE)
 _FORBIDDEN = re.compile(
@@ -50,6 +50,10 @@ class SqlResult(BaseModel):
     truncated: bool
     elapsed_ms: float
     limit_applied: int
+    # Total rows the un-limited query would return. Only populated when the
+    # result is truncated — running COUNT(*) on a non-truncated query is
+    # wasteful, since the row_count is already exact in that case.
+    total_rows: int | None = None
 
 
 class TemplateItem(BaseModel):
@@ -211,6 +215,33 @@ async def run_sql(payload: SqlRequest, request: Request) -> SqlResult:
     elapsed_ms = (time.perf_counter() - start) * 1000
 
     truncated = len(fetched) >= effective_limit
+
+    # Compute total_rows only when truncated — the user wants to know how
+    # many rows are NOT being shown, so we wrap the original SQL (without
+    # the LIMIT we just appended) in COUNT(*) and run that as a second
+    # cheap query. Best-effort: if the wrapping fails (e.g. SQL with a
+    # trailing semicolon that survived the strip), we leave total_rows
+    # null and the UI gracefully falls back to "Truncated".
+    total_rows: int | None = None
+    if truncated:
+        original_sql = payload.sql.strip().rstrip(";").strip()
+        # Strip an inner LIMIT if the user wrote one — otherwise the
+        # COUNT(*) reflects only the limited output, which would be useless.
+        without_limit = re.sub(
+            r"\blimit\s+\d+\s*$", "", original_sql, flags=re.IGNORECASE
+        ).rstrip()
+        try:
+            con2 = _connect_with_views(data_dir)
+            try:
+                count_rel = con2.sql(f"SELECT COUNT(*) FROM ({without_limit})")
+                row = count_rel.fetchone()
+                if row and row[0] is not None:
+                    total_rows = int(row[0])
+            finally:
+                con2.close()
+        except duckdb.Error:
+            total_rows = None
+
     return SqlResult(
         columns=columns,
         rows=[list(row) for row in fetched],
@@ -218,6 +249,7 @@ async def run_sql(payload: SqlRequest, request: Request) -> SqlResult:
         truncated=truncated,
         elapsed_ms=round(elapsed_ms, 2),
         limit_applied=effective_limit,
+        total_rows=total_rows,
     )
 
 
