@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.1.17] - 2026-05-01
+
+### Added
+- **wizard:** per-UF estimate detail table with missing-months gap
+- **estimate:** per-UF FTP breakdown + missing-months gap in stats
+- **query:** Download full CSV button + configurable export caps UI
+- **export:** unlimited CSV mode with configurable row/byte caps
+- **query:** hierarchical schema tree replaces single-subsystem widget
+- **query:** add /api/query/schema endpoint with hierarchical tree
+- **datasets:** add ViewSpec + optional DatasetConfig.views
+- **query:** strip SQL comments and extend keyword denylist
+- **views:** add union_by_name + filename to parquet read_parquet
+
+### Fixed
+- **query:** show exact fill_pct + distinct_count for filename column
+- **query:** widen Catalog sidebar to 360px so tree rows fit
+
+### Documentation
+- refresh README + CLAUDE.md for schema tree, validator, view flags
+- **views:** document new read_parquet flags + drop redundant test comment
+
+### Other
+- Update VERSION to 0.1.17
+- Update .gitignore
+- **query:** add tree.* keys for the schema browser
+
 ## [0.1.16] - 2026-04-30
 
 ### Added
