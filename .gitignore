@@ -233,6 +233,9 @@ cython_debug/
 CLAUDE.md
 TODO.md
 
+# Research notes
+research/
+
 # Ruff stuff:
 .ruff_cache/
 
