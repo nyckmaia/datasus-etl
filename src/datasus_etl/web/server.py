@@ -28,6 +28,26 @@ from starlette.requests import Request
 
 STATIC_DIR = Path(__file__).parent / "static"
 
+# Cache policy for the SPA bundle. Vite content-hashes asset filenames
+# (e.g. ``index-abc123.js``), so changing the content always changes the
+# URL — those are safe to cache forever. ``index.html`` is the fixed
+# entrypoint that references the current hashes, so it must NEVER be
+# cached: without this, browsers heuristically cache it and serve stale
+# hash references after an upgrade, breaking the UI silently.
+_NO_CACHE_HEADERS = {"Cache-Control": "no-cache, must-revalidate"}
+_IMMUTABLE_HEADERS = {"Cache-Control": "public, max-age=31536000, immutable"}
+_ROOT_STATIC_HEADERS = {"Cache-Control": "public, max-age=3600, must-revalidate"}
+
+
+class _ImmutableStaticFiles(StaticFiles):
+    """``StaticFiles`` that tags successful responses with the immutable header."""
+
+    async def get_response(self, path: str, scope):  # type: ignore[override]
+        response = await super().get_response(path, scope)
+        if response.status_code == 200:
+            response.headers["Cache-Control"] = _IMMUTABLE_HEADERS["Cache-Control"]
+        return response
+
 
 def create_app(data_dir: Path | None = None) -> FastAPI:
     """Build the FastAPI app.
@@ -107,7 +127,7 @@ def _register_spa_routes(app: FastAPI) -> None:
 
     assets_dir = STATIC_DIR / "assets"
     if assets_dir.exists():
-        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+        app.mount("/assets", _ImmutableStaticFiles(directory=assets_dir), name="assets")
 
     # Common root-level static files (favicon, manifest, etc.) + SPA fallback.
     # Any path that falls through to this handler is either a static asset or
@@ -119,5 +139,5 @@ def _register_spa_routes(app: FastAPI) -> None:
             return JSONResponse(status_code=404, content={"detail": "Not found"})
         candidate = STATIC_DIR / filename
         if filename and candidate.is_file():
-            return FileResponse(candidate)
-        return FileResponse(STATIC_DIR / "index.html")
+            return FileResponse(candidate, headers=_ROOT_STATIC_HEADERS)
+        return FileResponse(STATIC_DIR / "index.html", headers=_NO_CACHE_HEADERS)
