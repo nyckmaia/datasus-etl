@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.18] - 2026-05-15
+
+### Other
+- Fix UI update
+
 ## [0.1.17] - 2026-05-01
 
 ### Added
